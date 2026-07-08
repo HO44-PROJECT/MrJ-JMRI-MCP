@@ -10,6 +10,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from jmri_mcp import __version__
+from jmri_mcp.config import get_jmri_url
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -23,7 +24,16 @@ mcp = FastMCP("JMRI")
 
 def main() -> None:
     """Run the MCP server on stdio (entry point for the `jmri-mcp` script)."""
-    logger.info("JMRI MCP server %s starting (stdio transport)", __version__)
+    try:
+        jmri_url = get_jmri_url()
+    except ValueError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
+    logger.info(
+        "JMRI MCP server %s starting (stdio transport, JMRI at %s)",
+        __version__,
+        jmri_url,
+    )
     mcp.run(transport="stdio")
 
 

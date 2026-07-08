@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 
 from jmri_mcp import __version__
 from jmri_mcp.config import get_jmri_url
+from jmri_mcp import tools
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -20,6 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger("jmri_mcp")
 
 mcp = FastMCP("JMRI")
+tools.register(mcp)
 
 
 def main() -> None:

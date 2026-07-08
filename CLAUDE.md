@@ -23,7 +23,9 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
   Port 12021 (JSON server) is a **raw TCP socket, not HTTP** — the legacy prototype POSTing
   HTTP to it could never work. We use only 12080.
 - `GET /json/power` returns all systems dynamically:
-  `DCC++ Ohara` (prefix `O`), `Zou` (prefix `Z`), `DCC++ Raijin` (prefix `R`, default).
+  `DCC++ Ohara` (prefix `O`), `DCC++ Zou` (prefix `Z`), `DCC++ Raijin` (prefix `R`, default).
+  (Corrected 2026-07-09: earlier notes said "Zou" without the "DCC++ " prefix — verified
+  wrong against a captured `/json/power` response, see `tests/fixtures/power_response.json`.)
 - Power states: 2=ON, 4=OFF, 0=UNKNOWN, 8=IDLE. Turnouts: 2=closed, 4=thrown.
   Sensors/lights: 2/4. Emergency stop: throttle speed −1.
 - **POST /json/power responses are transient**: posting `state:2` to an already-ON system

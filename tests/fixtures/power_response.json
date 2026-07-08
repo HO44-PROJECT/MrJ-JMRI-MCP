@@ -1,0 +1,29 @@
+[
+    {
+        "type": "power",
+        "data": {
+            "name": "DCC++ Ohara",
+            "state": 4,
+            "default": false,
+            "prefix": "O"
+        }
+    },
+    {
+        "type": "power",
+        "data": {
+            "name": "DCC++ Zou",
+            "state": 4,
+            "default": false,
+            "prefix": "Z"
+        }
+    },
+    {
+        "type": "power",
+        "data": {
+            "name": "DCC++ Raijin",
+            "state": 4,
+            "default": true,
+            "prefix": "R"
+        }
+    }
+]

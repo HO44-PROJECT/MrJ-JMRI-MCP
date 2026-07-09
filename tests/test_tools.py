@@ -95,3 +95,30 @@ async def test_system_status_unreachable_reports_honestly():
     assert out["reachable"] is False
     assert "error" in out
     assert "systems" not in out
+
+
+async def test_acquire_throttle_returns_state(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "acquire_throttle", address=3)
+    assert out == {"acquired": True, "address": 3, "speed": 0.0, "forward": True}
+
+
+async def test_acquire_throttle_passes_prefix(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "acquire_throttle", address=3, prefix="R")
+    assert out["acquired"] is True
+    assert out["address"] == 3
+
+
+async def test_release_throttle_reports_success(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "acquire_throttle", address=7)
+    out = await call(mcp, "release_throttle", address=7)
+    assert out == {"released": True, "address": 7}
+
+
+async def test_acquire_throttle_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "acquire_throttle", address=3)
+    assert "error" in out

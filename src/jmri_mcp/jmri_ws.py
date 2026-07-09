@@ -124,10 +124,19 @@ class JmriWsClient:
             if self._pending is future:
                 self._pending = None
 
-    async def acquire_throttle(self, throttle_id: str, address: int) -> dict[str, Any]:
-        """Acquire a throttle bound to this connection; remembered for re-acquisition."""
-        data = await self.request("throttle", {"throttle": throttle_id, "address": address})
-        self._throttles[throttle_id] = {"address": address}
+    async def acquire_throttle(
+        self, throttle_id: str, address: int, prefix: str | None = None
+    ) -> dict[str, Any]:
+        """Acquire a throttle bound to this connection; remembered for re-acquisition.
+
+        prefix optionally targets a specific command station (e.g. "R" for
+        DCC++ Raijin) when more than one is connected to JMRI.
+        """
+        data_out: dict[str, Any] = {"throttle": throttle_id, "address": address}
+        if prefix:
+            data_out["prefix"] = prefix
+        data = await self.request("throttle", data_out)
+        self._throttles[throttle_id] = {"address": address, "prefix": prefix}
         return data
 
     async def release_throttle(self, throttle_id: str) -> dict[str, Any]:
@@ -167,10 +176,11 @@ class JmriWsClient:
     async def _reacquire_throttles(self) -> None:
         for throttle_id, info in list(self._throttles.items()):
             try:
+                data_out = {"throttle": throttle_id, "address": info["address"]}
+                if info.get("prefix"):
+                    data_out["prefix"] = info["prefix"]
                 async with self._request_lock:
-                    await self._send_and_wait(
-                        "throttle", {"throttle": throttle_id, "address": info["address"]}
-                    )
+                    await self._send_and_wait("throttle", data_out)
             except JmriError as exc:
                 logger.warning("Failed to re-acquire throttle %r after reconnect: %s", throttle_id, exc)
 

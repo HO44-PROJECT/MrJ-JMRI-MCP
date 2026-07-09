@@ -77,21 +77,34 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
 
 ## Current state (end of session 2026-07-09)
 
-- Issues #1–#6 implemented, validated, committed, closed. M1 done.
-- **Issue #7 (persistent WebSocket client) implemented, smoke-tested against real JMRI,
-  AWAITING USER VALIDATION** (not committed yet): `src/jmri_mcp/jmri_ws.py` —
-  `JmriWsClient` with lazy connect, auto-reconnect (exponential backoff), heartbeat-paced
-  keepalive ping/pong, serialized request/response (see verified facts above for why),
-  and a throttle registry that re-acquires after reconnect. `get_ws_client()` gives a
-  process-wide shared instance. Not yet wired into any MCP tool (that's #8+ — this card
-  was foundation only, no throttle tool exposed to the LLM yet).
-- `tests/test_jmri_ws.py` added: a local `websockets` server fixture (`fake_jmri`) stands
-  in for JMRI since `respx` only mocks HTTP, not WebSockets. 8 new tests.
-- Fixed a pre-existing, unrelated test-collection bug while running the full suite:
-  `tests/__init__.py` was missing, so `from tests.conftest import MOCK_JMRI_URL` (used by
-  3 older test files) broke depending on how pytest was invoked. Added the empty
-  `__init__.py` to make `tests/` a real package; not caused by and not scoped to #7, but
-  fixed in the same commit since it blocked running the suite at all.
+- Issues #1–#7 implemented, validated, committed, closed. M1 done; M2 underway.
+  - #7 (persistent WebSocket client): `src/jmri_mcp/jmri_ws.py` — `JmriWsClient` with lazy
+    connect, auto-reconnect (exponential backoff), heartbeat-paced keepalive ping/pong,
+    serialized request/response (see verified facts above for why), and a throttle registry
+    that re-acquires after reconnect. `get_ws_client()` gives a process-wide shared instance.
+    `tests/test_jmri_ws.py` added: a local `websockets` server fixture (`fake_jmri`, now
+    shared via `tests/conftest.py`) stands in for JMRI since `respx` only mocks HTTP, not
+    WebSockets.
+  - Fixed a pre-existing, unrelated test-collection bug while running the full suite for #7:
+    `tests/__init__.py` was missing, so `from tests.conftest import MOCK_JMRI_URL` (used by
+    3 older test files) broke depending on how pytest was invoked. Added the empty
+    `__init__.py` to make `tests/` a real package; fixed in the same commit since it blocked
+    running the suite at all.
+- **Issue #8 (throttle acquisition / release) implemented, smoke-tested against real JMRI,
+  AWAITING USER VALIDATION** (not committed yet): `acquire_throttle`/`release_throttle` MCP
+  tools added to `src/jmri_mcp/tools.py`, wiring `jmri_ws.py` into the LLM-facing surface
+  for the first time. Design: **DCC address is the only key the LLM ever uses** — JMRI's own
+  `throttle` id is never exposed; `_throttle_id(address)` derives a stable internal id
+  (`f"addr{address}"`). `jmri_ws.py`'s `acquire_throttle()`/`_reacquire_throttles()` extended
+  to accept an optional `prefix` (targets a specific command station). `server.py` now runs
+  `mcp.run_stdio_async()` inside an explicit `async def _run()` with a `try/finally` that
+  closes the shared `JmriWsClient` on shutdown — since FastMCP has no lifecycle hooks of its
+  own — so any held throttles are released JMRI-side (throttles are bound to the connection).
+  Added `reset_ws_client` autouse fixture in `tests/conftest.py` to stop the WS client
+  singleton from leaking state across tests. 4 new tests in `test_tools.py`. Full suite:
+  52 passed. Live smoke test confirmed acquire/release round-trip and, separately, that
+  closing stdin (clean shutdown) genuinely releases a held throttle JMRI-side (verified via
+  a fresh acquire afterward showing `"clients": 1`, not a stale duplicate).
 - `environment.yml` added (prior session): dedicated `jmri-mcp` conda env on Python 3.12,
   independent of `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently
   still run the `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env

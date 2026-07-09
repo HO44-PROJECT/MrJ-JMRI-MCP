@@ -1,9 +1,11 @@
-"""Read-only power tools exposed to the LLM."""
+"""Power and throttle tools exposed to the LLM."""
 
 import logging
 
 from jmri_mcp import jmri_client
 from jmri_mcp.jmri_client import JmriError, get_systems, get_version, resolve_system
+from jmri_mcp.jmri_ws import JmriError as JmriWsError
+from jmri_mcp.jmri_ws import get_ws_client
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -15,6 +17,24 @@ def _compact(system: dict) -> dict:
         "name": system.get("name"),
         "state": _STATE_NAMES.get(system.get("state"), "UNKNOWN"),
         "default": bool(system.get("default")),
+    }
+
+
+def _throttle_id(address: int) -> str:
+    """Derive a stable throttle id from a DCC address.
+
+    The LLM identifies a loco by its DCC address alone (no roster yet, see
+    M3) — this hides JMRI's separate "throttle" id from callers so tools
+    only ever deal in addresses.
+    """
+    return f"addr{address}"
+
+
+def _compact_throttle(data: dict) -> dict:
+    return {
+        "address": data.get("address"),
+        "speed": data.get("speed"),
+        "forward": data.get("forward"),
     }
 
 
@@ -98,3 +118,45 @@ def register(mcp) -> None:
             status["systems_error"] = str(exc)
 
         return status
+
+    @mcp.tool()
+    async def acquire_throttle(address: int, prefix: str | None = None) -> dict:
+        """Acquire control of a locomotive by its DCC address.
+
+        Args:
+            address: The locomotive's DCC address.
+            prefix: Optional command station prefix (e.g. "O", "Z", "R") to
+                target when more than one is connected. Omit to use JMRI's
+                default command station.
+
+        Call this before set_speed/set_direction/set_function on a loco you
+        haven't controlled yet in this session — safe to call again on an
+        address that's already acquired (JMRI just re-confirms it). Release
+        with release_throttle when done; JMRI also releases automatically
+        if the server disconnects.
+        """
+        client = get_ws_client()
+        try:
+            data = await client.acquire_throttle(_throttle_id(address), address, prefix)
+        except JmriWsError as exc:
+            logger.warning("acquire_throttle(%r, %r) failed: %s", address, prefix, exc)
+            return {"error": str(exc)}
+        return {"acquired": True, **_compact_throttle(data)}
+
+    @mcp.tool()
+    async def release_throttle(address: int) -> dict:
+        """Release control of a locomotive acquired with acquire_throttle.
+
+        Args:
+            address: The locomotive's DCC address.
+
+        Good practice once done controlling a loco, but not required —
+        JMRI releases it automatically when the server disconnects.
+        """
+        client = get_ws_client()
+        try:
+            await client.release_throttle(_throttle_id(address))
+        except JmriWsError as exc:
+            logger.warning("release_throttle(%r) failed: %s", address, exc)
+            return {"error": str(exc)}
+        return {"released": True, "address": address}

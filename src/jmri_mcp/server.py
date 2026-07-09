@@ -4,6 +4,7 @@ stdout is reserved for the MCP JSON-RPC channel: all logging goes to stderr.
 Never use print() anywhere in this package.
 """
 
+import asyncio
 import logging
 import sys
 
@@ -12,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from jmri_mcp import __version__
 from jmri_mcp.config import get_jmri_url
 from jmri_mcp import tools
+from jmri_mcp.jmri_ws import get_ws_client
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -22,6 +24,15 @@ logger = logging.getLogger("jmri_mcp")
 
 mcp = FastMCP("JMRI")
 tools.register(mcp)
+
+
+async def _run() -> None:
+    try:
+        await mcp.run_stdio_async()
+    finally:
+        # Release any acquired throttles by closing the WebSocket cleanly —
+        # JMRI drops throttles bound to a connection when it closes.
+        await get_ws_client().close()
 
 
 def main() -> None:
@@ -36,7 +47,7 @@ def main() -> None:
         __version__,
         jmri_url,
     )
-    mcp.run(transport="stdio")
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

@@ -138,19 +138,27 @@ def register(mcp) -> None:
 
     @mcp.tool()
     async def acquire_throttle(address: int, prefix: str | None = None) -> dict:
-        """Acquire control of a locomotive by its DCC address.
+        """Acquire control of a locomotive by its DCC address, and report its current state.
 
         Args:
             address: The locomotive's DCC address.
             prefix: Optional command station prefix (e.g. "O", "Z", "R") to
-                target when more than one is connected. Omit to use JMRI's
-                default command station.
+                target when more than one DCC system is connected. Omit to
+                use JMRI's default command station.
 
-        Call this before set_speed/set_direction/set_function on a loco you
-        haven't controlled yet in this session — safe to call again on an
-        address that's already acquired (JMRI just re-confirms it). Release
-        with release_throttle when done; JMRI also releases automatically
-        if the server disconnects.
+        You usually do NOT need to call this explicitly before set_speed/
+        stop/emergency_stop — those acquire the throttle automatically on
+        first use for a smoother voice UX ("speed up the 3" just works).
+        Call acquire_throttle directly when you specifically want to know a
+        loco's current speed/direction before deciding what to do (the
+        acquire reply reports both), or to target a non-default command
+        station via `prefix`.
+
+        Safe to call again on an address already acquired by this session —
+        JMRI just re-confirms it, it does not error or reset the loco.
+        Release with release_throttle when done, though it's not required:
+        JMRI releases every throttle this session holds automatically if
+        the MCP server disconnects.
         """
         client = get_ws_client()
         try:
@@ -162,13 +170,16 @@ def register(mcp) -> None:
 
     @mcp.tool()
     async def release_throttle(address: int) -> dict:
-        """Release control of a locomotive acquired with acquire_throttle.
+        """Release this session's control of a locomotive acquired with acquire_throttle.
 
         Args:
             address: The locomotive's DCC address.
 
-        Good practice once done controlling a loco, but not required —
-        JMRI releases it automatically when the server disconnects.
+        Good practice once you're done controlling a loco (frees it up for
+        other JMRI clients/throttles to acquire without contention), but not
+        required for correctness — JMRI releases it automatically when the
+        MCP server's connection to JMRI closes, so a missed release_throttle
+        does not leave the loco "stuck" for other clients across restarts.
         """
         client = get_ws_client()
         try:
@@ -180,16 +191,32 @@ def register(mcp) -> None:
 
     @mcp.tool()
     async def set_speed(address: int, speed_percent: float) -> dict:
-        """Set a locomotive's speed as a percentage of its maximum.
+        """Set a locomotive's speed as a percentage of its maximum (0-100%).
 
         Args:
             address: The locomotive's DCC address.
-            speed_percent: 0-100. Acquires the throttle automatically if not
-                already held.
+            speed_percent: 0-100. Values outside this range are clamped, not
+                rejected. Acquires the throttle automatically if this session
+                doesn't already hold it — no need to call acquire_throttle
+                first for a simple "speed up the 3" style voice command.
 
-        Use stop for a controlled halt (speed 0) or emergency_stop for a
+        Returns the actual speed JMRI reports back, as a percentage — this
+        may differ slightly from what was requested (DCC uses a small number
+        of discrete speed steps, so exact percentages get rounded).
+
+        Use stop for a controlled halt (speed 0%) or emergency_stop for a
         panic stop — don't call set_speed(speed_percent=0) for an emergency,
-        it's not the same command to JMRI.
+        it's a different command to JMRI, not just "speed 0".
+
+        A locomotive's speed can be changed by something other than this
+        tool at any time — another JMRI panel, PanelPro, another MCP/voice
+        session controlling the same loco. If the requested speed already
+        matches the current one (whoever set it), JMRI does not send a
+        confirmation and this call returns immediately without writing
+        anything new to the layout — this is expected, not a failure; the
+        reported speed_percent in the response is still accurate because
+        it's read from a cache kept continuously up to date by JMRI's own
+        state broadcasts, not from what this tool last sent.
         """
         client = get_ws_client()
         speed = max(0.0, min(100.0, speed_percent)) / 100.0
@@ -203,13 +230,25 @@ def register(mcp) -> None:
 
     @mcp.tool()
     async def stop(address: int) -> dict:
-        """Bring a locomotive to a controlled stop (speed 0).
+        """Bring a locomotive to a controlled stop (speed 0%), like releasing the throttle.
 
         Args:
-            address: The locomotive's DCC address.
+            address: The locomotive's DCC address. Acquires the throttle
+                automatically if this session doesn't already hold it.
 
-        For a panic/safety stop use emergency_stop instead — it's a
-        different command to JMRI (decoder emergency stop), not just speed 0.
+        For a panic/safety stop (derailment risk, collision course, or any
+        "stop it NOW") use emergency_stop instead — JMRI treats it as a
+        distinct decoder command (an immediate power cut to the motor), not
+        just "speed 0". Use this `stop` tool for a normal, intentional halt
+        (end of a run, waiting at a signal, user just says "stop the 3").
+
+        Safe to call repeatedly, including when the loco is already
+        stopped: JMRI silently ignores a redundant "already at this speed"
+        request instead of replying, and this tool's client keeps a local
+        speed cache continuously refreshed by JMRI's own state broadcasts
+        (which fire for ANY client's changes, not just this tool's), so a
+        repeat call still returns the correct current speed_percent (very
+        likely 0) without hanging or erroring.
         """
         client = get_ws_client()
         try:
@@ -222,13 +261,26 @@ def register(mcp) -> None:
 
     @mcp.tool()
     async def emergency_stop(address: int) -> dict:
-        """Emergency-stop a locomotive immediately (JMRI decoder e-stop).
+        """Emergency-stop a locomotive immediately (JMRI's decoder e-stop command).
 
         Args:
-            address: The locomotive's DCC address.
+            address: The locomotive's DCC address. Acquires the throttle
+                automatically if this session doesn't already hold it.
 
-        Use this for safety-critical stops (derailment risk, collision
-        course). For a normal controlled stop use stop instead.
+        Use this ONLY for safety-critical stops: derailment risk, imminent
+        collision, or any situation calling for an immediate halt rather than
+        a smooth deceleration. This is JMRI's actual decoder emergency-stop
+        command (speed -1.0 on the wire, distinct from a normal speed
+        command) — it cuts power abruptly rather than ramping down, which is
+        rougher on the mechanism/cargo, so don't use it as a synonym for a
+        routine `stop`.
+
+        Returns `stopped: true` once JMRI confirms the e-stop speed. Safe to
+        call repeatedly: like `stop`, a redundant emergency_stop on an
+        already-e-stopped loco is a silent no-op on JMRI's side, and this
+        tool's local throttle-state cache (kept fresh from JMRI's broadcasts,
+        including e-stops triggered by any OTHER client) reports the correct
+        current status instead of hanging.
         """
         client = get_ws_client()
         try:

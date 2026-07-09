@@ -7,7 +7,7 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
 ## Hard rules
 
 - **Pure stdio MCP server. Never `print()` anywhere** — stdout is the JSON-RPC channel.
-  All logging goes to stderr (`logging`, configured in `src/jmri_mcp/server.py`).
+  All logging goes to stderr (`logging`, configured in `src/jmri_mcp/server/__init__.py`).
   Proof this matters: kira's `mcp_pipe.py` forwards every stdout line to the xiaozhi
   WebSocket as a protocol message, and Claude Desktop rejects servers that pollute stdout.
 - **Fully dynamic — zero hardcoded layout data.** Systems, roster, turnouts, sensors are

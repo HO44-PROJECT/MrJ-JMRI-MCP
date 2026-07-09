@@ -14,13 +14,13 @@ Every test is pointed at a fake host (`tests/conftest.py`'s autouse `jmri_url`
 fixture). No real network calls, no hardware side effects. This is what runs
 in CI and what you should run after any code change.
 
-- HTTP calls (`jmri_client.py`) are mocked with [`respx`](https://lundberg.github.io/respx/)
+- HTTP calls (`jmri_client/`) are mocked with [`respx`](https://lundberg.github.io/respx/)
   using fixtures captured from a real JMRI 5.4.0 server (`tests/fixtures/*.json`).
-- The WebSocket client (`jmri_ws.py`, see `tests/test_jmri_ws.py`) is tested
+- The WebSocket client (`jmri_ws/`, see `tests/test_jmri_ws.py`) is tested
   against a real local `websockets` server fixture (`fake_jmri`) that speaks
   the subset of JMRI's protocol needed to exercise connect/hello, ping/pong,
   request-response, throttle acquire/release, and reconnect — `respx` only
-  mocks HTTP, so this can't reuse the same approach as `jmri_client.py`.
+  mocks HTTP, so this can't reuse the same approach as `jmri_client/`.
 
 ## Live suite (opt-in)
 

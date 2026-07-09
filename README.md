@@ -35,7 +35,3 @@ design notes.
 | Variable | Default | Description |
 |---|---|---|
 | `JMRI_URL` | `http://localhost:12080` | Base URL of the JMRI Web Server |
-
-## Legacy
-
-`legacy/jmri_experimental.py` is the original proof-of-concept (power on/off only). Kept for reference; do not extend it.

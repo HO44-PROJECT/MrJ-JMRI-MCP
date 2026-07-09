@@ -48,7 +48,3 @@ def main() -> None:
         jmri_url,
     )
     asyncio.run(_run())
-
-
-if __name__ == "__main__":
-    main()

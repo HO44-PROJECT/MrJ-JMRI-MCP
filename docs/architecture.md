@@ -2,17 +2,56 @@
 
 ```
 src/jmri_mcp/
-├── config.py       # env vars: JMRI_URL (e.g. http://10.0.20.20:12080)
-├── jmri_client.py  # async HTTP client for JMRI's JSON API (power, version, ...)
-├── jmri_ws.py      # persistent WebSocket client (ws://<jmri>/json/) for throttles
-├── tools.py        # MCP tools exposed to the LLM (list_systems, get_power, set_power,
-│                   #   system_status, list_roster, find_locomotive,
-│                   #   get_locomotive_functions, acquire_throttle, release_throttle,
-│                   #   set_speed, stop, emergency_stop, set_direction, set_function,
-│                   #   lights_on, lights_off)
-├── cli.py          # jmri-cli: manual command-line tool, no MCP client needed
-└── server.py       # FastMCP entry point (stdio; logging → stderr only)
+├── config/             # env vars: JMRI_URL (e.g. http://10.0.20.20:12080)
+│   └── __init__.py
+├── jmri_client/       # async HTTP client for JMRI's JSON API
+│   ├── __init__.py    #   re-exports every public name (power.py + roster.py)
+│   ├── _http.py        #  shared GET/POST plumbing, JmriError, envelope unwrap
+│   ├── power.py        #  version, power-system discovery, power on/off, resolve_system
+│   └── roster.py        # roster listing, name resolution, function labels
+├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
+│   └── __init__.py
+├── tools/             # MCP tools exposed to the LLM
+│   ├── __init__.py    #   register(mcp): wires power.py + roster.py + throttle.py
+│   ├── _common.py      #  shared helpers (throttle_id, compact_power/throttle, ensure_acquired)
+│   ├── power.py         # list_systems, get_power, set_power, system_status
+│   ├── roster.py        # list_roster, find_locomotive, get_locomotive_functions
+│   └── throttle.py      # acquire/release_throttle, set_speed/stop/emergency_stop,
+│                        #   set_direction, set_function, lights_on/lights_off
+├── server/            # jmri-mcp: the MCP stdio server, no MCP client needed to build it
+│   ├── __init__.py    #   main(); FastMCP wiring; logging → stderr only
+│   └── __main__.py    #   enables `python -m jmri_mcp.server`
+└── cli/               # jmri-cli: manual command-line tool, no MCP client needed
+    ├── __init__.py    #   main(); package docstring has full usage examples
+    ├── __main__.py    #   enables `python -m jmri_mcp.cli`
+    ├── constants.py   #   shared constants (state names, id prefixes, ranges)
+    ├── _common.py     #   cross-module helpers (cli_throttle_id)
+    ├── _doc.py        #   top-level --help description text
+    ├── power.py       #   power status/set, status (jmri_client)
+    ├── roster.py      #   roster / roster find / roster functions (jmri_client)
+    ├── throttle.py    #   throttle acquire/release/speed/.../sniff (jmri_ws)
+    └── parser.py      #   build_parser(): wires the above into one CLI
 ```
+
+Three domains — **power**, **roster**, **throttle** — recur across the
+project and are split the same way everywhere they get big enough to
+warrant it: `jmri_client/` (HTTP), `tools/` (MCP surface), and `cli/`
+(manual CLI) each have their own `power.py`/`roster.py`/`throttle.py`.
+`jmri_ws/__init__.py` stays a single file within its package — it's one
+cohesive unit of tightly-coupled state (a WebSocket connection's
+request/reply/cache logic) with no natural seam to split along.
+
+Every directory at the package root is a package (`__init__.py`, no
+flat `.py` files at the root) — this project's two executables,
+`jmri-mcp` and `jmri-cli`, are each their own package (`server/`,
+`cli/`), both following the exact same shape: `main()` lives in
+`__init__.py`, and a sibling `__main__.py` re-exports it so
+`python -m jmri_mcp.<name>` also works. `config/` and `jmri_ws/` are
+single-file packages (all their content lives in `__init__.py`) — they
+have no `main()` and no natural seam to split into multiple files, but
+still follow the "no bare `.py` at the root" rule. Everything except
+`server/` and `cli/` is library code with no top-level side effects —
+it can't be run standalone, only imported.
 
 M3 (roster) is now complete. More tools (turnouts, sensors) will land here
 as later milestones are implemented — see the
@@ -23,7 +62,7 @@ as later milestones are implemented — see the
 JMRI exposes the same data over two transports, and this project uses both
 for different reasons:
 
-- **`jmri_client.py`** — plain async HTTP (`httpx`) against JMRI's REST-ish
+- **`jmri_client/`** — plain async HTTP (`httpx`) against JMRI's REST-ish
   `/json/*` endpoints. One request, one response, no state kept between
   calls. Used for anything that doesn't need a throttle: power, version,
   roster, system discovery. `get_roster()` compacts JMRI's ~2 KB-per-entry
@@ -31,12 +70,12 @@ for different reasons:
   name/address/road/model — the legacy prototype's roster bug was reading
   the envelope level instead of `entry["data"]`, which always came up
   empty; `_unwrap()` (shared with `get_systems()`) is what fixes that here.
-- **`jmri_ws.py`** — a persistent WebSocket (`ws://<jmri>:12080/json/`).
+- **`jmri_ws/`** — a persistent WebSocket (`ws://<jmri>:12080/json/`).
   This exists for one reason: **a JMRI throttle is bound to the connection
   that acquired it**. HTTP can't hold a throttle open between requests, so
   cab control needs a long-lived connection — see `JmriWsClient` below.
   Wired into the MCP surface as `acquire_throttle`/`release_throttle` in
-  `tools.py`.
+  `tools/throttle.py`.
 
 Port 12021 (the raw "JSON server" TCP socket, not HTTP) is never used —
 the original prototype tried to `POST` HTTP to it, which cannot work. Both
@@ -92,15 +131,16 @@ See `CLAUDE.md`'s "Verified facts" section for the exact wire format
 
 ## Roster: `list_roster` / `find_locomotive`
 
-`list_roster` (in `tools.py`) returns `jmri_client.get_roster()`'s compact
-form directly — for browsing. `find_locomotive` resolves one spoken/typed
-name straight to a roster entry (and thus a DCC address) via
-`jmri_client.resolve_roster_entry()`, mirroring `resolve_system()`'s
-tolerant-match design (exact name, then unambiguous fragment) plus an
-accent-insensitive fold (`_fold()`, via `unicodedata` NFKD-strip) so French
-names like "Boite à Sel" match "boite a sel". An ambiguous or unknown name
-returns an "error" explaining why (with the candidate list) rather than
-guessing — the LLM is expected to ask the user to clarify.
+`list_roster` (in `tools/roster.py`) returns `jmri_client.get_roster()`'s
+compact form directly — for browsing. `find_locomotive` resolves one
+spoken/typed name straight to a roster entry (and thus a DCC address) via
+`jmri_client.resolve_roster_entry()` (defined in `jmri_client/roster.py`),
+mirroring `resolve_system()`'s (`jmri_client/power.py`) tolerant-match
+design (exact name, then unambiguous fragment) plus an accent-insensitive
+fold (`_fold()`, via `unicodedata` NFKD-strip) so French names like "Boite
+à Sel" match "boite a sel". An ambiguous or unknown name returns an
+"error" explaining why (with the candidate list) rather than guessing —
+the LLM is expected to ask the user to clarify.
 
 `get_locomotive_functions` exposes the per-loco function labels the user
 sets in JMRI's own roster editor (`functionKeys[].label`, `null` when
@@ -115,12 +155,13 @@ label — this closes the gap `set_function`'s own docstring used to flag
 
 ## Throttle tool surface: DCC address as the only key
 
-`acquire_throttle`/`release_throttle` (in `tools.py`) key everything on the
-locomotive's **DCC address** — JMRI's own `throttle` id is never exposed to
-the LLM. `_throttle_id(address)` derives a stable internal id
-(`f"addr{address}"`) from the address, so the same loco always maps to the
-same JMRI throttle across calls without the caller having to track an
-opaque handle.
+`acquire_throttle`/`release_throttle` (in `tools/throttle.py`) key
+everything on the locomotive's **DCC address** — JMRI's own `throttle` id
+is never exposed to the LLM. `throttle_id(address)` (in `tools/_common.py`,
+shared by every tool in the throttle/power/roster split) derives a stable
+internal id (`f"addr{address}"`) from the address, so the same loco always
+maps to the same JMRI throttle across calls without the caller having to
+track an opaque handle.
 
 On server shutdown, `server.py` closes the shared `JmriWsClient`; JMRI
 releases every throttle bound to that connection automatically, so no
@@ -128,21 +169,21 @@ explicit "release all" call is needed on exit.
 
 `set_speed`/`stop`/`emergency_stop`/`set_direction`/`set_function` reuse
 the same address-keyed throttle: if the address hasn't been acquired on
-this connection yet, `_ensure_acquired` acquires it transparently first
-(JMRI rejects speed/direction/function commands on a throttle id it's
-never seen an acquire for). `set_speed` takes a 0-100 percentage from the
-LLM and converts to JMRI's 0.0-1.0 scale; `stop` is speed 0.0,
-`emergency_stop` is speed -1.0 (JMRI's decoder emergency stop, a distinct
-command from a controlled stop). `set_speed`/`stop`/`emergency_stop` go
-through `JmriWsClient.set_speed()`; `set_direction` goes through the
-analogous `JmriWsClient.set_direction()`; `set_function` goes through
-`JmriWsClient.set_function()` — all three check the live per-throttle
-cache (`speed`/`forward`/`functions[n]` respectively) before sending using
-the exact same no-op-skip logic, sharing the cache described in "Live
-throttle state cache, fed by pushes" above. `set_direction` translates
-JMRI's raw boolean `forward` field to/from the readable strings
-`"forward"`/`"reverse"` at the tool boundary (`_direction_name()` in
-`tools.py`), which is why `_compact_throttle()`'s output (used by
+this connection yet, `tools/_common.py`'s `ensure_acquired` acquires it
+transparently first (JMRI rejects speed/direction/function commands on a
+throttle id it's never seen an acquire for). `set_speed` takes a 0-100
+percentage from the LLM and converts to JMRI's 0.0-1.0 scale; `stop` is
+speed 0.0, `emergency_stop` is speed -1.0 (JMRI's decoder emergency stop, a
+distinct command from a controlled stop). `set_speed`/`stop`/
+`emergency_stop` go through `JmriWsClient.set_speed()`; `set_direction`
+goes through the analogous `JmriWsClient.set_direction()`; `set_function`
+goes through `JmriWsClient.set_function()` — all three check the live
+per-throttle cache (`speed`/`forward`/`functions[n]` respectively) before
+sending using the exact same no-op-skip logic, sharing the cache described
+in "Live throttle state cache, fed by pushes" above. `set_direction`
+translates JMRI's raw boolean `forward` field to/from the readable strings
+`"forward"`/`"reverse"` at the tool boundary (`direction_name()` in
+`tools/_common.py`), which is why `compact_throttle()`'s output (used by
 `acquire_throttle`) reports `direction` rather than JMRI's raw `forward`
 too — one readable representation for the whole tool surface. `set_function`
 validates `0 <= function <= 28` before sending anything (JMRI's own valid

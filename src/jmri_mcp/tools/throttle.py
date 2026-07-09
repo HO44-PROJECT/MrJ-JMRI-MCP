@@ -1,245 +1,25 @@
-"""Power, roster, and throttle tools exposed to the LLM.
+"""Throttle MCP tools: acquire/release_throttle, set_speed, stop, emergency_stop, set_direction, set_function, lights_on, lights_off.
 
-Throttle tools (acquire_throttle, release_throttle, set_speed, stop,
-emergency_stop, set_direction, set_function, lights_on, lights_off) key
-everything on DCC address — see _throttle_id. list_roster/find_locomotive
-are how the LLM turns a spoken name ("the Autorail") into the address
-those tools need: list_roster for browsing, find_locomotive for resolving
-one specific name (fuzzy, accent/case-insensitive) directly to an address.
-get_locomotive_functions exposes the user's own per-loco function labels
-(set in JMRI's roster editor) so "turn on the rear lights" can resolve to
-the right F-number without any hardcoded name->function mapping.
+All keyed on DCC address — see jmri_mcp.tools._common.throttle_id. Talks to
+jmri_ws.py's shared, process-wide WebSocket connection (see
+jmri_mcp.jmri_ws.get_ws_client), unlike power.py/roster.py's one-shot HTTP.
 """
 
 import logging
 
-from jmri_mcp import jmri_client
-from jmri_mcp.jmri_client import (
-    JmriError,
-    get_systems,
-    get_version,
-    resolve_roster_entry,
-    resolve_system,
-)
 from jmri_mcp.jmri_ws import JmriError as JmriWsError
 from jmri_mcp.jmri_ws import get_ws_client
+from jmri_mcp.tools._common import compact_throttle, direction_name, ensure_acquired, throttle_id
 
 logger = logging.getLogger("jmri_mcp.tools")
 
-_STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
-
-
-def _compact(system: dict) -> dict:
-    return {
-        "name": system.get("name"),
-        "state": _STATE_NAMES.get(system.get("state"), "UNKNOWN"),
-        "default": bool(system.get("default")),
-    }
-
-
-def _throttle_id(address: int) -> str:
-    """Derive a stable throttle id from a DCC address.
-
-    The LLM identifies a loco by its DCC address (list_roster maps a name
-    to one; see #13/#14 for automatic name/function-label resolution) —
-    this hides JMRI's separate "throttle" id from callers so tools only
-    ever deal in addresses.
-    """
-    return f"addr{address}"
-
-
-def _direction_name(forward: bool | None) -> str | None:
-    if forward is None:
-        return None
-    return "forward" if forward else "reverse"
-
-
-def _compact_throttle(data: dict) -> dict:
-    return {
-        "address": data.get("address"),
-        "speed": data.get("speed"),
-        "direction": _direction_name(data.get("forward")),
-    }
-
-
-async def _ensure_acquired(client, address: int) -> None:
-    """Acquire the throttle for `address` if this connection doesn't hold it yet.
-
-    JMRI rejects speed/direction/function commands on a throttle id it has
-    never seen an acquire for ("Throttles must be requested with an
-    address."). Tracking acquired ids client-side lets set_speed/stop/etc.
-    work standalone (voice UX: "speed up the 3" without a separate acquire
-    step) while still reusing the same throttle id acquire_throttle uses.
-    """
-    if _throttle_id(address) not in client._throttles:
-        await client.acquire_throttle(_throttle_id(address), address)
-
 
 def register(mcp) -> None:
-    @mcp.tool()
-    async def list_systems() -> dict:
-        """List every DCC power system known to JMRI, with its current power state.
+    """Register this module's tools on `mcp`.
 
-        Use this to discover what systems exist before calling get_power, or to
-        answer "what systems are there?". No side effects.
-        """
-        try:
-            systems = await get_systems()
-        except JmriError as exc:
-            logger.warning("list_systems failed: %s", exc)
-            return {"error": str(exc)}
-        return {"systems": [_compact(s) for s in systems]}
-
-    @mcp.tool()
-    async def get_power(system: str | None = None) -> dict:
-        """Get the current power state (ON/OFF/UNKNOWN/IDLE) of one DCC system.
-
-        Args:
-            system: System name, prefix, or fragment (e.g. "ohara", "O").
-                Case-insensitive. Omit to use JMRI's default system.
-
-        No side effects — this only reads state, it never changes power.
-        """
-        try:
-            systems = await get_systems()
-            match = resolve_system(system, systems)
-        except JmriError as exc:
-            logger.warning("get_power(%r) failed: %s", system, exc)
-            return {"error": str(exc)}
-        return _compact(match)
-
-    @mcp.tool()
-    async def set_power(system: str | None, turn_on: bool) -> dict:
-        """Turn a DCC system's power ON or OFF, and report the state actually observed.
-
-        Args:
-            system: System name, prefix, or fragment (e.g. "ohara", "O").
-                Case-insensitive. Omit to use JMRI's default system.
-            turn_on: True to turn power ON, False to turn it OFF.
-
-        This writes to JMRI. The reported state is re-read ~1s after the
-        command (JMRI's immediate POST response is transient/unreliable) —
-        if the observed state doesn't match the request, "confirmed" will
-        be false and the caller should say so honestly rather than assume
-        success.
-        """
-        try:
-            systems = await get_systems()
-            match = resolve_system(system, systems)
-            result = await jmri_client.set_power(match["prefix"], turn_on)
-        except JmriError as exc:
-            logger.warning("set_power(%r, %r) failed: %s", system, turn_on, exc)
-            return {"error": str(exc)}
-        return {**_compact(result), "confirmed": result["confirmed"]}
-
-    @mcp.tool()
-    async def system_status() -> dict:
-        """One-call diagnostic: is JMRI reachable, and what state is it in?
-
-        Reports JMRI reachability/version and every power system's state.
-        Call this first when something isn't responding, instead of
-        guessing which tool to retry. No side effects.
-        """
-        status: dict = {"reachable": False}
-        try:
-            status["version"] = await get_version()
-            status["reachable"] = True
-        except JmriError as exc:
-            status["error"] = str(exc)
-            return status
-
-        try:
-            systems = await get_systems()
-            status["systems"] = [_compact(s) for s in systems]
-        except JmriError as exc:
-            status["systems_error"] = str(exc)
-
-        return status
-
-    @mcp.tool()
-    async def list_roster() -> dict:
-        """List every locomotive in JMRI's roster: name, DCC address, road, model.
-
-        Use this to discover what locomotives exist and their DCC addresses
-        before calling acquire_throttle/set_speed/etc. — those tools take a
-        DCC address, not a name, and this is currently the only way to find
-        out which address belongs to which named loco (e.g. the user says
-        "start the Autorail" but set_speed needs address=4). road/model can
-        be empty strings if the user never filled them in in JMRI — that's
-        normal, not an error. No side effects.
-
-        This does NOT yet resolve a name to an address for you automatically
-        (that's a future tool) — read the returned list and match the name
-        yourself, tolerating case and partial matches the way a human would
-        ("autorail" / "Autorail" should both find the "Autorail" entry).
-        """
-        try:
-            roster = await jmri_client.get_roster()
-        except JmriError as exc:
-            logger.warning("list_roster failed: %s", exc)
-            return {"error": str(exc)}
-        return {"roster": roster}
-
-    @mcp.tool()
-    async def find_locomotive(name: str) -> dict:
-        """Resolve a locomotive's spoken/typed name to its DCC address.
-
-        Use this whenever the user names a locomotive ("the Autorail",
-        "141R", "start the Pacific") instead of giving a DCC address
-        directly — call this first to get the address, then pass that
-        address to acquire_throttle/set_speed/set_direction/set_function/
-        lights_on/lights_off/etc.
-
-        Matching is tolerant: case-insensitive, accent-insensitive (useful
-        for French names — "boite a sel" matches "Boite à Sel"), and
-        accepts an exact name or an unambiguous partial match ("autorail"
-        matches "Autorail"). If the name matches more than one roster
-        entry, or matches none, this returns an "error" explaining why
-        (listing the candidates or the full roster) instead of guessing —
-        ask the user to clarify rather than picking one yourself.
-        """
-        try:
-            roster = await jmri_client.get_roster()
-            entry = resolve_roster_entry(name, roster)
-        except JmriError as exc:
-            logger.warning("find_locomotive(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
-        return entry
-
-    @mcp.tool()
-    async def get_locomotive_functions(name: str) -> dict:
-        """List a locomotive's named decoder functions (e.g. "F2": "Rear lights").
-
-        JMRI lets the user label each loco's functions individually in its
-        roster editor — call this BEFORE set_function whenever the user
-        refers to a function by what it does ("turn on the rear lights",
-        "blow the whistle") instead of an F-number, so you can look up the
-        right number instead of guessing or asking. Only labels the user
-        actually set are returned; most locos have few or none (an empty
-        "functions" dict is normal, not an error — it means this loco has
-        no custom labels, so ask the user for an F-number instead).
-
-        Args:
-            name: The locomotive's name (fuzzy-resolved the same way as
-                find_locomotive — call this directly, you don't need to
-                call find_locomotive first just to get the exact name).
-
-        Returns functions as {"F0": "label", ...}. Function numbers with no
-        label set are omitted entirely (JMRI has 29 possible slots, F0-F28,
-        per loco — only the labeled ones are useful to you).
-        """
-        try:
-            roster = await jmri_client.get_roster()
-            entry = resolve_roster_entry(name, roster)
-            labels = await jmri_client.get_roster_function_labels(entry["name"])
-        except JmriError as exc:
-            logger.warning("get_locomotive_functions(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
-        return {
-            "name": entry["name"],
-            "address": entry["address"],
-            "functions": {f"F{n}": label for n, label in sorted(labels.items())},
-        }
+    Args:
+        mcp: The FastMCP server instance to register tools on.
+    """
 
     @mcp.tool()
     async def acquire_throttle(address: int, prefix: str | None = None) -> dict:
@@ -267,11 +47,11 @@ def register(mcp) -> None:
         """
         client = get_ws_client()
         try:
-            data = await client.acquire_throttle(_throttle_id(address), address, prefix)
+            data = await client.acquire_throttle(throttle_id(address), address, prefix)
         except JmriWsError as exc:
             logger.warning("acquire_throttle(%r, %r) failed: %s", address, prefix, exc)
             return {"error": str(exc)}
-        return {"acquired": True, **_compact_throttle(data)}
+        return {"acquired": True, **compact_throttle(data)}
 
     @mcp.tool()
     async def release_throttle(address: int) -> dict:
@@ -288,7 +68,7 @@ def register(mcp) -> None:
         """
         client = get_ws_client()
         try:
-            await client.release_throttle(_throttle_id(address))
+            await client.release_throttle(throttle_id(address))
         except JmriWsError as exc:
             logger.warning("release_throttle(%r) failed: %s", address, exc)
             return {"error": str(exc)}
@@ -326,8 +106,8 @@ def register(mcp) -> None:
         client = get_ws_client()
         speed = max(0.0, min(100.0, speed_percent)) / 100.0
         try:
-            await _ensure_acquired(client, address)
-            data = await client.set_speed(_throttle_id(address), speed)
+            await ensure_acquired(client, address)
+            data = await client.set_speed(throttle_id(address), speed)
         except JmriWsError as exc:
             logger.warning("set_speed(%r, %r) failed: %s", address, speed_percent, exc)
             return {"error": str(exc)}
@@ -357,8 +137,8 @@ def register(mcp) -> None:
         """
         client = get_ws_client()
         try:
-            await _ensure_acquired(client, address)
-            data = await client.set_speed(_throttle_id(address), 0.0)
+            await ensure_acquired(client, address)
+            data = await client.set_speed(throttle_id(address), 0.0)
         except JmriWsError as exc:
             logger.warning("stop(%r) failed: %s", address, exc)
             return {"error": str(exc)}
@@ -389,8 +169,8 @@ def register(mcp) -> None:
         """
         client = get_ws_client()
         try:
-            await _ensure_acquired(client, address)
-            data = await client.set_speed(_throttle_id(address), -1.0)
+            await ensure_acquired(client, address)
+            data = await client.set_speed(throttle_id(address), -1.0)
         except JmriWsError as exc:
             logger.warning("emergency_stop(%r) failed: %s", address, exc)
             return {"error": str(exc)}
@@ -436,12 +216,12 @@ def register(mcp) -> None:
             return {"error": f"direction must be 'forward' or 'reverse', got {direction!r}"}
         forward = normalized == "forward"
         try:
-            await _ensure_acquired(client, address)
-            data = await client.set_direction(_throttle_id(address), forward)
+            await ensure_acquired(client, address)
+            data = await client.set_direction(throttle_id(address), forward)
         except JmriWsError as exc:
             logger.warning("set_direction(%r, %r) failed: %s", address, direction, exc)
             return {"error": str(exc)}
-        return {"address": address, "direction": _direction_name(data.get("forward", forward))}
+        return {"address": address, "direction": direction_name(data.get("forward", forward))}
 
     @mcp.tool()
     async def set_function(address: int, function: int, state: bool) -> dict:
@@ -477,8 +257,8 @@ def register(mcp) -> None:
             return {"error": f"function must be 0-28, got {function}"}
         client = get_ws_client()
         try:
-            await _ensure_acquired(client, address)
-            data = await client.set_function(_throttle_id(address), function, state)
+            await ensure_acquired(client, address)
+            data = await client.set_function(throttle_id(address), function, state)
         except JmriWsError as exc:
             logger.warning("set_function(%r, %r, %r) failed: %s", address, function, state, exc)
             return {"error": str(exc)}

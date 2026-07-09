@@ -51,7 +51,6 @@ async def test_acquire_and_release_throttle(fake_jmri):
 
 
 async def test_keepalive_sends_ping_and_gets_pong(fake_jmri, monkeypatch):
-    import jmri_mcp.jmri_ws as ws_module
     client = JmriWsClient()
     await client.connect()
     # heartbeat is 200ms -> keepalive interval is max(0.1, 1.0) = 1.0s by

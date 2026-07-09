@@ -4,7 +4,7 @@
 convenience tool for exercising the same JMRI logic the MCP tools use, without
 needing an MCP client (Claude, Kira, ...) in the loop. Useful for quick manual
 checks against a real layout, or for debugging. `power`/`status` use
-`jmri_client.py` (one-shot HTTP); `throttle` uses `jmri_ws.py` (a fresh
+`jmri_client/` (one-shot HTTP); `throttle` uses `jmri_ws/` (a fresh
 WebSocket connection for the one command, then closed).
 
 See [install.md](install.md) if `jmri-cli` isn't found on your PATH.
@@ -70,7 +70,7 @@ WARNING: requested ON but observed state did not confirm after re-read
 ## `jmri-cli roster`
 
 List every locomotive in JMRI's roster: DCC address, name, road, model.
-Uses `jmri_client.py` (one-shot HTTP), like `power`/`status`. No side
+Uses `jmri_client/` (one-shot HTTP), like `power`/`status`. No side
 effects. Empty road/model print as `-` (the user never filled them in in
 JMRI — not an error).
 

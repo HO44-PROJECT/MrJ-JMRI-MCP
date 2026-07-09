@@ -1,9 +1,11 @@
 # CLI reference
 
-`jmri-cli` talks to `jmri_client.py` directly — no MCP/JSON-RPC involved. It's a
+`jmri-cli` talks to JMRI directly — no MCP/JSON-RPC involved. It's a
 convenience tool for exercising the same JMRI logic the MCP tools use, without
 needing an MCP client (Claude, Kira, ...) in the loop. Useful for quick manual
-checks against a real layout, or for debugging.
+checks against a real layout, or for debugging. `power`/`status` use
+`jmri_client.py` (one-shot HTTP); `throttle` uses `jmri_ws.py` (a fresh
+WebSocket connection for the one command, then closed).
 
 See [install.md](install.md) if `jmri-cli` isn't found on your PATH.
 
@@ -63,6 +65,34 @@ to stderr and exits with code 1 — it never silently reports success:
 $ jmri-cli power set zou on
 DCC++ Zou      : OFF
 WARNING: requested ON but observed state did not confirm after re-read
+```
+
+## `jmri-cli throttle acquire <address> [--prefix P]`
+
+Acquire a loco by DCC address on a fresh WebSocket connection, print its
+reported speed/direction, then close the connection (which releases the
+throttle JMRI-side — this is a one-shot check, not a way to hold a throttle
+open from the shell). `--prefix` targets a specific command station (e.g.
+`R` for DCC++ Raijin) when more than one is connected.
+
+```bash
+$ jmri-cli throttle acquire 3
+address=3 speed=0.0 forward=True (acquired)
+```
+
+## `jmri-cli throttle release <address>`
+
+Acquire then immediately release a loco by DCC address on a fresh
+connection — mirrors what closing an MCP client's connection does for a
+throttle it was holding. Since a throttle only means something on the
+connection that holds it, a brand-new CLI connection can't release a
+throttle another session is holding onto (that one releases itself when
+*that* connection closes); this command exists mainly to confirm the
+release round-trip works.
+
+```bash
+$ jmri-cli throttle release 3
+address=3 released
 ```
 
 ## Exit codes

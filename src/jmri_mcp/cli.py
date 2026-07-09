@@ -5,10 +5,14 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status ohara
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power set ohara on
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli status
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle acquire 3
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle release 3
 
-Talks to jmri_client.py directly (no MCP/JSON-RPC involved) — useful for
-quick manual checks against a real layout, same role test_manuel.py used
-to play before it became tests/test_live.py.
+`power`/`status` talk to jmri_client.py directly (one-shot HTTP, no
+MCP/JSON-RPC involved). `throttle` talks to jmri_ws.py (a fresh WebSocket
+connection for the one command, then closed) — useful for quick manual
+checks against a real layout, same role test_manuel.py used to play before
+it became tests/test_live.py.
 """
 
 import argparse
@@ -22,6 +26,8 @@ from jmri_mcp.jmri_client import (
     resolve_system,
     set_power,
 )
+from jmri_mcp.jmri_ws import JmriError as JmriWsError
+from jmri_mcp.jmri_ws import JmriWsClient
 
 _STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
 
@@ -83,6 +89,41 @@ async def system_status(args: argparse.Namespace) -> int:
     return 0
 
 
+async def throttle_acquire(args: argparse.Namespace) -> int:
+    client = JmriWsClient()
+    try:
+        data = await client.acquire_throttle(f"cli{args.address}", args.address, args.prefix)
+    except JmriWsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await client.close()
+
+    print(f"address={data.get('address')} speed={data.get('speed')} "
+          f"forward={data.get('forward')} (acquired)")
+    return 0
+
+
+async def throttle_release(args: argparse.Namespace) -> int:
+    # A throttle is only meaningfully released on the connection that holds
+    # it — a fresh CLI connection never holds another session's throttle,
+    # so this acquires (JMRI just re-confirms if already held elsewhere)
+    # then releases on this same connection, mirroring what closing that
+    # other connection would do.
+    client = JmriWsClient()
+    try:
+        await client.acquire_throttle(f"cli{args.address}", args.address)
+        await client.release_throttle(f"cli{args.address}")
+    except JmriWsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await client.close()
+
+    print(f"address={args.address} released")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jmri-cli", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -104,6 +145,19 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="One-call diagnostic: JMRI reachability, version, power systems"
     )
     status_cmd.set_defaults(func=system_status)
+
+    throttle = subparsers.add_parser("throttle", help="Throttle commands (persistent WebSocket)")
+    throttle_sub = throttle.add_subparsers(dest="throttle_command", required=True)
+
+    acquire = throttle_sub.add_parser("acquire", help="Acquire a loco by DCC address")
+    acquire.add_argument("address", type=int, help="DCC address")
+    acquire.add_argument("--prefix", default=None,
+                          help="Command station prefix (e.g. O, Z, R) to target")
+    acquire.set_defaults(func=throttle_acquire)
+
+    release = throttle_sub.add_parser("release", help="Release a loco by DCC address")
+    release.add_argument("address", type=int, help="DCC address")
+    release.set_defaults(func=throttle_release)
 
     return parser
 

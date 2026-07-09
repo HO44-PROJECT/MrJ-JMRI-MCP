@@ -179,3 +179,37 @@ async def test_set_direction_reports_error_honestly(monkeypatch):
     mcp = make_server()
     out = await call(mcp, "set_direction", address=3, direction="forward")
     assert "error" in out
+
+
+async def test_set_function_auto_acquires_and_sets_state(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_function", address=3, function=5, state=True)
+    assert out == {"address": 3, "function": 5, "state": True}
+
+
+async def test_set_function_rejects_out_of_range(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_function", address=3, function=29, state=True)
+    assert "error" in out
+    out = await call(mcp, "set_function", address=3, function=-1, state=True)
+    assert "error" in out
+
+
+async def test_set_function_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "set_function", address=3, function=0, state=True)
+    assert "error" in out
+
+
+async def test_lights_on_sets_function_zero(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "lights_on", address=3)
+    assert out == {"address": 3, "function": 0, "state": True}
+
+
+async def test_lights_off_sets_function_zero(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "lights_on", address=3)
+    out = await call(mcp, "lights_off", address=3)
+    assert out == {"address": 3, "function": 0, "state": False}

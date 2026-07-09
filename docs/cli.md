@@ -110,6 +110,22 @@ $ jmri-cli throttle speed 3 40
 address=3 speed=40%
 ```
 
+**Known limitation, live-verified**: a JMRI throttle only means anything
+on the connection that holds it, and JMRI releases it the moment that
+connection closes — so this one-shot command's real-world effect on a
+nonzero speed is not reliable (the loco does not necessarily keep moving
+at the requested speed after this command returns). A "hold the
+connection open until Ctrl-C" variant was tried and rejected: closing on
+Ctrl-C released the throttle without sending a stop first, so the loco
+kept coasting at the last speed instead of stopping — a worse surprise.
+For actually driving a loco and having it keep the requested speed, use
+an MCP client (Claude Desktop, Kira) instead: the MCP server holds one
+shared WebSocket connection open for its whole process lifetime (see
+[architecture.md](architecture.md)), so `set_speed` there does not have
+this problem. This CLI command remains useful for confirming JMRI accepts
+a speed command at the protocol level (e.g. while debugging), not for
+actually driving the layout by hand.
+
 ## `jmri-cli throttle stop <address>`
 
 Controlled stop: sets speed to 0. Different from `estop` below — this is a
@@ -144,6 +160,37 @@ $ jmri-cli throttle direction 3 reverse
 address=3 direction=reverse
 ```
 
+## `jmri-cli throttle function <address> <function> <on|off>`
+
+Acquire a loco by DCC address (if not already held) on a fresh connection,
+set decoder function `F<function>` (0-28) on or off, print the state JMRI
+actually reports back, then close the connection. What each function
+number controls is decoder/roster-specific (F0 is almost universally the
+headlight, see `lights-on`/`lights-off` below) — this command has no
+function-name lookup, it just sends the number given. Out-of-range numbers
+(outside 0-28) are rejected locally without contacting JMRI. Safe to call
+repeatedly with the same state — same no-op/cache behavior as
+`speed`/`stop`/`estop`/`direction` (see below).
+
+```bash
+$ jmri-cli throttle function 3 1 on
+address=3 F1=on
+$ jmri-cli throttle function 3 30 on
+Error: function must be 0-28, got 30
+```
+
+## `jmri-cli throttle lights-on <address>` / `lights-off <address>`
+
+Shortcuts for `function <address> 0 on`/`off` — F0 is the near-universal
+DCC headlight function across decoders.
+
+```bash
+$ jmri-cli throttle lights-on 3
+address=3 F0=on
+$ jmri-cli throttle lights-off 3
+address=3 F0=off
+```
+
 ## `jmri-cli throttle sniff [-a N ...] [--show-pong]`
 
 Opens a WebSocket connection and prints every JMRI message it receives,
@@ -175,16 +222,17 @@ That `speed: 0.25` line above came from a *different* `jmri-cli throttle
 speed 3 25` run concurrently in another terminal — this is JMRI's
 cross-connection push in action (see [architecture.md](architecture.md)).
 
-`stop`, `estop`, `speed`, and `direction` are all safe to call repeatedly
-with the same target state — JMRI sends no reply at all when the requested
+`stop`, `estop`, `speed`, `direction`, and `function` (including the
+`lights-on`/`lights-off` shortcuts) are all safe to call repeatedly with
+the same target state — JMRI sends no reply at all when the requested
 value already matches the current one, and the client checks a live local
 cache of the throttle's state before sending, so a repeat call reports the
 same result immediately instead of hanging until timeout. That cache is
 kept fresh by JMRI itself: it pushes every throttle state change to all
 connections holding the same address, not only the one that made the
-change, so this also correctly reflects a speed/direction change made by
-another client (a JMRI panel, another `jmri-cli`/MCP session) — see
-[architecture.md](architecture.md) for the wire-level detail.
+change, so this also correctly reflects a speed/direction/function change
+made by another client (a JMRI panel, another `jmri-cli`/MCP session) —
+see [architecture.md](architecture.md) for the wire-level detail.
 
 ## Exit codes
 

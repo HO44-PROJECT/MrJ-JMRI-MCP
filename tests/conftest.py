@@ -57,7 +57,7 @@ async def fake_jmri(monkeypatch):
     Also mirrors two real-JMRI behaviors verified live (see jmri_ws.py's
     module docstring), since they're what motivated the cache/correlation
     redesign and need real coverage, not just live-server spot checks:
-      - silent no-op: no reply is sent when a requested speed/forward
+      - silent no-op: no reply is sent when a requested speed/forward/F<n>
         already equals the address's current state.
       - cross-connection push: a state change on one connection is pushed,
         unprompted, to every OTHER connection that also holds the same
@@ -68,7 +68,7 @@ async def fake_jmri(monkeypatch):
         "drop_next": False,
         "power_state": 4,
         "acquired": set(),  # throttle ids acquired on *some* connection
-        # address -> {"speed": float, "forward": bool}
+        # address -> {"speed": float, "forward": bool, "functions": {int: bool}}
         "loco_state": {},
         # address -> list of (ws, throttle_id) holding it, across connections
         "holders": {},
@@ -120,16 +120,26 @@ async def fake_jmri(monkeypatch):
                              if any(h[1] == throttle_id for h in holders)),
                             None,
                         )
-                        current = state["loco_state"].setdefault(address, {"speed": 0.0, "forward": True})
+                        current = state["loco_state"].setdefault(
+                            address, {"speed": 0.0, "forward": True, "functions": {}}
+                        )
                         changed = {}
                         if "speed" in data and data["speed"] != current.get("speed"):
                             changed["speed"] = data["speed"]
                         if "forward" in data and data["forward"] != current.get("forward"):
                             changed["forward"] = data["forward"]
+                        for key, value in data.items():
+                            if key[0] == "F" and key[1:].isdigit():
+                                if value != current["functions"].get(key):
+                                    changed[key] = value
                         if not changed:
                             # real JMRI: silently drops a no-op request, no reply at all.
                             continue
-                        current.update(changed)
+                        for key, value in changed.items():
+                            if key[0] == "F" and key[1:].isdigit():
+                                current["functions"][key] = value
+                            else:
+                                current[key] = value
                         for holder_ws, holder_id in state["holders"].get(address, []):
                             reply_data = {"throttle": holder_id, **changed}
                             await holder_ws.send(json.dumps({"type": "throttle", "data": reply_data}))
@@ -140,7 +150,9 @@ async def fake_jmri(monkeypatch):
                         state["holders"][address] = [
                             h for h in state["holders"][address] if h[1] != throttle_id
                         ] + [(ws, throttle_id)]
-                        loco = state["loco_state"].setdefault(address, {"speed": 0.0, "forward": True})
+                        loco = state["loco_state"].setdefault(
+                            address, {"speed": 0.0, "forward": True, "functions": {}}
+                        )
                         reply_data = {
                             "address": address,
                             "throttle": throttle_id,

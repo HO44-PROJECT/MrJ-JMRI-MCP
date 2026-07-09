@@ -41,7 +41,7 @@ async def test_acquire_and_release_throttle(fake_jmri):
     data = await client.acquire_throttle("t1", 42)
     assert data["address"] == 42
     assert client._throttles == {
-        "t1": {"address": 42, "prefix": None, "speed": 0.0, "forward": True}
+        "t1": {"address": 42, "prefix": None, "speed": 0.0, "forward": True, "functions": {}}
     }
 
     data = await client.release_throttle("t1")
@@ -166,6 +166,44 @@ async def test_set_direction_pushes_to_other_connection_holding_same_address(fak
             break
         await asyncio.sleep(0.05)
     assert a._throttles["a1"]["forward"] is False
+
+    await a.close()
+    await b.close()
+
+
+async def test_set_function_on_acquired_throttle(fake_jmri):
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)
+    data = await client.set_function("t1", 1, True)
+    assert data["F1"] is True
+    await client.close()
+
+
+async def test_set_function_noop_skips_request_without_hanging(fake_jmri, monkeypatch):
+    import jmri_mcp.jmri_ws as ws_module
+    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)
+    await client.set_function("t1", 0, True)
+    data = await client.set_function("t1", 0, True)  # already True -> must not send
+    assert data == {"throttle": "t1", "F0": True}
+    await client.close()
+
+
+async def test_set_function_pushes_to_other_connection_holding_same_address(fake_jmri):
+    a = JmriWsClient()
+    b = JmriWsClient()
+    await a.acquire_throttle("a1", 9)
+    await b.acquire_throttle("b1", 9)
+
+    await b.set_function("b1", 2, True)
+
+    for _ in range(50):
+        if a._throttles["a1"].get("functions", {}).get(2) is True:
+            break
+        await asyncio.sleep(0.05)
+    assert a._throttles["a1"]["functions"][2] is True
 
     await a.close()
     await b.close()

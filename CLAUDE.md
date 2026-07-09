@@ -125,7 +125,7 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
 4. Present the result to the user; **wait for their validation**.
 5. On validation: commit with `Closes #N` in the message, push, move the card to **Done**.
 
-## Current state (end of session 2026-07-09)
+## Current state (end of session 2026-07-09, continued)
 
 - Issues #1–#7 implemented, validated, committed, closed. M1 done; M2 underway.
   - #7 (persistent WebSocket client): `src/jmri_mcp/jmri_ws.py` — `JmriWsClient` with lazy
@@ -200,8 +200,8 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
     including the discovery that PanelPro's "Stop" button sends `speed:-1.0` (JMRI's
     decoder e-stop) rather than a controlled `speed:0.0` — a PanelPro/JMRI convention
     unrelated to this project's own `stop` vs `emergency_stop` distinction, not a bug.
-- **Issue #10 (set_direction forward/reverse) implemented, live-verified, AWAITING USER
-  VALIDATION** (not committed yet): new `JmriWsClient.set_direction()` in `jmri_ws.py`,
+- Issue #10 (set_direction forward/reverse) implemented, live-verified, validated,
+  committed (`f5c5119`), pushed, closed. M2 continues with #11. New `JmriWsClient.set_direction()` in `jmri_ws.py`,
   mirroring `set_speed()`'s cache-check-then-request/no-op-skip pattern exactly (same
   live-synced `_throttles[id]["forward"]` cache, same silent-no-op handling). New
   `set_direction` MCP tool in `tools.py` accepts case-insensitive `"forward"`/`"reverse"`
@@ -230,6 +230,49 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
     stop-before-reversing best practice, that direction is independent of speed, and the
     same no-op/external-change caveats as `set_speed`; the CLI subcommand and its live
     verification were done as part of this same implementation pass, not deferred.
+- **Issue #11 (set_function F0-F28 + lights_on/lights_off) implemented, live-verified,
+  AWAITING USER VALIDATION** (not committed yet): M2 (#7-#11) now fully implemented pending
+  this last validation. New `JmriWsClient.set_function()` in `jmri_ws.py`, mirroring
+  `set_speed()`/`set_direction()`'s cache-check-then-request/no-op-skip pattern, but keyed
+  per function number rather than a single field: `_throttles[id]["functions"]` is a
+  `{int: bool}` dict, populated by `_update_throttle_cache()` parsing any `F<n>` field off
+  *any* throttle message seen (solicited or pushed), same as speed/forward. New
+  `set_function` MCP tool in `tools.py` validates `0 <= function <= 28` locally before
+  contacting JMRI (JMRI's own valid range); reuses `_ensure_acquired()` so it auto-acquires
+  like the other throttle tools. `lights_on`/`lights_off` MCP tools are thin wrappers
+  calling `set_function(address, 0, True/False)` directly as a plain Python call (verified
+  the `@mcp.tool()` decorator returns the original undecorated function, so this works) —
+  this project's answer to the legacy prototype's non-functional `lights_on`/`lights_off`
+  (which never worked because the prototype had no persistent connection/acquire step at
+  all; see `legacy/jmri_experimental.py`).
+  - CLI parity: added `jmri-cli throttle function <address> <function> <on|off>` (local
+    0-28 range validation before touching JMRI) and `lights-on`/`lights-off` shortcut
+    subcommands, mirroring the acquire-then-act/fresh-connection pattern of the other
+    throttle subcommands.
+  - `tests/conftest.py`'s `fake_jmri` fixture extended: `loco_state` entries now carry a
+    `functions` dict alongside `speed`/`forward`, and the no-op-diff logic generically
+    handles any `F<n>` key in a request the same way it already handled `speed`/`forward`
+    (silent no-op if unchanged, pushed to all holders of the address if changed).
+  - 7 new tests: 3 client-level (`set_function` basic/no-op-skip/cross-connection-push) and
+    4 tool-level (`set_function` auto-acquire, range rejection, error honesty, plus
+    `lights_on`/`lights_off`). Full suite: 76 passed.
+  - Live-verified against real JMRI (DCC++ Raijin, address 3): F1 on, repeated F1 on
+    (no-op, ~0.27s not a hang), F1 off, F30 rejected locally without contacting JMRI,
+    `lights-on`/`lights-off` (both CLI and MCP tool paths), and cross-connection push of an
+    F3 toggle observed live via `jmri-cli throttle sniff -a 3` (showed up as
+    `functions_on: ["F3"]` on toggle-on, and correctly omitted `functions_on` entirely on
+    toggle-off — confirming sniff's existing compaction logic from #9 needed no changes for
+    functions).
+  - `docs/architecture.md` and `docs/cli.md` updated in the same pass: architecture notes
+    the per-function cache shape and that `lights_on`/`lights_off` call `set_function`
+    directly rather than through the MCP dispatcher; cli.md gained `function` and
+    `lights-on`/`lights-off` subcommand sections.
+  - Applied [[feedback-llm-cli-checklist]] from the start: `set_function`'s docstring
+    explicitly tells the LLM F0's near-universal headlight convention isn't a protocol
+    guarantee, that F1-F28 meanings are decoder/roster-specific and unknown to this tool
+    (project has no roster-driven function-name lookup yet, that's M3), and to ask the user
+    for an F-number rather than guess when they name a function by effect (e.g. "turn on
+    the bell"); CLI subcommands were built and live-tested in the same pass, not deferred.
 - `environment.yml` added (prior session): dedicated `jmri-mcp` conda env on Python 3.12,
   independent of `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently
   still run the `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env

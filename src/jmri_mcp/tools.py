@@ -1,7 +1,8 @@
 """Power and throttle tools exposed to the LLM.
 
 Throttle tools (acquire_throttle, release_throttle, set_speed, stop,
-emergency_stop) key everything on DCC address — see _throttle_id.
+emergency_stop, set_direction, set_function, lights_on, lights_off) key
+everything on DCC address — see _throttle_id.
 """
 
 import logging
@@ -343,3 +344,64 @@ def register(mcp) -> None:
             logger.warning("set_direction(%r, %r) failed: %s", address, direction, exc)
             return {"error": str(exc)}
         return {"address": address, "direction": _direction_name(data.get("forward", forward))}
+
+    @mcp.tool()
+    async def set_function(address: int, function: int, state: bool) -> dict:
+        """Turn one of a locomotive's decoder functions (F0-F28) on or off.
+
+        Args:
+            address: The locomotive's DCC address. Acquires the throttle
+                automatically if this session doesn't already hold it.
+            function: Function number, 0-28 inclusive (validated; anything
+                outside that range returns an error rather than being sent
+                to JMRI). What each number actually controls is decoder/
+                roster-specific and NOT known by this tool — F0 is almost
+                universally the headlight(s) (see lights_on/lights_off
+                below for that common case), but F1-F28 vary loco to loco
+                (bell, horn, sound effects, couplers, etc.) and this project
+                has no roster-driven function-name lookup yet. If a user
+                names a function by effect ("turn on the bell") rather than
+                number and you don't already know the mapping for this
+                loco, ask which F-number it is rather than guessing.
+            state: True to turn the function on, False to turn it off.
+
+        Safe to call repeatedly with the same state: like set_speed/
+        set_direction, JMRI silently no-ops a redundant "already in this
+        state" request instead of replying, and this tool checks a local
+        per-function cache — kept fresh by JMRI's own broadcasts from ANY
+        client holding this address, not just this one — before deciding
+        whether to send anything, so a repeat call (or a function last
+        toggled by a JMRI panel/PanelPro) still reports the correct current
+        state instead of hanging.
+        """
+        if not (0 <= function <= 28):
+            return {"error": f"function must be 0-28, got {function}"}
+        client = get_ws_client()
+        try:
+            await _ensure_acquired(client, address)
+            data = await client.set_function(_throttle_id(address), function, state)
+        except JmriWsError as exc:
+            logger.warning("set_function(%r, %r, %r) failed: %s", address, function, state, exc)
+            return {"error": str(exc)}
+        return {"address": address, "function": function, "state": data.get(f"F{function}", state)}
+
+    @mcp.tool()
+    async def lights_on(address: int) -> dict:
+        """Turn on a locomotive's headlight(s): shortcut for set_function(address, 0, True).
+
+        F0 is almost universally the headlight function across DCC decoders
+        (this is a very strong convention, not a JMRI/protocol guarantee),
+        so this is the tool to reach for on a plain "turn the lights on"
+        voice request without asking the user for a function number. Same
+        auto-acquire and no-op-safe behavior as set_function.
+        """
+        return await set_function(address, 0, True)
+
+    @mcp.tool()
+    async def lights_off(address: int) -> dict:
+        """Turn off a locomotive's headlight(s): shortcut for set_function(address, 0, False).
+
+        See lights_on for why F0. Same auto-acquire and no-op-safe behavior
+        as set_function.
+        """
+        return await set_function(address, 0, False)

@@ -11,6 +11,9 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle stop 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle estop 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle direction 3 reverse
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle function 3 1 on
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle lights-on 3
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle lights-off 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle sniff
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle sniff --address 3 --address 7
 
@@ -132,6 +135,32 @@ async def throttle_release(args: argparse.Namespace) -> int:
 
 
 async def throttle_speed(args: argparse.Namespace) -> int:
+    # NOTE (2026-07-09): a throttle only means anything on the connection
+    # holding it - JMRI releases it the moment this connection closes, and
+    # verified live, a plain acquire/set/close one-shot does not reliably
+    # keep the real locomotive moving at the requested speed. A "hold the
+    # connection open until Ctrl-C" version (like `sniff`) was tried, but
+    # disabled per user request: on Ctrl-C the loco kept coasting at the
+    # last speed instead of stopping, because closing the socket releases
+    # the throttle without sending a stop first - a worse surprise than the
+    # one-shot's unreliability. Left commented out below rather than
+    # deleted; needs a real fix (e.g. send speed 0 before closing on
+    # Ctrl-C) before re-enabling, not reverted from history if needed:
+    #
+    #     print(f"address={args.address} speed={data.get('speed', speed) * 100:.0f}%")
+    #     if speed == 0.0:
+    #         await client.close()
+    #         return 0
+    #     print("Holding throttle open, Ctrl-C to release...", file=sys.stderr)
+    #     try:
+    #         while True:
+    #             await asyncio.sleep(3600)
+    #     except (KeyboardInterrupt, asyncio.CancelledError):
+    #         pass
+    #     finally:
+    #         await client.close()
+    #     print(f"address={args.address} throttle released")
+    #     return 0
     client = JmriWsClient()
     speed = max(0.0, min(100.0, args.speed_percent)) / 100.0
     try:
@@ -192,6 +221,36 @@ async def throttle_direction(args: argparse.Namespace) -> int:
     reported = "forward" if data.get("forward", forward) else "reverse"
     print(f"address={args.address} direction={reported}")
     return 0
+
+
+async def throttle_function(args: argparse.Namespace) -> int:
+    if not (0 <= args.function <= 28):
+        print(f"Error: function must be 0-28, got {args.function}", file=sys.stderr)
+        return 1
+    client = JmriWsClient()
+    state = args.state == "on"
+    try:
+        await client.acquire_throttle(f"cli{args.address}", args.address)
+        data = await client.set_function(f"cli{args.address}", args.function, state)
+    except JmriWsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await client.close()
+
+    reported = "on" if data.get(f"F{args.function}", state) else "off"
+    print(f"address={args.address} F{args.function}={reported}")
+    return 0
+
+
+async def throttle_lights_on(args: argparse.Namespace) -> int:
+    args.function, args.state = 0, "on"
+    return await throttle_function(args)
+
+
+async def throttle_lights_off(args: argparse.Namespace) -> int:
+    args.function, args.state = 0, "off"
+    return await throttle_function(args)
 
 
 def _format_sniff_data(msg_type: str, data) -> str:
@@ -310,6 +369,20 @@ def build_parser() -> argparse.ArgumentParser:
     direction.add_argument("address", type=int, help="DCC address")
     direction.add_argument("direction", choices=["forward", "reverse"])
     direction.set_defaults(func=throttle_direction)
+
+    function = throttle_sub.add_parser("function", help="Set a decoder function F0-F28 on/off")
+    function.add_argument("address", type=int, help="DCC address")
+    function.add_argument("function", type=int, help="Function number, 0-28")
+    function.add_argument("state", choices=["on", "off"])
+    function.set_defaults(func=throttle_function)
+
+    lights_on = throttle_sub.add_parser("lights-on", help="Shortcut for function <address> 0 on")
+    lights_on.add_argument("address", type=int, help="DCC address")
+    lights_on.set_defaults(func=throttle_lights_on)
+
+    lights_off = throttle_sub.add_parser("lights-off", help="Shortcut for function <address> 0 off")
+    lights_off.add_argument("address", type=int, help="DCC address")
+    lights_off.set_defaults(func=throttle_lights_off)
 
     sniff = throttle_sub.add_parser(
         "sniff", help="Dump every JMRI WebSocket message live, until Ctrl-C"

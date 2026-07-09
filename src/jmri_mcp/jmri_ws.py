@@ -26,10 +26,11 @@ Also verified live: JMRI sends no reply at all when a requested speed
 already equals the current speed (a real no-op, not a dropped message) —
 so requests can't rely on "no reply" meaning "something's wrong". Both
 facts are handled by dispatch updating a per-throttle state cache
-(`_throttles[id]["speed"/"forward"]`) from every throttle message seen,
-solicited or not; `set_speed()` reads that cache immediately before acting
-and skips sending if it already matches, rather than guessing from a stale
-value set once at acquire time.
+(`_throttles[id]["speed"/"forward"/"functions"]`) from every throttle
+message seen, solicited or not; `set_speed()`/`set_direction()`/
+`set_function()` read that cache immediately before acting and skip
+sending if it already matches, rather than guessing from a stale value set
+once at acquire time.
 """
 
 import asyncio
@@ -225,6 +226,21 @@ class JmriWsClient:
             return {"throttle": throttle_id, "forward": forward}
         return await self.request("throttle", {"throttle": throttle_id, "forward": forward})
 
+    async def set_function(self, throttle_id: str, function: int, state: bool) -> dict[str, Any]:
+        """Set a decoder function (F0-F28) on an already-acquired throttle.
+
+        Same no-op/cache logic as set_speed/set_direction, applied per
+        function key: the per-throttle cache keeps a "functions" dict
+        (`{0: False, 1: True, ...}`) fed from every throttle message seen
+        for this id, solicited or not, so a repeat call — or a function
+        last toggled by another client — resolves from live state instead
+        of blindly resending.
+        """
+        info = self._throttles.get(throttle_id)
+        if info is not None and info.get("functions", {}).get(function) == state:
+            return {"throttle": throttle_id, f"F{function}": state}
+        return await self.request("throttle", {"throttle": throttle_id, f"F{function}": state})
+
     # -- internals ---------------------------------------------------
 
     async def _do_connect(self) -> None:
@@ -332,6 +348,10 @@ class JmriWsClient:
             info["speed"] = data["speed"]
         if "forward" in data:
             info["forward"] = data["forward"]
+        functions = info.setdefault("functions", {})
+        for key, value in data.items():
+            if key and key[0] == "F" and key[1:].isdigit():
+                functions[int(key[1:])] = value
 
     async def _keepalive_loop(self) -> None:
         interval = max(self._heartbeat_ms / 1000 / 2, 1.0)

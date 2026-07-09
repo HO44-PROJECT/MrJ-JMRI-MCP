@@ -7,13 +7,14 @@ src/jmri_mcp/
 ├── jmri_ws.py      # persistent WebSocket client (ws://<jmri>/json/) for throttles
 ├── tools.py        # MCP tools exposed to the LLM (list_systems, get_power, set_power,
 │                   #   system_status, acquire_throttle, release_throttle, set_speed,
-│                   #   stop, emergency_stop, set_direction)
+│                   #   stop, emergency_stop, set_direction, set_function, lights_on,
+│                   #   lights_off)
 ├── cli.py          # jmri-cli: manual command-line tool, no MCP client needed
 └── server.py       # FastMCP entry point (stdio; logging → stderr only)
 ```
 
-More tools (direction/function control, roster, turnouts, sensors,
-lights) will land here as their milestones are implemented — see the
+More tools (roster, turnouts, sensors) will land here as their milestones
+are implemented — see the
 [project board](https://github.com/orgs/HO44-PROJECT/projects/3).
 
 ## Two JMRI clients, two different shapes
@@ -66,18 +67,20 @@ different protocols on that same port.
   push, are handed to an optional `on_event` callback instead of being
   dropped.
 - **Live throttle state cache, fed by pushes.** Verified live: JMRI (a)
-  sends no reply at all when a requested speed/direction already equals
-  the current value (a real no-op, not a dropped message — a naive
+  sends no reply at all when a requested speed/direction/function already
+  equals the current value (a real no-op, not a dropped message — a naive
   "wait for one reply" design hangs until timeout), and (b) pushes every
   throttle state change to *all* connections holding that address, not
   just the one that requested it — so a loco's speed can change from a
   JMRI panel or another session and this client finds out the same way.
-  `_dispatch()` updates `_throttles[id]["speed"/"forward"]` from *every*
-  throttle message it sees, solicited or not, before deciding whether
-  that message is the answer to a pending request. `set_speed()` checks
-  that cache first and skips sending when the value's already current —
-  safe specifically because the cache is kept live by JMRI's own pushes,
-  not just by this client's own past commands.
+  `_dispatch()` updates `_throttles[id]["speed"/"forward"/"functions"]`
+  from *every* throttle message it sees, solicited or not, before deciding
+  whether that message is the answer to a pending request (`functions` is
+  a `{int: bool}` dict keyed by function number, built by parsing any
+  `F<n>` field in the message). `set_speed()`/`set_direction()`/
+  `set_function()` all check that cache first and skip sending when the
+  value's already current — safe specifically because the cache is kept
+  live by JMRI's own pushes, not just by this client's own past commands.
 
 See `CLAUDE.md`'s "Verified facts" section for the exact wire format
 (hello/ping/pong/power/throttle payloads) captured from the user's JMRI.
@@ -95,22 +98,27 @@ On server shutdown, `server.py` closes the shared `JmriWsClient`; JMRI
 releases every throttle bound to that connection automatically, so no
 explicit "release all" call is needed on exit.
 
-`set_speed`/`stop`/`emergency_stop`/`set_direction` reuse the same
-address-keyed throttle: if the address hasn't been acquired on this
-connection yet, `_ensure_acquired` acquires it transparently first (JMRI
-rejects speed/direction/function commands on a throttle id it's never seen
-an acquire for). `set_speed` takes a 0-100 percentage from the LLM and
-converts to JMRI's 0.0-1.0 scale; `stop` is speed 0.0, `emergency_stop` is
-speed -1.0 (JMRI's decoder emergency stop, a distinct command from a
-controlled stop). `set_speed`/`stop`/`emergency_stop` go through
-`JmriWsClient.set_speed()`; `set_direction` goes through the analogous
-`JmriWsClient.set_direction()`, which checks the live per-throttle cache's
-`forward` field before sending using the exact same no-op-skip logic. Both
-methods share the cache described in "Live throttle state cache, fed by
-pushes" above — safe even though the loco's speed/direction can be changed
-by something other than this MCP session. `set_direction` also translates
+`set_speed`/`stop`/`emergency_stop`/`set_direction`/`set_function` reuse
+the same address-keyed throttle: if the address hasn't been acquired on
+this connection yet, `_ensure_acquired` acquires it transparently first
+(JMRI rejects speed/direction/function commands on a throttle id it's
+never seen an acquire for). `set_speed` takes a 0-100 percentage from the
+LLM and converts to JMRI's 0.0-1.0 scale; `stop` is speed 0.0,
+`emergency_stop` is speed -1.0 (JMRI's decoder emergency stop, a distinct
+command from a controlled stop). `set_speed`/`stop`/`emergency_stop` go
+through `JmriWsClient.set_speed()`; `set_direction` goes through the
+analogous `JmriWsClient.set_direction()`; `set_function` goes through
+`JmriWsClient.set_function()` — all three check the live per-throttle
+cache (`speed`/`forward`/`functions[n]` respectively) before sending using
+the exact same no-op-skip logic, sharing the cache described in "Live
+throttle state cache, fed by pushes" above. `set_direction` translates
 JMRI's raw boolean `forward` field to/from the readable strings
 `"forward"`/`"reverse"` at the tool boundary (`_direction_name()` in
 `tools.py`), which is why `_compact_throttle()`'s output (used by
 `acquire_throttle`) reports `direction` rather than JMRI's raw `forward`
-too — one readable representation for the whole tool surface.
+too — one readable representation for the whole tool surface. `set_function`
+validates `0 <= function <= 28` before sending anything (JMRI's own valid
+range); `lights_on`/`lights_off` are thin wrappers calling
+`set_function(address, 0, True/False)` directly as a plain Python call
+(not through the MCP dispatcher) since F0 is the near-universal DCC
+headlight convention.

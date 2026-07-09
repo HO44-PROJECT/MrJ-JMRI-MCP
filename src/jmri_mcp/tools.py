@@ -2,15 +2,22 @@
 
 Throttle tools (acquire_throttle, release_throttle, set_speed, stop,
 emergency_stop, set_direction, set_function, lights_on, lights_off) key
-everything on DCC address — see _throttle_id. list_roster is the current
-way to discover which address belongs to which named locomotive; it does
-not (yet) resolve a name to an address on the tool's behalf.
+everything on DCC address — see _throttle_id. list_roster/find_locomotive
+are how the LLM turns a spoken name ("the Autorail") into the address
+those tools need: list_roster for browsing, find_locomotive for resolving
+one specific name (fuzzy, accent/case-insensitive) directly to an address.
 """
 
 import logging
 
 from jmri_mcp import jmri_client
-from jmri_mcp.jmri_client import JmriError, get_systems, get_version, resolve_system
+from jmri_mcp.jmri_client import (
+    JmriError,
+    get_systems,
+    get_version,
+    resolve_roster_entry,
+    resolve_system,
+)
 from jmri_mcp.jmri_ws import JmriError as JmriWsError
 from jmri_mcp.jmri_ws import get_ws_client
 
@@ -169,6 +176,32 @@ def register(mcp) -> None:
             logger.warning("list_roster failed: %s", exc)
             return {"error": str(exc)}
         return {"roster": roster}
+
+    @mcp.tool()
+    async def find_locomotive(name: str) -> dict:
+        """Resolve a locomotive's spoken/typed name to its DCC address.
+
+        Use this whenever the user names a locomotive ("the Autorail",
+        "141R", "start the Pacific") instead of giving a DCC address
+        directly — call this first to get the address, then pass that
+        address to acquire_throttle/set_speed/set_direction/set_function/
+        lights_on/lights_off/etc.
+
+        Matching is tolerant: case-insensitive, accent-insensitive (useful
+        for French names — "boite a sel" matches "Boite à Sel"), and
+        accepts an exact name or an unambiguous partial match ("autorail"
+        matches "Autorail"). If the name matches more than one roster
+        entry, or matches none, this returns an "error" explaining why
+        (listing the candidates or the full roster) instead of guessing —
+        ask the user to clarify rather than picking one yourself.
+        """
+        try:
+            roster = await jmri_client.get_roster()
+            entry = resolve_roster_entry(name, roster)
+        except JmriError as exc:
+            logger.warning("find_locomotive(%r) failed: %s", name, exc)
+            return {"error": str(exc)}
+        return entry
 
     @mcp.tool()
     async def acquire_throttle(address: int, prefix: str | None = None) -> dict:

@@ -40,3 +40,15 @@ async def test_roster_reports_error_on_unreachable(monkeypatch, capsys):
     code, _, err = await run(capsys, "roster")
     assert code == 1
     assert "Error" in err
+
+
+async def test_roster_find_resolves_fuzzy_name(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "find", "autorail")
+    assert code == 0
+    assert "address=4" in out and "name=Autorail" in out
+
+
+async def test_roster_find_unknown_name(mock_roster, capsys):
+    code, _, err = await run(capsys, "roster", "find", "tgv")
+    assert code == 1
+    assert "Unknown locomotive 'tgv'" in err

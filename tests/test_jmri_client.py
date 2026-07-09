@@ -2,7 +2,13 @@ import pytest
 import respx
 from httpx import ConnectError, Response
 
-from jmri_mcp.jmri_client import JmriError, get_roster, get_systems, resolve_system
+from jmri_mcp.jmri_client import (
+    JmriError,
+    get_roster,
+    get_systems,
+    resolve_roster_entry,
+    resolve_system,
+)
 from tests.conftest import MOCK_JMRI_URL
 
 
@@ -85,6 +91,55 @@ async def test_get_roster_raises_on_non_list_non_dict_payload():
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json="oops"))
         with pytest.raises(JmriError, match="Unexpected /json/roster payload"):
             await get_roster()
+
+
+# --- resolve_roster_entry: pure function, no I/O ---
+
+ROSTER = [
+    {"name": "141R", "address": 2, "road": "Mikado 141 R", "model": "8273"},
+    {"name": "Autorail", "address": 4, "road": "Railcar", "model": "4185A"},
+    {"name": "Boite à Sel", "address": 8, "road": "", "model": ""},
+]
+
+
+@pytest.mark.parametrize(
+    "query,expected_name",
+    [
+        ("Autorail", "Autorail"),
+        ("autorail", "Autorail"),
+        ("AUTORAIL", "Autorail"),
+        ("auto", "Autorail"),
+        ("141R", "141R"),
+        ("141r", "141R"),
+        ("boite a sel", "Boite à Sel"),
+        ("Boite à Sel", "Boite à Sel"),
+        ("BOITE A SEL", "Boite à Sel"),
+    ],
+)
+def test_resolve_roster_entry_tolerant_match(query, expected_name):
+    assert resolve_roster_entry(query, ROSTER)["name"] == expected_name
+
+
+def test_resolve_roster_entry_ambiguous_fragment_raises():
+    with pytest.raises(JmriError, match="Ambiguous locomotive"):
+        resolve_roster_entry("a", ROSTER)  # matches both Autorail and Boite à Sel
+
+
+def test_resolve_roster_entry_unknown_name_raises():
+    with pytest.raises(JmriError, match="Unknown locomotive 'tgv'"):
+        resolve_roster_entry("tgv", ROSTER)
+
+
+def test_resolve_roster_entry_empty_roster_raises():
+    with pytest.raises(JmriError, match="roster is empty"):
+        resolve_roster_entry("Autorail", [])
+
+
+def test_resolve_roster_entry_empty_query_raises():
+    with pytest.raises(JmriError, match="No locomotive name given"):
+        resolve_roster_entry("", ROSTER)
+    with pytest.raises(JmriError, match="No locomotive name given"):
+        resolve_roster_entry("   ", ROSTER)
 
 
 # --- resolve_system: pure function, no I/O ---

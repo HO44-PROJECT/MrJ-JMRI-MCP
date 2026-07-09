@@ -145,6 +145,47 @@ async def get_roster() -> list[dict[str, Any]]:
     return compact
 
 
+def _fold(text: str) -> str:
+    """Casefold and strip accents, for tolerant French-name matching ("autorail" == "Autorail")."""
+    import unicodedata
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in normalized if not unicodedata.combining(c)).casefold()
+
+
+def resolve_roster_entry(
+    query: str, roster: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Match a user-supplied locomotive name against the roster (see get_roster).
+
+    Tolerant like resolve_system: case/accent-insensitive ("autorail",
+    "AUTORAIL", "boite a sel" all match), exact name first, then substring
+    fragment if that's unambiguous. Unlike resolve_system there's no
+    "default" to fall back to on an empty query — a locomotive must be
+    named. Raises JmriError (not found / ambiguous), same as resolve_system,
+    so callers can handle both the same way.
+    """
+    if not roster:
+        raise JmriError("JMRI roster is empty")
+    if not query or not query.strip():
+        raise JmriError("No locomotive name given")
+
+    q = _fold(query.strip())
+    names = [str(e.get("name", "")) for e in roster]
+
+    exact = [e for e in roster if _fold(str(e.get("name", ""))) == q]
+    if len(exact) == 1:
+        return exact[0]
+
+    partial = [e for e in roster if q in _fold(str(e.get("name", "")))]
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        matches = [str(e.get("name")) for e in partial]
+        raise JmriError(f"Ambiguous locomotive {query!r}: matches {matches}")
+
+    raise JmriError(f"Unknown locomotive {query!r}. Available: {names}")
+
+
 def resolve_system(
     query: str | None, systems: list[dict[str, Any]]
 ) -> dict[str, Any]:

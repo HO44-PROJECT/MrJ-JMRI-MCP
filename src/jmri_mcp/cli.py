@@ -6,6 +6,7 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power set ohara on
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli status
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster find autorail
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle acquire 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle release 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle speed 3 40
@@ -35,6 +36,7 @@ from jmri_mcp.jmri_client import (
     get_roster,
     get_systems,
     get_version,
+    resolve_roster_entry,
     resolve_system,
     set_power,
 )
@@ -97,6 +99,20 @@ async def roster_list(args: argparse.Namespace) -> int:
         road = entry["road"] or "-"
         model = entry["model"] or "-"
         print(f"{entry['address']:<5} {entry['name']:<20} {road:<30} {model}")
+    return 0
+
+
+async def roster_find(args: argparse.Namespace) -> int:
+    try:
+        roster = await get_roster()
+        entry = resolve_roster_entry(args.name, roster)
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    road = entry["road"] or "-"
+    model = entry["model"] or "-"
+    print(f"address={entry['address']} name={entry['name']} road={road} model={model}")
     return 0
 
 
@@ -361,7 +377,14 @@ def build_parser() -> argparse.ArgumentParser:
     roster_cmd = subparsers.add_parser(
         "roster", help="List every locomotive in JMRI's roster (name, address, road, model)"
     )
+    roster_sub = roster_cmd.add_subparsers(dest="roster_command")
     roster_cmd.set_defaults(func=roster_list)
+
+    roster_find_cmd = roster_sub.add_parser(
+        "find", help="Resolve a locomotive name to its DCC address (fuzzy match)"
+    )
+    roster_find_cmd.add_argument("name", help="Locomotive name, or a fragment of it")
+    roster_find_cmd.set_defaults(func=roster_find)
 
     throttle = subparsers.add_parser("throttle", help="Throttle commands (persistent WebSocket)")
     throttle_sub = throttle.add_subparsers(dest="throttle_command", required=True)

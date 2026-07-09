@@ -6,15 +6,15 @@ src/jmri_mcp/
 ├── jmri_client.py  # async HTTP client for JMRI's JSON API (power, version, ...)
 ├── jmri_ws.py      # persistent WebSocket client (ws://<jmri>/json/) for throttles
 ├── tools.py        # MCP tools exposed to the LLM (list_systems, get_power, set_power,
-│                   #   system_status, list_roster, acquire_throttle, release_throttle,
-│                   #   set_speed, stop, emergency_stop, set_direction, set_function,
-│                   #   lights_on, lights_off)
+│                   #   system_status, list_roster, find_locomotive, acquire_throttle,
+│                   #   release_throttle, set_speed, stop, emergency_stop, set_direction,
+│                   #   set_function, lights_on, lights_off)
 ├── cli.py          # jmri-cli: manual command-line tool, no MCP client needed
 └── server.py       # FastMCP entry point (stdio; logging → stderr only)
 ```
 
-More tools (name→address resolution, function labels, turnouts, sensors)
-will land here as their milestones are implemented — see the
+More tools (function labels, turnouts, sensors) will land here as their
+milestones are implemented — see the
 [project board](https://github.com/orgs/HO44-PROJECT/projects/3).
 
 ## Two JMRI clients, two different shapes
@@ -89,13 +89,18 @@ different protocols on that same port.
 See `CLAUDE.md`'s "Verified facts" section for the exact wire format
 (hello/ping/pong/power/throttle payloads) captured from the user's JMRI.
 
-## Roster: `list_roster`
+## Roster: `list_roster` / `find_locomotive`
 
 `list_roster` (in `tools.py`) returns `jmri_client.get_roster()`'s compact
-form directly — no filtering/search yet (that's #13), and it does not
-resolve a name to an address on the LLM's behalf. It exists so the LLM has
-*something* to map a spoken name ("the Autorail") to the DCC address every
-throttle tool actually needs, until #13 adds real name resolution.
+form directly — for browsing. `find_locomotive` resolves one spoken/typed
+name straight to a roster entry (and thus a DCC address) via
+`jmri_client.resolve_roster_entry()`, mirroring `resolve_system()`'s
+tolerant-match design (exact name, then unambiguous fragment) plus an
+accent-insensitive fold (`_fold()`, via `unicodedata` NFKD-strip) so French
+names like "Boite à Sel" match "boite a sel". An ambiguous or unknown name
+returns an "error" explaining why (with the candidate list) rather than
+guessing — the LLM is expected to ask the user to clarify. Function-label
+exposure ("blow the whistle" → the right F-number) is still open, #14.
 
 ## Throttle tool surface: DCC address as the only key
 

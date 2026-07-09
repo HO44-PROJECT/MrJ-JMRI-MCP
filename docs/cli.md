@@ -81,9 +81,27 @@ $ jmri-cli roster
 8     Boite à Sel          -                              -
 ```
 
-This is the current way to find a loco's DCC address by name before using
-any `throttle` subcommand below — there's no name-based lookup yet (planned
-for issue #13), so match the name yourself from this list.
+## `jmri-cli roster find <name>`
+
+Resolve a locomotive name to its DCC address — fuzzy, case- and
+accent-insensitive (exact match first, then an unambiguous partial match).
+Prints the same address/name/road/model as one line of `roster` above.
+This is the fast path to get an address for the `throttle` subcommands
+below without eyeballing the full list.
+
+```bash
+$ jmri-cli roster find autorail
+address=4 name=Autorail road=Railcar model=4185A
+
+$ jmri-cli roster find "boite a sel"
+address=8 name=Boite à Sel road=- model=-
+
+$ jmri-cli roster find tgv
+Error: Unknown locomotive 'tgv'. Available: ['141R', 'Autorail', ...]
+```
+
+A name matching more than one entry (e.g. `"a"`) is reported as an
+`Ambiguous locomotive` error listing every match, rather than guessing one.
 
 ## `jmri-cli throttle acquire <address> [--prefix P]`
 

@@ -11,8 +11,8 @@ def make_server() -> FastMCP:
     return mcp
 
 
-async def call(mcp: FastMCP, name: str, **kwargs) -> dict:
-    result = await mcp.call_tool(name, kwargs)
+async def call(mcp: FastMCP, tool_name: str, **kwargs) -> dict:
+    result = await mcp.call_tool(tool_name, kwargs)
     return json.loads(result[0].text)
 
 
@@ -116,6 +116,34 @@ async def test_list_roster_reports_error_honestly(monkeypatch):
     monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
     mcp = make_server()
     out = await call(mcp, "list_roster")
+    assert "error" in out
+
+
+async def test_find_locomotive_resolves_fuzzy_name(mock_roster):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "find_locomotive" in tool_names
+
+    out = await call(mcp, "find_locomotive", name="autorail")
+    assert out == {"name": "Autorail", "address": 4, "road": "Railcar", "model": "4185A"}
+
+
+async def test_find_locomotive_accent_insensitive(mock_roster):
+    mcp = make_server()
+    out = await call(mcp, "find_locomotive", name="boite a sel")
+    assert out["name"] == "Boite à Sel"
+
+
+async def test_find_locomotive_unknown_name_returns_error(mock_roster):
+    mcp = make_server()
+    out = await call(mcp, "find_locomotive", name="tgv")
+    assert "error" in out and "tgv" in out["error"]
+
+
+async def test_find_locomotive_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "find_locomotive", name="autorail")
     assert "error" in out
 
 

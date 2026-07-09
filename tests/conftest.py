@@ -28,3 +28,8 @@ def mock_power(power_fixture):
             return_value=Response(200, json=power_fixture)
         )
         yield router
+
+
+@pytest.fixture
+def version_fixture() -> list[dict]:
+    return json.loads((FIXTURES / "version_response.json").read_text())

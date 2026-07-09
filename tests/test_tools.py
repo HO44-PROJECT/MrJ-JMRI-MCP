@@ -61,3 +61,37 @@ async def test_get_power_unknown_system_returns_error_not_exception(mock_power):
     mcp = make_server()
     out = await call(mcp, "get_power", system="tgv")
     assert "error" in out and "tgv" in out["error"]
+
+
+async def test_system_status_reports_version_and_systems(mock_power, version_fixture):
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/version").mock(
+            return_value=Response(200, json=version_fixture)
+        )
+        out = await call(mcp, "system_status")
+
+    assert out["reachable"] is True
+    assert out["version"] == "5.4.0"
+    assert len(out["systems"]) == 3
+
+
+async def test_system_status_unreachable_reports_honestly():
+    import respx
+    from httpx import ConnectError
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/version").mock(side_effect=ConnectError("refused"))
+        out = await call(mcp, "system_status")
+
+    assert out["reachable"] is False
+    assert "error" in out
+    assert "systems" not in out

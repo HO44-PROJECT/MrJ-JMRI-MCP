@@ -53,6 +53,21 @@ async def _post_json(path: str, body: dict) -> Any:
         raise JmriError(f"POST {url} failed: {exc}") from exc
 
 
+async def get_version() -> str:
+    """Return the JMRI version string (e.g. "5.4.0").
+
+    /json/version is unusual: the version is the *key* of the data object
+    (e.g. {"5.4.0": "v5"}), not a value under a fixed field name.
+    """
+    payload = await _get_json("/json/version")
+    if isinstance(payload, list):
+        payload = payload[0] if payload else {}
+    data = _unwrap(payload)
+    if not isinstance(data, dict) or not data:
+        raise JmriError(f"Unexpected /json/version payload: {payload!r}")
+    return next(iter(data))
+
+
 async def get_systems() -> list[dict[str, Any]]:
     """Return every power connection known to JMRI.
 

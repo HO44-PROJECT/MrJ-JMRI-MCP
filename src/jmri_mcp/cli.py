@@ -4,6 +4,7 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status ohara
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power set ohara on
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli status
 
 Talks to jmri_client.py directly (no MCP/JSON-RPC involved) — useful for
 quick manual checks against a real layout, same role test_manuel.py used
@@ -14,7 +15,13 @@ import argparse
 import asyncio
 import sys
 
-from jmri_mcp.jmri_client import JmriError, get_systems, resolve_system, set_power
+from jmri_mcp.jmri_client import (
+    JmriError,
+    get_systems,
+    get_version,
+    resolve_system,
+    set_power,
+)
 
 _STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
 
@@ -58,6 +65,24 @@ async def power_set(args: argparse.Namespace) -> int:
     return 0
 
 
+async def system_status(args: argparse.Namespace) -> int:
+    try:
+        version = await get_version()
+    except JmriError as exc:
+        print(f"JMRI unreachable: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"JMRI reachable, version {version}")
+    try:
+        systems = await get_systems()
+        for system in systems:
+            print(f"  {_format_system(system)}")
+    except JmriError as exc:
+        print(f"  Power systems unavailable: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jmri-cli", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -74,6 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
     set_.add_argument("system", help="System name/prefix/fragment")
     set_.add_argument("state", choices=["on", "off"])
     set_.set_defaults(func=power_set)
+
+    status_cmd = subparsers.add_parser(
+        "status", help="One-call diagnostic: JMRI reachability, version, power systems"
+    )
+    status_cmd.set_defaults(func=system_status)
 
     return parser
 

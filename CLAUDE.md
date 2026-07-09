@@ -61,18 +61,31 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
 2. Implement + smoke-test for real (e.g. MCP `initialize`/`tools/list` over stdio, checking
    stdout stays pure JSON-RPC; JMRI reads against the live server are OK, writes only as
    no-ops or with the user's go-ahead).
-3. Present the result to the user; **wait for their validation**.
-4. On validation: commit with `Closes #N` in the message, push, move the card to **Done**.
+3. Update the relevant doc chapter(s) under `docs/` (install/cli/llm-setup/testing) and the
+   README if the card adds a new tool, CLI subcommand, config key, or changes setup steps —
+   docs land in the same commit as the card, not as a separate later pass.
+4. Present the result to the user; **wait for their validation**.
+5. On validation: commit with `Closes #N` in the message, push, move the card to **Done**.
 
-## Current state (end of session 2026-07-08)
+## Current state (end of session 2026-07-09)
 
-- Scaffold pushed (README, pyproject with `jmri-mcp` entry point, deps mcp/httpx/websockets).
-- **Issue #1 implemented, smoke-tested, AWAITING USER VALIDATION** (not committed yet):
-  `src/jmri_mcp/server.py` (FastMCP stdio, stderr-only logging) + `__init__.py` (version).
-  Smoke test passed: initialize + tools/list over stdio, stdout pure, logs on stderr.
-- Next: on validation, commit/close #1, then #2 (`JMRI_URL` env config), then #3–6.
-- Kira integration target (issue #18): kira's `mcp_config.json` gets
-  `{"mcpServers": {"jmri": {"command": "jmri-mcp", "env": {"JMRI_URL": "http://10.0.20.20:12080"}}}}`
-  and `launch.sh` becomes `python mcp_pipe.py` (config mode).
-- Manual step still pending on the user side: make project board public if desired
-  (copied projects are private by default).
+- Issues #1–#5 implemented, validated, committed, closed. M1 nearly done.
+- **Issue #6 (`system_status` tool) implemented, smoke-tested, AWAITING USER VALIDATION**
+  (not committed yet): `get_version()` in `jmri_client.py`, `system_status` MCP tool in
+  `tools.py`, `jmri-cli status` subcommand, tests + `tests/fixtures/version_response.json`.
+- `docs/` chapter structure created this session (install/cli/llm-setup/testing), README
+  trimmed to point at it. Also not committed yet — bundle with #6 or commit separately,
+  ask the user which.
+- `environment.yml` added: dedicated `jmri-mcp` conda env on Python 3.12, independent of
+  `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently still run the
+  `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env means updating
+  the hardcoded path in `claude_desktop_config.json` and Kira's `mcp_config.json` — not
+  done yet, pending user decision.
+- Kira integration (issue #18) already working end-to-end: `mcp_config.json` +
+  `launch.sh` (`python mcp_pipe.py`, config mode) verified live against xiaozhi.
+- Claude Desktop integration already working: `jmri` entry added to
+  `claude_desktop_config.json` with an absolute path into the `kira` env. Note: its
+  `jmri-mcp` subprocess has been observed to die silently with no error in the logs;
+  fix is Cmd+Q + relaunch Claude Desktop (see `docs/llm-setup.md`).
+- Project board is private (copied projects are private by default) — user hasn't asked
+  to make it public, not a blocker.

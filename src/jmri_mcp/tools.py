@@ -3,7 +3,7 @@
 import logging
 
 from jmri_mcp import jmri_client
-from jmri_mcp.jmri_client import JmriError, get_systems, resolve_system
+from jmri_mcp.jmri_client import JmriError, get_systems, get_version, resolve_system
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -74,3 +74,27 @@ def register(mcp) -> None:
             logger.warning("set_power(%r, %r) failed: %s", system, turn_on, exc)
             return {"error": str(exc)}
         return {**_compact(result), "confirmed": result["confirmed"]}
+
+    @mcp.tool()
+    async def system_status() -> dict:
+        """One-call diagnostic: is JMRI reachable, and what state is it in?
+
+        Reports JMRI reachability/version and every power system's state.
+        Call this first when something isn't responding, instead of
+        guessing which tool to retry. No side effects.
+        """
+        status: dict = {"reachable": False}
+        try:
+            status["version"] = await get_version()
+            status["reachable"] = True
+        except JmriError as exc:
+            status["error"] = str(exc)
+            return status
+
+        try:
+            systems = await get_systems()
+            status["systems"] = [_compact(s) for s in systems]
+        except JmriError as exc:
+            status["systems_error"] = str(exc)
+
+        return status

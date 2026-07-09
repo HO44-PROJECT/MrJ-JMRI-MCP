@@ -11,9 +11,25 @@ name the request type that caused them — verified live against JMRI 5.4.0
 that concurrent requests of different types can come back in an order that
 doesn't match the send order, making correlation ambiguous. So requests
 are serialized: only one is ever in flight on the socket at a time, and the
-next reply read from the socket is assumed to be its answer. Messages that
-arrive with no request in flight are spontaneous pushes (other clients'
-throttle moves, etc.) and are handed to an optional callback instead.
+next reply read from the socket is assumed to be its answer — UNLESS it's a
+throttle message for a different throttle id than the one we're waiting on,
+in which case it's a spontaneous push (see below) and dispatch keeps
+waiting for the real reply.
+
+Throttle state (speed, direction, functions) is not exclusively owned by
+whichever connection last set it: verified live that JMRI pushes every
+throttle state change to *all* connections that hold that address, not just
+the one that requested it — e.g. a JMRI panel or another MCP session
+changing a loco's speed shows up here too, as an unsolicited
+`{"type":"throttle","data":{"throttle":"<our id>","speed":...}}` message.
+Also verified live: JMRI sends no reply at all when a requested speed
+already equals the current speed (a real no-op, not a dropped message) —
+so requests can't rely on "no reply" meaning "something's wrong". Both
+facts are handled by dispatch updating a per-throttle state cache
+(`_throttles[id]["speed"/"forward"]`) from every throttle message seen,
+solicited or not; `set_speed()` reads that cache immediately before acting
+and skips sending if it already matches, rather than guessing from a stale
+value set once at acquire time.
 """
 
 import asyncio
@@ -53,8 +69,18 @@ class JmriWsClient:
     "address" are tracked and automatically re-acquired after a reconnect.
     """
 
-    def __init__(self, on_event: Callable[[str, Any], Awaitable[None]] | None = None) -> None:
+    def __init__(
+        self,
+        on_event: Callable[[str, Any], Awaitable[None]] | None = None,
+        on_message: Callable[[str, Any], Awaitable[None]] | None = None,
+    ) -> None:
         self._on_event = on_event
+        # Unlike on_event (only unsolicited pushes / messages with nothing
+        # pending), on_message fires for every message this connection
+        # receives, including replies to our own requests — for a passive
+        # "sniff everything" observer (jmri-cli throttle sniff), not for
+        # request/response logic.
+        self._on_message = on_message
         self._ws: websockets.ClientConnection | None = None
         self._reader_task: asyncio.Task | None = None
         self._keepalive_task: asyncio.Task | None = None
@@ -63,6 +89,10 @@ class JmriWsClient:
         # docstring) — this is its pending reply future, or None.
         self._request_lock = asyncio.Lock()
         self._pending: asyncio.Future | None = None
+        # Throttle id the pending future is waiting on, if the in-flight
+        # request is a throttle message — lets dispatch tell a real reply
+        # apart from an unsolicited push about a *different* throttle.
+        self._pending_throttle_id: str | None = None
         self._throttles: dict[str, dict[str, Any]] = {}
         self._heartbeat_ms = _DEFAULT_HEARTBEAT_MS
         self._closing = False
@@ -107,6 +137,10 @@ class JmriWsClient:
         """
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending = future
+        # For throttle messages, remember which throttle id we're expecting
+        # a reply for, so dispatch can tell a real reply apart from an
+        # unsolicited push about a different throttle on the same socket.
+        self._pending_throttle_id = (data or {}).get("throttle") if msg_type == "throttle" else None
 
         payload = {"type": msg_type, "data": data or {}}
         try:
@@ -114,6 +148,7 @@ class JmriWsClient:
             await self._ws.send(json.dumps(payload))
         except websockets.exceptions.WebSocketException as exc:
             self._pending = None
+            self._pending_throttle_id = None
             raise JmriError(f"WebSocket send failed: {exc}") from exc
 
         try:
@@ -123,6 +158,7 @@ class JmriWsClient:
         finally:
             if self._pending is future:
                 self._pending = None
+                self._pending_throttle_id = None
 
     async def acquire_throttle(
         self, throttle_id: str, address: int, prefix: str | None = None
@@ -132,17 +168,49 @@ class JmriWsClient:
         prefix optionally targets a specific command station (e.g. "R" for
         DCC++ Raijin) when more than one is connected to JMRI.
         """
+        # connect() first, then register in _throttles, THEN send: if a
+        # fresh connection is what connect() just made, _do_connect() ends
+        # by calling _reacquire_throttles() for every already-registered
+        # id — registering before connect() would make it "re"-acquire this
+        # same throttle a second time before our own send below, stealing
+        # the one reply this connection gets and hanging us forever.
+        # Registered before sending (not before connect) so _dispatch can
+        # still update it from the reply below (dispatch only updates
+        # existing entries).
+        await self.connect()
+        self._throttles[throttle_id] = {"address": address, "prefix": prefix, "speed": None}
         data_out: dict[str, Any] = {"throttle": throttle_id, "address": address}
         if prefix:
             data_out["prefix"] = prefix
-        data = await self.request("throttle", data_out)
-        self._throttles[throttle_id] = {"address": address, "prefix": prefix}
+        try:
+            async with self._request_lock:
+                data = await self._send_and_wait("throttle", data_out)
+        except JmriError:
+            self._throttles.pop(throttle_id, None)
+            raise
         return data
 
     async def release_throttle(self, throttle_id: str) -> dict[str, Any]:
         data = await self.request("throttle", {"throttle": throttle_id, "release": True})
         self._throttles.pop(throttle_id, None)
         return data
+
+    async def set_speed(self, throttle_id: str, speed: float) -> dict[str, Any]:
+        """Set speed on an already-acquired throttle. -1.0 is JMRI's emergency stop.
+
+        Verified live: JMRI sends no reply at all when the requested speed
+        already matches the throttle's current speed (a real no-op, not a
+        dropped message) — so we check the current cached speed first and
+        skip sending if it's already there. That cache isn't just "what we
+        last set": JMRI pushes throttle state changes made by *other*
+        clients (a JMRI panel, another session) to every connection holding
+        that address too, and dispatch keeps it updated from those pushes
+        as well as from our own replies — see module docstring.
+        """
+        info = self._throttles.get(throttle_id)
+        if info is not None and info.get("speed") == speed:
+            return {"throttle": throttle_id, "speed": speed}
+        return await self.request("throttle", {"throttle": throttle_id, "speed": speed})
 
     # -- internals ---------------------------------------------------
 
@@ -180,6 +248,9 @@ class JmriWsClient:
                 if info.get("prefix"):
                     data_out["prefix"] = info["prefix"]
                 async with self._request_lock:
+                    # _dispatch updates _throttles[throttle_id] from the
+                    # reply itself (a fresh acquire resets JMRI's speed to
+                    # 0, so this also resyncs our cache to match).
                     await self._send_and_wait("throttle", data_out)
             except JmriError as exc:
                 logger.warning("Failed to re-acquire throttle %r after reconnect: %s", throttle_id, exc)
@@ -204,10 +275,31 @@ class JmriWsClient:
 
         msg_type = msg.get("type")
         data = msg.get("data")
+        if self._on_message is not None:
+            await self._on_message(msg_type, data)
         if msg_type == "pong":
             return
 
+        if msg_type == "throttle" and isinstance(data, dict):
+            self._update_throttle_cache(data)
+
+        # A throttle message is only "our" reply if it names the throttle id
+        # we're waiting on — otherwise it's an unsolicited push about a
+        # different throttle (e.g. another client's loco) sharing this
+        # socket, and the real reply is still to come.
+        is_throttle_push = (
+            msg_type == "throttle"
+            and self._pending_throttle_id is not None
+            and isinstance(data, dict)
+            and data.get("throttle") != self._pending_throttle_id
+        )
+        if is_throttle_push:
+            if self._on_event is not None:
+                await self._on_event(msg_type, data)
+            return
+
         future, self._pending = self._pending, None
+        self._pending_throttle_id = None
         if future is not None and not future.done():
             if msg_type == "error":
                 future.set_exception(JmriError(f"JMRI error: {data}"))
@@ -217,6 +309,16 @@ class JmriWsClient:
 
         if self._on_event is not None:
             await self._on_event(msg_type, data)
+
+    def _update_throttle_cache(self, data: dict[str, Any]) -> None:
+        throttle_id = data.get("throttle")
+        info = self._throttles.get(throttle_id) if throttle_id else None
+        if info is None:
+            return
+        if "speed" in data:
+            info["speed"] = data["speed"]
+        if "forward" in data:
+            info["forward"] = data["forward"]
 
     async def _keepalive_loop(self) -> None:
         interval = max(self._heartbeat_ms / 1000 / 2, 1.0)

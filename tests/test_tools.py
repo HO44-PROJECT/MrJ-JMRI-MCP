@@ -122,3 +122,35 @@ async def test_acquire_throttle_reports_error_honestly(monkeypatch):
     mcp = make_server()
     out = await call(mcp, "acquire_throttle", address=3)
     assert "error" in out
+
+
+async def test_set_speed_auto_acquires_and_converts_percent(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=40)
+    assert out == {"address": 3, "speed_percent": 40.0}
+
+
+async def test_set_speed_clamps_out_of_range_percent(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=150)
+    assert out == {"address": 3, "speed_percent": 100.0}
+
+
+async def test_stop_sets_speed_zero(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "set_speed", address=3, speed_percent=60)
+    out = await call(mcp, "stop", address=3)
+    assert out == {"address": 3, "speed_percent": 0.0}
+
+
+async def test_emergency_stop_reports_stopped(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "emergency_stop", address=3)
+    assert out == {"address": 3, "stopped": True}
+
+
+async def test_set_speed_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=50)
+    assert "error" in out

@@ -53,8 +53,26 @@ async def fake_jmri(monkeypatch):
     protocol to exercise JmriWsClient: hello on connect, ping->pong,
     power/throttle request-response, and an on/off switch to simulate a
     dropped connection for reconnect tests.
+
+    Also mirrors two real-JMRI behaviors verified live (see jmri_ws.py's
+    module docstring), since they're what motivated the cache/correlation
+    redesign and need real coverage, not just live-server spot checks:
+      - silent no-op: no reply is sent when a requested speed/forward
+        already equals the address's current state.
+      - cross-connection push: a state change on one connection is pushed,
+        unprompted, to every OTHER connection that also holds the same
+        address (keyed by "throttle" id on each connection).
     """
-    state = {"connected_sockets": [], "drop_next": False, "power_state": 4}
+    state = {
+        "connected_sockets": [],
+        "drop_next": False,
+        "power_state": 4,
+        "acquired": set(),  # throttle ids acquired on *some* connection
+        # address -> {"speed": float, "forward": bool}
+        "loco_state": {},
+        # address -> list of (ws, throttle_id) holding it, across connections
+        "holders": {},
+    }
 
     async def handler(ws):
         if state["drop_next"]:
@@ -79,17 +97,55 @@ async def fake_jmri(monkeypatch):
                     }))
                 elif msg_type == "throttle":
                     data = msg.get("data", {})
+                    throttle_id = data.get("throttle")
                     if data.get("release"):
+                        state["acquired"].discard(throttle_id)
+                        for holders in state["holders"].values():
+                            holders[:] = [h for h in holders if h[1] != throttle_id]
                         await ws.send(json.dumps({
                             "type": "throttle",
-                            "data": {"release": None, "throttle": data.get("throttle")},
+                            "data": {"release": None, "throttle": throttle_id},
                         }))
+                    elif "address" not in data:
+                        # a speed/direction/function command with no prior acquire
+                        # on this connection — mirrors JMRI's real rejection.
+                        if throttle_id not in state["acquired"]:
+                            await ws.send(json.dumps({
+                                "type": "error",
+                                "data": {"code": 400, "message": "Throttles must be requested with an address."},
+                            }))
+                            continue
+                        address = next(
+                            (addr for addr, holders in state["holders"].items()
+                             if any(h[1] == throttle_id for h in holders)),
+                            None,
+                        )
+                        current = state["loco_state"].setdefault(address, {"speed": 0.0, "forward": True})
+                        changed = {}
+                        if "speed" in data and data["speed"] != current.get("speed"):
+                            changed["speed"] = data["speed"]
+                        if "forward" in data and data["forward"] != current.get("forward"):
+                            changed["forward"] = data["forward"]
+                        if not changed:
+                            # real JMRI: silently drops a no-op request, no reply at all.
+                            continue
+                        current.update(changed)
+                        for holder_ws, holder_id in state["holders"].get(address, []):
+                            reply_data = {"throttle": holder_id, **changed}
+                            await holder_ws.send(json.dumps({"type": "throttle", "data": reply_data}))
                     else:
+                        address = data["address"]
+                        state["acquired"].add(throttle_id)
+                        state["holders"].setdefault(address, [])
+                        state["holders"][address] = [
+                            h for h in state["holders"][address] if h[1] != throttle_id
+                        ] + [(ws, throttle_id)]
+                        loco = state["loco_state"].setdefault(address, {"speed": 0.0, "forward": True})
                         reply_data = {
-                            "address": data.get("address"),
-                            "throttle": data.get("throttle"),
-                            "speed": 0.0,
-                            "forward": True,
+                            "address": address,
+                            "throttle": throttle_id,
+                            "speed": loco["speed"],
+                            "forward": loco["forward"],
                         }
                         if data.get("prefix"):
                             reply_data["prefix"] = data["prefix"]
@@ -103,6 +159,9 @@ async def fake_jmri(monkeypatch):
                     pass  # deliberately never reply, to exercise timeout
         except websockets.exceptions.ConnectionClosed:
             pass
+        finally:
+            for holders in state["holders"].values():
+                holders[:] = [h for h in holders if h[0] is not ws]
 
     server = await websockets.serve(handler, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]

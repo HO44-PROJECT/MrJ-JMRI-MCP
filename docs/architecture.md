@@ -6,12 +6,13 @@ src/jmri_mcp/
 ├── jmri_client.py  # async HTTP client for JMRI's JSON API (power, version, ...)
 ├── jmri_ws.py      # persistent WebSocket client (ws://<jmri>/json/) for throttles
 ├── tools.py        # MCP tools exposed to the LLM (list_systems, get_power, set_power,
-│                   #   system_status, acquire_throttle, release_throttle)
+│                   #   system_status, acquire_throttle, release_throttle, set_speed,
+│                   #   stop, emergency_stop)
 ├── cli.py          # jmri-cli: manual command-line tool, no MCP client needed
 └── server.py       # FastMCP entry point (stdio; logging → stderr only)
 ```
 
-More tools (speed/direction/function control, roster, turnouts, sensors,
+More tools (direction/function control, roster, turnouts, sensors,
 lights) will land here as their milestones are implemented — see the
 [project board](https://github.com/orgs/HO44-PROJECT/projects/3).
 
@@ -58,9 +59,25 @@ different protocols on that same port.
   the request that caused them. There is no reliable way to correlate
   concurrent, mixed-type requests. So `request()` takes a lock: only one
   request is ever in flight on the socket at a time, and the next message
-  read off the socket is assumed to be its reply. Messages that arrive
-  with nothing pending (other clients' throttle moves, etc.) are handed to
-  an optional `on_event` callback instead of being dropped.
+  read off the socket is assumed to be its reply — **except** a `throttle`
+  message whose `data["throttle"]` doesn't match the id the pending
+  request actually asked about, which is routed as a push instead (see
+  below). Messages that arrive with nothing pending, or a mismatched
+  push, are handed to an optional `on_event` callback instead of being
+  dropped.
+- **Live throttle state cache, fed by pushes.** Verified live: JMRI (a)
+  sends no reply at all when a requested speed/direction already equals
+  the current value (a real no-op, not a dropped message — a naive
+  "wait for one reply" design hangs until timeout), and (b) pushes every
+  throttle state change to *all* connections holding that address, not
+  just the one that requested it — so a loco's speed can change from a
+  JMRI panel or another session and this client finds out the same way.
+  `_dispatch()` updates `_throttles[id]["speed"/"forward"]` from *every*
+  throttle message it sees, solicited or not, before deciding whether
+  that message is the answer to a pending request. `set_speed()` checks
+  that cache first and skips sending when the value's already current —
+  safe specifically because the cache is kept live by JMRI's own pushes,
+  not just by this client's own past commands.
 
 See `CLAUDE.md`'s "Verified facts" section for the exact wire format
 (hello/ping/pong/power/throttle payloads) captured from the user's JMRI.
@@ -77,3 +94,15 @@ opaque handle.
 On server shutdown, `server.py` closes the shared `JmriWsClient`; JMRI
 releases every throttle bound to that connection automatically, so no
 explicit "release all" call is needed on exit.
+
+`set_speed`/`stop`/`emergency_stop` reuse the same address-keyed throttle:
+if the address hasn't been acquired on this connection yet, `_ensure_acquired`
+acquires it transparently first (JMRI rejects speed/direction/function
+commands on a throttle id it's never seen an acquire for). `set_speed`
+takes a 0-100 percentage from the LLM and converts to JMRI's 0.0-1.0 scale;
+`stop` is speed 0.0, `emergency_stop` is speed -1.0 (JMRI's decoder
+emergency stop, a distinct command from a controlled stop). All three go
+through `JmriWsClient.set_speed()`, which checks the live per-throttle
+cache before sending — see "Live throttle state cache, fed by pushes"
+above for why that's safe even though the loco's speed can be changed by
+something other than this MCP session.

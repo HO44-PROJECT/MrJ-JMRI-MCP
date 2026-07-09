@@ -95,6 +95,79 @@ $ jmri-cli throttle release 3
 address=3 released
 ```
 
+## `jmri-cli throttle speed <address> <speed_percent>`
+
+Acquire a loco by DCC address (if not already held) on a fresh connection,
+set its speed as a 0-100 percentage of maximum, print the speed JMRI
+actually reports, then close the connection.
+
+```bash
+$ jmri-cli throttle speed 3 40
+address=3 speed=40%
+```
+
+## `jmri-cli throttle stop <address>`
+
+Controlled stop: sets speed to 0. Different from `estop` below — this is a
+normal speed command, not JMRI's decoder emergency stop.
+
+```bash
+$ jmri-cli throttle stop 3
+address=3 stopped
+```
+
+## `jmri-cli throttle estop <address>`
+
+Emergency stop: JMRI's decoder e-stop command (`speed=-1.0`), not just
+speed 0. Use for safety-critical stops.
+
+```bash
+$ jmri-cli throttle estop 3
+address=3 emergency-stopped
+```
+
+## `jmri-cli throttle sniff [-a N ...] [--show-pong]`
+
+Opens a WebSocket connection and prints every JMRI message it receives,
+timestamped, until Ctrl-C — a live protocol dump for debugging. With no
+`-a`/`--address`, it only sees `hello`/`pong` and whatever this same
+connection triggers. Pass `-a`/`--address` (repeatable) to also acquire
+those locos first: JMRI then pushes every state change on them from *any*
+client (another `jmri-cli`/MCP session, a JMRI panel, another throttle
+app) to this connection too, so you can watch what's actually happening
+on the layout in real time, not just what this one connection does.
+
+Keepalive `pong` messages are hidden by default — they fire every few
+seconds regardless of layout activity and carry no information; pass
+`--show-pong` to include them anyway. Throttle messages' 69 function-key
+fields (`F0`-`F68`, almost always `false`) are collapsed to a single
+`functions_on` list of the ones actually on (omitted entirely if none are),
+so the field that changed isn't buried in noise.
+
+```bash
+$ jmri-cli throttle sniff -a 3
+Listening for JMRI messages, Ctrl-C to stop...
+[13:35:56.183] throttle: {"address": 3, "speed": 0.0, "forward": true, "speedSteps": 126, "clients": 1, "rosterEntry": "Autorail", "name": "sniff3", "throttle": "sniff3"}
+(acquired address=3 for observation)
+[13:35:58.201] throttle: {"clients": 2, "name": "sniff3", "throttle": "sniff3"}
+[13:35:58.203] throttle: {"speed": 0.25, "name": "sniff3", "throttle": "sniff3"}
+```
+
+That `speed: 0.25` line above came from a *different* `jmri-cli throttle
+speed 3 25` run concurrently in another terminal — this is JMRI's
+cross-connection push in action (see [architecture.md](architecture.md)).
+
+Both `stop` and `estop` (and `speed`) are safe to call repeatedly with the
+same target state — JMRI sends no reply at all when the requested value
+already matches the current one, and the client checks a live local cache
+of the throttle's state before sending, so a repeat call reports the same
+result immediately instead of hanging until timeout. That cache is kept
+fresh by JMRI itself: it pushes every throttle state change to all
+connections holding the same address, not only the one that made the
+change, so this also correctly reflects a speed/direction change made by
+another client (a JMRI panel, another `jmri-cli`/MCP session) — see
+[architecture.md](architecture.md) for the wire-level detail.
+
 ## Exit codes
 
 All subcommands return 0 on success, 1 on error (JMRI unreachable, unknown

@@ -1,4 +1,8 @@
-"""Power and throttle tools exposed to the LLM."""
+"""Power and throttle tools exposed to the LLM.
+
+Throttle tools (acquire_throttle, release_throttle, set_speed, stop,
+emergency_stop) key everything on DCC address — see _throttle_id.
+"""
 
 import logging
 
@@ -36,6 +40,19 @@ def _compact_throttle(data: dict) -> dict:
         "speed": data.get("speed"),
         "forward": data.get("forward"),
     }
+
+
+async def _ensure_acquired(client, address: int) -> None:
+    """Acquire the throttle for `address` if this connection doesn't hold it yet.
+
+    JMRI rejects speed/direction/function commands on a throttle id it has
+    never seen an acquire for ("Throttles must be requested with an
+    address."). Tracking acquired ids client-side lets set_speed/stop/etc.
+    work standalone (voice UX: "speed up the 3" without a separate acquire
+    step) while still reusing the same throttle id acquire_throttle uses.
+    """
+    if _throttle_id(address) not in client._throttles:
+        await client.acquire_throttle(_throttle_id(address), address)
 
 
 def register(mcp) -> None:
@@ -160,3 +177,64 @@ def register(mcp) -> None:
             logger.warning("release_throttle(%r) failed: %s", address, exc)
             return {"error": str(exc)}
         return {"released": True, "address": address}
+
+    @mcp.tool()
+    async def set_speed(address: int, speed_percent: float) -> dict:
+        """Set a locomotive's speed as a percentage of its maximum.
+
+        Args:
+            address: The locomotive's DCC address.
+            speed_percent: 0-100. Acquires the throttle automatically if not
+                already held.
+
+        Use stop for a controlled halt (speed 0) or emergency_stop for a
+        panic stop — don't call set_speed(speed_percent=0) for an emergency,
+        it's not the same command to JMRI.
+        """
+        client = get_ws_client()
+        speed = max(0.0, min(100.0, speed_percent)) / 100.0
+        try:
+            await _ensure_acquired(client, address)
+            data = await client.set_speed(_throttle_id(address), speed)
+        except JmriWsError as exc:
+            logger.warning("set_speed(%r, %r) failed: %s", address, speed_percent, exc)
+            return {"error": str(exc)}
+        return {"address": address, "speed_percent": data.get("speed", speed) * 100}
+
+    @mcp.tool()
+    async def stop(address: int) -> dict:
+        """Bring a locomotive to a controlled stop (speed 0).
+
+        Args:
+            address: The locomotive's DCC address.
+
+        For a panic/safety stop use emergency_stop instead — it's a
+        different command to JMRI (decoder emergency stop), not just speed 0.
+        """
+        client = get_ws_client()
+        try:
+            await _ensure_acquired(client, address)
+            data = await client.set_speed(_throttle_id(address), 0.0)
+        except JmriWsError as exc:
+            logger.warning("stop(%r) failed: %s", address, exc)
+            return {"error": str(exc)}
+        return {"address": address, "speed_percent": data.get("speed", 0.0) * 100}
+
+    @mcp.tool()
+    async def emergency_stop(address: int) -> dict:
+        """Emergency-stop a locomotive immediately (JMRI decoder e-stop).
+
+        Args:
+            address: The locomotive's DCC address.
+
+        Use this for safety-critical stops (derailment risk, collision
+        course). For a normal controlled stop use stop instead.
+        """
+        client = get_ws_client()
+        try:
+            await _ensure_acquired(client, address)
+            data = await client.set_speed(_throttle_id(address), -1.0)
+        except JmriWsError as exc:
+            logger.warning("emergency_stop(%r) failed: %s", address, exc)
+            return {"error": str(exc)}
+        return {"address": address, "stopped": data.get("speed") == -1.0}

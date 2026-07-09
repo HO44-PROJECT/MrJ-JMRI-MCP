@@ -40,7 +40,9 @@ async def test_acquire_and_release_throttle(fake_jmri):
     client = JmriWsClient()
     data = await client.acquire_throttle("t1", 42)
     assert data["address"] == 42
-    assert client._throttles == {"t1": {"address": 42, "prefix": None}}
+    assert client._throttles == {
+        "t1": {"address": 42, "prefix": None, "speed": 0.0, "forward": True}
+    }
 
     data = await client.release_throttle("t1")
     assert data["release"] is None
@@ -82,9 +84,78 @@ async def test_reconnect_after_drop_reacquires_throttle(fake_jmri):
     await client.close()
 
 
+async def test_set_speed_on_acquired_throttle(fake_jmri):
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)
+    data = await client.set_speed("t1", 0.5)
+    assert data["speed"] == 0.5
+    await client.close()
+
+
 async def test_request_connects_lazily(fake_jmri):
     client = JmriWsClient()
     assert client._ws is None
     await client.request("power", {})
     assert client._ws is not None
     await client.close()
+
+
+async def test_set_speed_noop_skips_request_without_hanging(fake_jmri, monkeypatch):
+    # Real JMRI sends no reply at all when the requested speed already
+    # matches the current speed. Drop the request timeout so the test
+    # would fail fast (instead of hanging ~5s) if set_speed still sent it.
+    import jmri_mcp.jmri_ws as ws_module
+    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)  # starts at speed 0.0
+    data = await client.set_speed("t1", 0.0)  # already 0.0 -> must not send
+    assert data == {"throttle": "t1", "speed": 0.0}
+    await client.close()
+
+
+async def test_set_speed_pushes_to_other_connection_holding_same_address(fake_jmri):
+    # JMRI broadcasts a throttle's state change to every connection that
+    # holds that address, not just the one that requested the change.
+    a = JmriWsClient()
+    b = JmriWsClient()
+    await a.acquire_throttle("a1", 9)
+    await b.acquire_throttle("b1", 9)
+
+    await b.set_speed("b1", 0.6)
+
+    for _ in range(50):
+        if a._throttles["a1"]["speed"] == 0.6:
+            break
+        await asyncio.sleep(0.05)
+    assert a._throttles["a1"]["speed"] == 0.6
+
+    await a.close()
+    await b.close()
+
+
+async def test_pending_request_not_corrupted_by_push_for_other_throttle(fake_jmri):
+    # While connection A is mid-request on throttle id "a-other", a push
+    # about a *different* throttle id it also holds ("a1") must not be
+    # mistaken for the reply to the pending request.
+    a = JmriWsClient()
+    b = JmriWsClient()
+    await a.acquire_throttle("a1", 9)
+    await a.acquire_throttle("a-other", 5)
+
+    await b.acquire_throttle("b1", 9)
+    push_task = asyncio.create_task(b.set_speed("b1", 0.3))
+
+    data = await a.set_speed("a-other", 0.8)
+    assert data["throttle"] == "a-other"
+    assert data["speed"] == 0.8
+
+    await push_task
+    for _ in range(50):
+        if a._throttles["a1"]["speed"] == 0.3:
+            break
+        await asyncio.sleep(0.05)
+    assert a._throttles["a1"]["speed"] == 0.3
+
+    await a.close()
+    await b.close()

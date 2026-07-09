@@ -16,6 +16,22 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
   AND re-reading state (see verified facts below). Compact outputs (voice context is small).
 - No xiaozhi-specific code in this repo. xiaozhi connectivity = `mcp_pipe.py` on the kira
   side (bridges stdio ↔ `MCP_ENDPOINT` WebSocket). Claude launches the stdio server directly.
+- **LLM-oriented MCP tools.** Every tool needs maximal descriptive context in its
+  docstring, in English, so the model actually understands when/how to use it —
+  don't skimp on docstrings to save tokens.
+- **CLI parity.** Every MCP tool must have a `jmri-cli` equivalent, so functionality
+  can be exercised and validated without an MCP client in the loop.
+- **State can change outside the MCP session.** JMRI's throttle state (speed,
+  direction, functions) can be changed by other clients (JMRI panels, other
+  throttle apps) at any time. A purely self-referential cache (updated only
+  from this session's own commands) would go stale and is forbidden — but a
+  cache kept continuously live by JMRI's own broadcasts (see `jmri_ws.py`'s
+  `_dispatch`/`_update_throttle_cache`, which updates it from *every*
+  throttle message this connection sees, not just replies to our own
+  requests) is exactly "read the current state" and is the required
+  implementation, since JMRI has no read-only "get current throttle state"
+  call to poll instead (verified live, see below). Apply this to every
+  set_speed/stop/set_direction/etc.
 
 ## Verified facts about the user's JMRI (tested live, JMRI 5.4.0)
 
@@ -41,12 +57,46 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
   speed/`F<n>` on the SAME connection; JMRI releases the throttle when the connection closes.
   (Corrected 2026-07-09: the acquire key is `"throttle"`, not `"name"` — verified live; the
   reply echoes both `"throttle"` and `"name"` set to the same id, `"release":true` releases.)
+- **Speed/direction on an acquired throttle**: `{"type":"throttle","data":{"throttle":"<id>","speed":<0.0-1.0 or -1.0>}}`
+  (verified live) — reply only echoes the changed field(s), e.g.
+  `{"speed":0.5,"name":"<id>","throttle":"<id>"}`. `speed:-1.0` is JMRI's emergency stop
+  (a distinct decoder command, not just "speed 0"). Direction: `{"forward":true|false}`
+  on the same shape. Sending speed/direction/function on a throttle id that was never
+  acquired on this connection returns `{"type":"error","data":{"code":400,"message":"Throttles
+  must be requested with an address."}}` — verified live.
 - **WebSocket protocol has no request-id.** On connect JMRI sends
   `{"type":"hello","data":{...,"heartbeat":<ms>}}` — use that ms value to pace keepalive
   `{"type":"ping"}` → `{"type":"pong"}`. Verified live: concurrent requests of different
   types can come back in an order that doesn't match send order, and `{"type":"error",...}`
   replies carry no reference to the request that caused them. **Correlation is only safe if
   requests are serialized** (one in flight on the socket at a time) — see `jmri_ws.py`.
+- **JMRI sends NO reply when a requested throttle speed/direction already equals the
+  current value** (verified live, reproducible both fields) — a genuine silent no-op, not
+  a dropped message. A "wait for exactly one reply" design hangs until timeout on a repeat
+  `stop`/`set_speed` call. There is also **no read-only way to check current throttle
+  state**: `GET /json/throttle/<id>` → 405, `GET /json/throttle` (list) → 400, re-acquiring
+  an already-held throttle id on the same connection **crashes the connection**
+  (`ConnectionClosedError`), and release-then-reacquire resets JMRI's throttle software
+  state to its defaults rather than reading the real one. The only source of truth is the
+  stream of messages already flowing to a connection holding the throttle.
+- **JMRI pushes every throttle state change to ALL connections holding that address**, not
+  just the one that requested it (verified live with two concurrent connections holding the
+  same address on different throttle ids) — e.g. another JMRI panel or MCP session changing
+  a loco's speed arrives here too, unprompted, as `{"type":"throttle","data":{"throttle":"<our
+  id>","speed":...}}`. Combined with the no-reply fact above, `jmri_ws.py` keeps a per-throttle
+  cache (`_throttles[id]["speed"/"forward"]`) updated from *every* throttle message dispatched,
+  solicited or not; `set_speed()` checks it before sending and skips if already current. A
+  message only counts as the answer to a pending request if its `throttle` id matches the one
+  that request actually asked about (`_pending_throttle_id`) — otherwise it's routed as an
+  unsolicited push, so a foreign-throttle push arriving before the real reply can't corrupt
+  correlation.
+- **Gotcha found via live testing, now fixed**: registering a throttle in the client's cache
+  *before* the connection is guaranteed open caused a real bug — if that call was also what
+  triggered the initial `connect()`, `_do_connect()`'s end-of-connect `_reacquire_throttles()`
+  step would see the not-yet-sent throttle already in the cache and send a duplicate acquire
+  for it, stealing the connection's one reply and hanging the real request forever (reproduced
+  live: even a bare `acquire_throttle` on a fresh connection timed out). Fix: `acquire_throttle()`
+  now calls `connect()` explicitly first, and only registers in the cache after that succeeds.
 
 ## Repo / board structure
 
@@ -90,21 +140,54 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
     3 older test files) broke depending on how pytest was invoked. Added the empty
     `__init__.py` to make `tests/` a real package; fixed in the same commit since it blocked
     running the suite at all.
-- **Issue #8 (throttle acquisition / release) implemented, smoke-tested against real JMRI,
-  AWAITING USER VALIDATION** (not committed yet): `acquire_throttle`/`release_throttle` MCP
-  tools added to `src/jmri_mcp/tools.py`, wiring `jmri_ws.py` into the LLM-facing surface
-  for the first time. Design: **DCC address is the only key the LLM ever uses** — JMRI's own
-  `throttle` id is never exposed; `_throttle_id(address)` derives a stable internal id
-  (`f"addr{address}"`). `jmri_ws.py`'s `acquire_throttle()`/`_reacquire_throttles()` extended
-  to accept an optional `prefix` (targets a specific command station). `server.py` now runs
+- Issue #8 (throttle acquisition / release) implemented, validated, committed, closed.
+  `acquire_throttle`/`release_throttle` MCP tools in `src/jmri_mcp/tools.py`, wiring
+  `jmri_ws.py` into the LLM-facing surface for the first time. Design: **DCC address is
+  the only key the LLM ever uses** — JMRI's own `throttle` id is never exposed;
+  `_throttle_id(address)` derives a stable internal id (`f"addr{address}"`).
+  `jmri_ws.py`'s `acquire_throttle()`/`_reacquire_throttles()` extended to accept an
+  optional `prefix` (targets a specific command station). `server.py` now runs
   `mcp.run_stdio_async()` inside an explicit `async def _run()` with a `try/finally` that
   closes the shared `JmriWsClient` on shutdown — since FastMCP has no lifecycle hooks of its
-  own — so any held throttles are released JMRI-side (throttles are bound to the connection).
-  Added `reset_ws_client` autouse fixture in `tests/conftest.py` to stop the WS client
-  singleton from leaking state across tests. 4 new tests in `test_tools.py`. Full suite:
-  52 passed. Live smoke test confirmed acquire/release round-trip and, separately, that
-  closing stdin (clean shutdown) genuinely releases a held throttle JMRI-side (verified via
-  a fresh acquire afterward showing `"clients": 1`, not a stale duplicate).
+  own — so any held throttles are released JMRI-side. Also added `jmri-cli throttle
+  acquire/release` for manual testing without an MCP client.
+- **Issue #9 (set_speed / stop / emergency_stop) implemented, live-verified, AWAITING USER
+  VALIDATION** (not committed yet): three new MCP tools in `tools.py`, all reusing the
+  address-keyed throttle from #8. `_ensure_acquired()` acquires the throttle transparently
+  if this connection doesn't hold it yet (JMRI otherwise rejects speed commands with
+  "Throttles must be requested with an address.", verified live) — chosen over requiring an
+  explicit prior `acquire_throttle` call, for voice UX ("speed up the 3" should work
+  standalone). `set_speed` takes 0-100 and converts to JMRI's 0.0-1.0 scale (clamped);
+  `stop` is speed 0.0; `emergency_stop` is speed -1.0 (JMRI's decoder emergency stop,
+  verified live to be a distinct command from a controlled stop). `jmri_ws.py` gained
+  `JmriWsClient.set_speed()`.
+  - **Redesigned mid-implementation** after the user rejected a first fix that cached only
+    this session's own commands (see verified facts above for the full no-op/push/cache
+    design, and the "State can change outside the MCP session" hard rule this enshrined).
+    `jmri_ws.py`'s `_dispatch()` now distinguishes a real reply from an unsolicited push via
+    `_pending_throttle_id`, and updates the per-throttle cache from every throttle message
+    seen. Fixed one bug surfaced only by live testing along the way (throttle registered in
+    cache before `connect()` guaranteed the socket open → duplicate acquire on first
+    connect → hung requests) — see verified facts above.
+  - `fake_jmri` fixture in `tests/conftest.py` extended to track acquired throttle ids
+    (rejecting speed commands on unacquired ones, matching real JMRI), simulate the silent
+    no-op (no reply when requested speed/forward already matches), and push state changes to
+    every connection holding an address, not just the one that sent the change — needed to
+    unit-test the redesign instead of relying solely on live probing.
+  - 9 new tests covering set_speed/stop/emergency_stop plus the no-op-skip, cross-connection
+    push, and pending-request-not-corrupted-by-foreign-push cases. Full suite: 61 passed.
+  - Live-verified against real JMRI (after the user power-cycled the DCC++ Raijin command
+    station, which had gone to state UNKNOWN mid-session — unrelated to this code): bare
+    acquire, speed, repeated stop, repeated emergency_stop, and release all complete in
+    under ~1.5s each including on repeat/no-op calls (previously repeat `stop` hung ~5s to
+    timeout). Also live-verified with two concurrent connections that a speed change on one
+    is reflected in the other's cache via JMRI's push.
+  - `docs/architecture.md` and `docs/cli.md` updated for the finalized design (new `throttle
+    speed/stop/estop` CLI subcommands, live cache/push behavior). **Still pending**:
+    re-presenting this to the user for explicit validation before committing — do not treat
+    a short/ambiguous reply as validation (this happened once already on #8: an
+    AskUserQuestion answer was misread as approval and the card was committed/closed
+    prematurely; corrected afterward but not repeated since).
 - `environment.yml` added (prior session): dedicated `jmri-mcp` conda env on Python 3.12,
   independent of `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently
   still run the `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env

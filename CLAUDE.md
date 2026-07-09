@@ -8,14 +8,20 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
 
 - **Pure stdio MCP server. Never `print()` anywhere** — stdout is the JSON-RPC channel.
   All logging goes to stderr (`logging`, configured in `src/jmri_mcp/server/__init__.py`).
-  Proof this matters: kira's `mcp_pipe.py` forwards every stdout line to the xiaozhi
+  Proof this matters: `xiaozhi_wrapper`'s bridge forwards every stdout line to the xiaozhi
   WebSocket as a protocol message, and Claude Desktop rejects servers that pollute stdout.
 - **Fully dynamic — zero hardcoded layout data.** Systems, roster, turnouts, sensors are
   discovered live from JMRI. Only config: `JMRI_URL` env var (issue #2).
 - **Honest tool results.** Never report `success: true` without checking the JMRI response
   AND re-reading state (see verified facts below). Compact outputs (voice context is small).
-- No xiaozhi-specific code in this repo. xiaozhi connectivity = `mcp_pipe.py` on the kira
-  side (bridges stdio ↔ `MCP_ENDPOINT` WebSocket). Claude launches the stdio server directly.
+- `src/xiaozhi_wrapper/` holds the generic stdio↔WebSocket bridge (`jmri-xiaozhi-bridge`)
+  that exposes `jmri-mcp` (or any stdio MCP server) to xiaozhi/Kira — it imports nothing
+  from `jmri_mcp` and knows nothing about JMRI, so this rule still holds in spirit: no
+  JMRI-specific or xiaozhi-protocol-specific code crosses between the two packages, they
+  only meet at `mcp_config.json`'s `"command": "jmri-mcp"`. Ported from the separate `kira`
+  project (`~/dev/kira/mcp/mcp_pipe.py`) on 2026-07-09 at the user's request, since
+  `pyproject.toml`'s `[project.scripts]` already coupled the two (kira's `mcp_config.json`
+  hardcoded `"command": "jmri-mcp"`) — co-locating removes that cross-repo coupling.
 - **LLM-oriented MCP tools.** Every tool needs maximal descriptive context in its
   docstring, in English, so the model actually understands when/how to use it —
   don't skimp on docstrings to save tokens.

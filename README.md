@@ -8,7 +8,7 @@ MCP (Model Context Protocol) server for [JMRI](https://www.jmri.org/) — contro
 
 - **Fully dynamic** — no hardcoded layout data. Systems (power connections), roster, turnouts and sensors are discovered live from the JMRI server (`GET /json/power`, `{"list": ...}`).
 - **LLM-friendly** — compact tool outputs (voice assistants have small contexts), honest `success`/`error` reporting, docstrings that tell the model *when* and *how* to use each tool.
-- **One server, every client** — pure stdio MCP server: consumed directly by Claude Desktop/Code, and bridged to xiaozhi via [`mcp_pipe.py`](https://github.com/78/mcp-calculator).
+- **One server, every client** — pure stdio MCP server: consumed directly by Claude Desktop/Code, and bridged to xiaozhi via `src/xiaozhi_wrapper/` (`jmri-xiaozhi-bridge`), a generic stdio↔WebSocket bridge included in this repo.
 
 ## Architecture
 

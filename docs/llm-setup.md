@@ -59,14 +59,15 @@ Claude Code's own MCP configuration (see `claude mcp add` / project-level
 
 ## xiaozhi / Kira
 
-This repo has **no xiaozhi-specific code** — xiaozhi/Kira connectivity is a
-bridge that lives entirely in the separate `kira` project (`~/dev/kira`),
-via its `mcp_pipe.py`, which speaks stdio to `jmri-mcp` on one side and
-`MCP_ENDPOINT` (a WebSocket) on the other.
+`src/xiaozhi_wrapper/` is a generic stdio↔WebSocket bridge — it speaks stdio
+to `jmri-mcp` (or any configured MCP server) on one side and `MCP_ENDPOINT`
+(a WebSocket) on the other. It knows nothing about JMRI; the only link
+between the two packages is `mcp_config.json`'s `"command": "jmri-mcp"`. See
+the package docstring (`src/xiaozhi_wrapper/__init__.py`) for the full design.
 
-On the kira side:
-
-`mcp/mcp_config.json`:
+`src/xiaozhi_wrapper/mcp_config.json` is checked into the repo as-is (not a
+template to copy) — nothing in it is secret, it's the same `JMRI_URL`
+already published throughout this repo's own docs:
 
 ```json
 {
@@ -79,16 +80,25 @@ On the kira side:
 }
 ```
 
-Unlike Claude Desktop, `mcp_pipe.py` is launched from your own shell, so it
-**does** inherit your shell `PATH` — a bare `"jmri-mcp"` works as long as the
-right conda env is active when you launch it.
-
-`mcp/launch.sh` should launch `mcp_pipe.py` in config mode (no server name
-argument), which reads `mcp_config.json` and starts every enabled server:
+Install the extra dependency this package needs beyond the core install
+(`python-dotenv`, for optionally loading `MCP_ENDPOINT` from a `.env` file):
 
 ```bash
-python mcp_pipe.py
+pip install -e ".[xiaozhi]"
+```
+
+The bridge is launched from your own shell, so it **does** inherit your
+shell `PATH` — a bare `"jmri-mcp"` in the config works as long as the right
+conda env is active when you launch it. Set `MCP_ENDPOINT` (your xiaozhi
+WebSocket URL) and run it from anywhere — it finds its own `mcp_config.json`
+next to the installed package, not the current directory:
+
+```bash
+export MCP_ENDPOINT=<your xiaozhi ws endpoint>
+jmri-xiaozhi-bridge
 ```
 
 A successful run logs a WebSocket connection to xiaozhi, `jmri-mcp` starting
-up, and an incoming `ListToolsRequest`. Tested end-to-end against xiaozhi this way.
+up, and an incoming `ListToolsRequest`. Tested end-to-end against xiaozhi
+this way (previously as a standalone script in the separate `kira` project,
+ported into this repo 2026-07-09).

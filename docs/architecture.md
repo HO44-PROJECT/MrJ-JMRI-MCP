@@ -1,6 +1,12 @@
 # Architecture
 
 ```
+src/xiaozhi_wrapper/    # generic stdio<->WebSocket bridge for xiaozhi/Kira (no JMRI code)
+├── __init__.py         #   main(); build_server_command(), connect_with_retry(), ...
+├── __main__.py         #   enables `python -m xiaozhi_wrapper`
+├── constants.py         #  env var names, mcp_config.json keys/transport types, backoff/timeout tunables
+└── mcp_config.json      #  checked in as-is — nothing secret (same JMRI_URL published elsewhere)
+
 src/jmri_mcp/
 ├── config/             # env vars: JMRI_URL (e.g. http://10.0.20.20:12080)
 │   └── __init__.py
@@ -52,6 +58,15 @@ have no `main()` and no natural seam to split into multiple files, but
 still follow the "no bare `.py` at the root" rule. Everything except
 `server/` and `cli/` is library code with no top-level side effects —
 it can't be run standalone, only imported.
+
+`src/` has two independent top-level packages: `jmri_mcp/` (this project's
+actual purpose — the MCP server and its CLI) and `xiaozhi_wrapper/` (a
+generic MCP stdio↔WebSocket bridge, JMRI-agnostic, for exposing `jmri-mcp`
+— or any other stdio MCP server — to xiaozhi/Kira). They only meet at
+`mcp_config.json`'s `"command": "jmri-mcp"`; `xiaozhi_wrapper` imports
+nothing from `jmri_mcp`. It was ported into this repo from the separate
+`kira` project on 2026-07-09, since `pyproject.toml`'s `[project.scripts]`
+already coupled the two — see `src/xiaozhi_wrapper/__init__.py`'s docstring.
 
 M3 (roster) is now complete. More tools (turnouts, sensors) will land here
 as later milestones are implemented — see the

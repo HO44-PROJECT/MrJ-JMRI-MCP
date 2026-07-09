@@ -12,7 +12,7 @@
 - DCC++ **5.4.16** (the command station firmware behind the `O`/`Z`/`R` power systems)
 - Python **3.11** (the `kira` conda env currently used to run `jmri-mcp` for both
   Claude Desktop and xiaozhi/Kira) — 3.12 is preferred going forward, see below
-- [xiaozhi](https://github.com/78/xiaozhi-esp32) (via `mcp_pipe.py` in the separate `kira` project)
+- [xiaozhi](https://github.com/78/xiaozhi-esp32) (via `src/xiaozhi_wrapper/`, this repo)
 - Claude Desktop **1.19367.0** (1a5be1), 2026-07-07
 
 ### Python 3.11 vs 3.12
@@ -51,18 +51,25 @@ From the repo root, with your environment already active:
 pip install -e .
 ```
 
-This registers the package (`jmri_mcp`) in editable mode and creates two console
-scripts in the environment's `bin/`:
+This registers the packages (`jmri_mcp`, `xiaozhi_wrapper`) in editable mode and
+creates console scripts in the environment's `bin/`:
 
 | Command | Entry point | Purpose |
 |---|---|---|
-| `jmri-mcp` | `jmri_mcp.server:main` | The MCP stdio server (used by Claude Desktop/Code, or by `mcp_pipe.py` for xiaozhi/Kira) |
+| `jmri-mcp` | `jmri_mcp.server:main` | The MCP stdio server (used by Claude Desktop/Code, or by `jmri-xiaozhi-bridge` for xiaozhi/Kira) |
 | `jmri-cli` | `jmri_mcp.cli:main` | Manual command-line tool for testing against JMRI directly, no MCP client needed |
+| `jmri-xiaozhi-bridge` | `xiaozhi_wrapper:main` | Generic stdio↔WebSocket bridge exposing `jmri-mcp` to xiaozhi/Kira (needs the `xiaozhi` extra, below) |
 
 For development (running the test suite), install the `dev` extra instead:
 
 ```bash
 pip install -e ".[dev]"
+```
+
+For the xiaozhi/Kira bridge, install the `xiaozhi` extra (see [llm-setup.md](llm-setup.md)):
+
+```bash
+pip install -e ".[xiaozhi]"
 ```
 
 ## Verifying the install

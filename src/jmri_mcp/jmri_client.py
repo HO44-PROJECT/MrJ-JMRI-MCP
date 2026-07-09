@@ -4,6 +4,7 @@ All layout data (systems, roster, turnouts, ...) is discovered live from
 JMRI; nothing is hardcoded here.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -14,6 +15,9 @@ from jmri_mcp.config import get_jmri_url
 logger = logging.getLogger("jmri_mcp.client")
 
 _TIMEOUT = 5.0
+_POST_RECHECK_DELAY = 1.0
+POWER_ON = 2
+POWER_OFF = 4
 
 
 class JmriError(Exception):
@@ -38,6 +42,17 @@ async def _get_json(path: str) -> Any:
         raise JmriError(f"GET {url} failed: {exc}") from exc
 
 
+async def _post_json(path: str, body: dict) -> Any:
+    url = f"{get_jmri_url()}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.post(url, json=body)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPError as exc:
+        raise JmriError(f"POST {url} failed: {exc}") from exc
+
+
 async def get_systems() -> list[dict[str, Any]]:
     """Return every power connection known to JMRI.
 
@@ -53,6 +68,33 @@ async def get_systems() -> list[dict[str, Any]]:
     logger.info("Discovered %d power system(s): %s",
                 len(systems), [s.get("name") for s in systems])
     return systems
+
+
+async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
+    """Set power ON/OFF for one system, then report the observed state.
+
+    The POST response is transient (JMRI/DCC++ re-queries the command
+    station and may echo an intermediate state) — this only trusts a
+    re-read taken _POST_RECHECK_DELAY seconds after the POST, not the
+    POST response itself.
+    """
+    desired = POWER_ON if turn_on else POWER_OFF
+    await _post_json("/json/power", {"state": desired, "prefix": prefix})
+    await asyncio.sleep(_POST_RECHECK_DELAY)
+
+    systems = await get_systems()
+    matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
+    if not matches:
+        raise JmriError(f"System with prefix {prefix!r} vanished after POST")
+    observed = matches[0]
+
+    confirmed = observed.get("state") == desired
+    if not confirmed:
+        logger.warning(
+            "set_power(%s, %s): requested state=%s but observed state=%s",
+            prefix, turn_on, desired, observed.get("state"),
+        )
+    return {**observed, "confirmed": confirmed}
 
 
 def resolve_system(

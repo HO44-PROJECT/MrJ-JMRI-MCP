@@ -3,6 +3,7 @@
 Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status ohara
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power set ohara on
 
 Talks to jmri_client.py directly (no MCP/JSON-RPC involved) — useful for
 quick manual checks against a real layout, same role test_manuel.py used
@@ -13,7 +14,7 @@ import argparse
 import asyncio
 import sys
 
-from jmri_mcp.jmri_client import JmriError, get_systems, resolve_system
+from jmri_mcp.jmri_client import JmriError, get_systems, resolve_system, set_power
 
 _STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
 
@@ -39,6 +40,24 @@ async def power_status(args: argparse.Namespace) -> int:
     return 0
 
 
+async def power_set(args: argparse.Namespace) -> int:
+    turn_on = args.state == "on"
+    try:
+        systems = await get_systems()
+        match = resolve_system(args.system, systems)
+        result = await set_power(match["prefix"], turn_on)
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(_format_system(result))
+    if not result["confirmed"]:
+        print(f"WARNING: requested {args.state.upper()} but observed state "
+              f"did not confirm after re-read", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jmri-cli", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -50,6 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("system", nargs="?", default=None,
                          help="System name/prefix/fragment (omit for all systems)")
     status.set_defaults(func=power_status)
+
+    set_ = power_sub.add_parser("set", help="Turn a system's power on/off (writes to JMRI)")
+    set_.add_argument("system", help="System name/prefix/fragment")
+    set_.add_argument("state", choices=["on", "off"])
+    set_.set_defaults(func=power_set)
 
     return parser
 

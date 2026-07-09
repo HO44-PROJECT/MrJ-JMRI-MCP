@@ -2,6 +2,7 @@
 
 import logging
 
+from jmri_mcp import jmri_client
 from jmri_mcp.jmri_client import JmriError, get_systems, resolve_system
 
 logger = logging.getLogger("jmri_mcp.tools")
@@ -49,3 +50,27 @@ def register(mcp) -> None:
             logger.warning("get_power(%r) failed: %s", system, exc)
             return {"error": str(exc)}
         return _compact(match)
+
+    @mcp.tool()
+    async def set_power(system: str | None, turn_on: bool) -> dict:
+        """Turn a DCC system's power ON or OFF, and report the state actually observed.
+
+        Args:
+            system: System name, prefix, or fragment (e.g. "ohara", "O").
+                Case-insensitive. Omit to use JMRI's default system.
+            turn_on: True to turn power ON, False to turn it OFF.
+
+        This writes to JMRI. The reported state is re-read ~1s after the
+        command (JMRI's immediate POST response is transient/unreliable) —
+        if the observed state doesn't match the request, "confirmed" will
+        be false and the caller should say so honestly rather than assume
+        success.
+        """
+        try:
+            systems = await get_systems()
+            match = resolve_system(system, systems)
+            result = await jmri_client.set_power(match["prefix"], turn_on)
+        except JmriError as exc:
+            logger.warning("set_power(%r, %r) failed: %s", system, turn_on, exc)
+            return {"error": str(exc)}
+        return {**_compact(result), "confirmed": result["confirmed"]}

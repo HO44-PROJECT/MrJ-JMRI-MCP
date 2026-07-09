@@ -151,9 +151,10 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
   closes the shared `JmriWsClient` on shutdown — since FastMCP has no lifecycle hooks of its
   own — so any held throttles are released JMRI-side. Also added `jmri-cli throttle
   acquire/release` for manual testing without an MCP client.
-- **Issue #9 (set_speed / stop / emergency_stop) implemented, live-verified, AWAITING USER
-  VALIDATION** (not committed yet): three new MCP tools in `tools.py`, all reusing the
-  address-keyed throttle from #8. `_ensure_acquired()` acquires the throttle transparently
+- Issue #9 (set_speed / stop / emergency_stop) implemented, live-verified, validated,
+  committed (`1925f24`), pushed, closed. M2 continues with #10. Three new MCP tools in
+  `tools.py`, all reusing the address-keyed throttle from #8. `_ensure_acquired()` acquires
+  the throttle transparently
   if this connection doesn't hold it yet (JMRI otherwise rejects speed commands with
   "Throttles must be requested with an address.", verified live) — chosen over requiring an
   explicit prior `acquire_throttle` call, for voice UX ("speed up the 3" should work
@@ -183,11 +184,22 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
     timeout). Also live-verified with two concurrent connections that a speed change on one
     is reflected in the other's cache via JMRI's push.
   - `docs/architecture.md` and `docs/cli.md` updated for the finalized design (new `throttle
-    speed/stop/estop` CLI subcommands, live cache/push behavior). **Still pending**:
-    re-presenting this to the user for explicit validation before committing — do not treat
-    a short/ambiguous reply as validation (this happened once already on #8: an
-    AskUserQuestion answer was misread as approval and the card was committed/closed
-    prematurely; corrected afterward but not repeated since).
+    speed/stop/estop` CLI subcommands, live cache/push behavior). Re-presented to the user
+    after the redesign (not treating the earlier #8 mix-up as a shortcut this time); user
+    validated explicitly ("okay je valide") before commit.
+  - **Also added `jmri-cli throttle sniff [-a ADDR...] [--show-pong]`** in the same commit:
+    dumps every JMRI WebSocket message live (timestamped) until Ctrl-C, via a new
+    `on_message` callback on `JmriWsClient` (fires for every message received, including
+    replies to our own requests — unlike the pre-existing `on_event`, which only fires for
+    unsolicited pushes/messages with nothing pending). `-a` acquires addresses first so
+    their cross-connection pushes show up too. Polished after user feedback: `pong`
+    messages hidden by default (`--show-pong` to reveal), and a throttle message's 69
+    `F0`-`F68` fields collapsed to a single `functions_on` list (omitted if none are on).
+    **Live-validated against real third-party traffic**: sniffing while the user drove a
+    loco from JMRI's own PanelPro app (not `jmri-cli`) correctly showed PanelPro's pushes,
+    including the discovery that PanelPro's "Stop" button sends `speed:-1.0` (JMRI's
+    decoder e-stop) rather than a controlled `speed:0.0` — a PanelPro/JMRI convention
+    unrelated to this project's own `stop` vs `emergency_stop` distinction, not a bug.
 - `environment.yml` added (prior session): dedicated `jmri-mcp` conda env on Python 3.12,
   independent of `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently
   still run the `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env

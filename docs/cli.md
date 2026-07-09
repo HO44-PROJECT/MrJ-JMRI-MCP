@@ -80,6 +80,10 @@ $ jmri-cli throttle acquire 3
 address=3 speed=0.0 forward=True (acquired)
 ```
 
+(This raw `forward=True/False` is `acquire`'s own direct print of JMRI's
+field — `direction`'s subcommand below reports the readable
+`forward`/`reverse` strings instead, matching what the MCP tools expose.)
+
 ## `jmri-cli throttle release <address>`
 
 Acquire then immediately release a loco by DCC address on a fresh
@@ -126,6 +130,20 @@ $ jmri-cli throttle estop 3
 address=3 emergency-stopped
 ```
 
+## `jmri-cli throttle direction <address> <forward|reverse>`
+
+Acquire a loco by DCC address (if not already held) on a fresh connection,
+set its direction, print the direction JMRI actually reports back, then
+close the connection. `forward`/`reverse` are the loco's own decoder-wired
+notion of front/back, not compass direction. Safe to call repeatedly with
+the same direction — same no-op/cache behavior as `speed`/`stop`/`estop`
+(see below).
+
+```bash
+$ jmri-cli throttle direction 3 reverse
+address=3 direction=reverse
+```
+
 ## `jmri-cli throttle sniff [-a N ...] [--show-pong]`
 
 Opens a WebSocket connection and prints every JMRI message it receives,
@@ -157,12 +175,12 @@ That `speed: 0.25` line above came from a *different* `jmri-cli throttle
 speed 3 25` run concurrently in another terminal — this is JMRI's
 cross-connection push in action (see [architecture.md](architecture.md)).
 
-Both `stop` and `estop` (and `speed`) are safe to call repeatedly with the
-same target state — JMRI sends no reply at all when the requested value
-already matches the current one, and the client checks a live local cache
-of the throttle's state before sending, so a repeat call reports the same
-result immediately instead of hanging until timeout. That cache is kept
-fresh by JMRI itself: it pushes every throttle state change to all
+`stop`, `estop`, `speed`, and `direction` are all safe to call repeatedly
+with the same target state — JMRI sends no reply at all when the requested
+value already matches the current one, and the client checks a live local
+cache of the throttle's state before sending, so a repeat call reports the
+same result immediately instead of hanging until timeout. That cache is
+kept fresh by JMRI itself: it pushes every throttle state change to all
 connections holding the same address, not only the one that made the
 change, so this also correctly reflects a speed/direction change made by
 another client (a JMRI panel, another `jmri-cli`/MCP session) — see

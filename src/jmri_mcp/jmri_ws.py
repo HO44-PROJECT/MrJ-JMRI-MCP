@@ -212,6 +212,19 @@ class JmriWsClient:
             return {"throttle": throttle_id, "speed": speed}
         return await self.request("throttle", {"throttle": throttle_id, "speed": speed})
 
+    async def set_direction(self, throttle_id: str, forward: bool) -> dict[str, Any]:
+        """Set direction on an already-acquired throttle. Same no-op/cache logic as set_speed.
+
+        Verified live: JMRI sends no reply at all when the requested
+        direction already matches the current one, for the same reason as
+        speed (see set_speed and the module docstring) — checked against
+        the same live-synced per-throttle cache before sending.
+        """
+        info = self._throttles.get(throttle_id)
+        if info is not None and info.get("forward") == forward:
+            return {"throttle": throttle_id, "forward": forward}
+        return await self.request("throttle", {"throttle": throttle_id, "forward": forward})
+
     # -- internals ---------------------------------------------------
 
     async def _do_connect(self) -> None:

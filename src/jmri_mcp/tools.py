@@ -34,11 +34,17 @@ def _throttle_id(address: int) -> str:
     return f"addr{address}"
 
 
+def _direction_name(forward: bool | None) -> str | None:
+    if forward is None:
+        return None
+    return "forward" if forward else "reverse"
+
+
 def _compact_throttle(data: dict) -> dict:
     return {
         "address": data.get("address"),
         "speed": data.get("speed"),
-        "forward": data.get("forward"),
+        "direction": _direction_name(data.get("forward")),
     }
 
 
@@ -290,3 +296,50 @@ def register(mcp) -> None:
             logger.warning("emergency_stop(%r) failed: %s", address, exc)
             return {"error": str(exc)}
         return {"address": address, "stopped": data.get("speed") == -1.0}
+
+    @mcp.tool()
+    async def set_direction(address: int, direction: str) -> dict:
+        """Set a locomotive's direction of travel: "forward" or "reverse".
+
+        Args:
+            address: The locomotive's DCC address. Acquires the throttle
+                automatically if this session doesn't already hold it.
+            direction: Must be exactly "forward" or "reverse" (case-
+                insensitive). "forward"/"reverse" here mean the loco's own
+                notion of front/back as wired in its decoder — not compass
+                direction or "toward/away from the operator" — so if a user
+                says "turn it around" or "go the other way", flip whatever
+                the current reported direction is rather than guessing.
+
+        Best practice: for a moving loco, bring it to a stop first — DCC
+        decoders generally accept a direction change at speed, but it can
+        cause a rough jolt or be ignored/delayed by the decoder depending
+        on its configuration; this tool does not enforce that, it just
+        forwards the request.
+
+        Returns the direction JMRI actually reports back as "forward" or
+        "reverse" (translated from JMRI's own true/false), not "stopped" —
+        direction and speed are independent fields on the same throttle, so
+        set_direction never changes speed and doesn't report one.
+
+        Like set_speed/stop/emergency_stop, this is safe to call repeatedly
+        with the same direction: JMRI silently no-ops a redundant "already
+        going this way" request instead of replying, and this tool checks a
+        local direction cache — kept fresh by JMRI's own broadcasts of
+        state changes from ANY client, not just this one — before deciding
+        whether to send anything, so a repeat call (or a direction that was
+        actually last changed by a JMRI panel/PanelPro, not this session)
+        still reports the correct current direction instead of hanging.
+        """
+        client = get_ws_client()
+        normalized = direction.strip().lower()
+        if normalized not in ("forward", "reverse"):
+            return {"error": f"direction must be 'forward' or 'reverse', got {direction!r}"}
+        forward = normalized == "forward"
+        try:
+            await _ensure_acquired(client, address)
+            data = await client.set_direction(_throttle_id(address), forward)
+        except JmriWsError as exc:
+            logger.warning("set_direction(%r, %r) failed: %s", address, direction, exc)
+            return {"error": str(exc)}
+        return {"address": address, "direction": _direction_name(data.get("forward", forward))}

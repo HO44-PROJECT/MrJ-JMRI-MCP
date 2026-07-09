@@ -200,6 +200,36 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
     including the discovery that PanelPro's "Stop" button sends `speed:-1.0` (JMRI's
     decoder e-stop) rather than a controlled `speed:0.0` — a PanelPro/JMRI convention
     unrelated to this project's own `stop` vs `emergency_stop` distinction, not a bug.
+- **Issue #10 (set_direction forward/reverse) implemented, live-verified, AWAITING USER
+  VALIDATION** (not committed yet): new `JmriWsClient.set_direction()` in `jmri_ws.py`,
+  mirroring `set_speed()`'s cache-check-then-request/no-op-skip pattern exactly (same
+  live-synced `_throttles[id]["forward"]` cache, same silent-no-op handling). New
+  `set_direction` MCP tool in `tools.py` accepts case-insensitive `"forward"`/`"reverse"`
+  strings and validates them honestly (`{"error": ...}` on anything else); reuses
+  `_ensure_acquired()` from #9 so it auto-acquires like the other throttle tools.
+  **Readable-value cleanup across the whole tool surface**: added `_direction_name()`
+  helper and changed `_compact_throttle()` (used by `acquire_throttle`'s return value) to
+  report `"direction": "forward"|"reverse"` instead of JMRI's raw `"forward": bool` — a
+  deliberate breaking change to `acquire_throttle`'s MCP return shape, done so the LLM
+  never has to interpret a raw boolean anywhere in this tool surface. Updated the one
+  stale test assertion this broke (`test_acquire_throttle_returns_state`).
+  - CLI parity: added `jmri-cli throttle direction <address> <forward|reverse>`, mirroring
+    `throttle_speed`/`throttle_stop`/`throttle_estop`'s acquire-then-act/fresh-connection
+    pattern. Live-verified: set reverse, repeat reverse (no-op, completed in ~0.3s not a
+    ~5s timeout), set forward — all against the real DCC++ Raijin station.
+  - 6 new tests: 3 client-level (`set_direction` basic/no-op-skip/cross-connection-push,
+    mirroring #9's `set_speed` test trio) and 4 tool-level (auto-acquire, case-
+    insensitivity, invalid-value rejection, error honesty). Full suite: 68 passed.
+  - `docs/architecture.md` and `docs/cli.md` updated in the same pass: architecture notes
+    `set_direction`'s reuse of the same cache/push design and the readable-value
+    translation now shared by `acquire_throttle`'s output; cli.md gained the `direction`
+    subcommand section and a note on why `acquire`'s own raw `forward=True/False` print
+    differs from `direction`'s readable output.
+  - Built applying [[feedback-llm-cli-checklist]] from the start (not reactively): the MCP
+    tool's docstring explains decoder-relative forward/reverse semantics, the
+    stop-before-reversing best practice, that direction is independent of speed, and the
+    same no-op/external-change caveats as `set_speed`; the CLI subcommand and its live
+    verification were done as part of this same implementation pass, not deferred.
 - `environment.yml` added (prior session): dedicated `jmri-mcp` conda env on Python 3.12,
   independent of `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently
   still run the `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env

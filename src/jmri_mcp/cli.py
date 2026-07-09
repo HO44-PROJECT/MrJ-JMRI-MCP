@@ -10,6 +10,7 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle speed 3 40
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle stop 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle estop 3
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle direction 3 reverse
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle sniff
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle sniff --address 3 --address 7
 
@@ -176,6 +177,23 @@ async def throttle_estop(args: argparse.Namespace) -> int:
     return 0
 
 
+async def throttle_direction(args: argparse.Namespace) -> int:
+    client = JmriWsClient()
+    forward = args.direction == "forward"
+    try:
+        await client.acquire_throttle(f"cli{args.address}", args.address)
+        data = await client.set_direction(f"cli{args.address}", forward)
+    except JmriWsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await client.close()
+
+    reported = "forward" if data.get("forward", forward) else "reverse"
+    print(f"address={args.address} direction={reported}")
+    return 0
+
+
 def _format_sniff_data(msg_type: str, data) -> str:
     """Compact a JMRI message's data for one-line display.
 
@@ -287,6 +305,11 @@ def build_parser() -> argparse.ArgumentParser:
     estop = throttle_sub.add_parser("estop", help="Emergency stop (JMRI decoder e-stop)")
     estop.add_argument("address", type=int, help="DCC address")
     estop.set_defaults(func=throttle_estop)
+
+    direction = throttle_sub.add_parser("direction", help="Set direction (forward/reverse)")
+    direction.add_argument("address", type=int, help="DCC address")
+    direction.add_argument("direction", choices=["forward", "reverse"])
+    direction.set_defaults(func=throttle_direction)
 
     sniff = throttle_sub.add_parser(
         "sniff", help="Dump every JMRI WebSocket message live, until Ctrl-C"

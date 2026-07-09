@@ -134,6 +134,43 @@ async def test_set_speed_pushes_to_other_connection_holding_same_address(fake_jm
     await b.close()
 
 
+async def test_set_direction_on_acquired_throttle(fake_jmri):
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)  # starts forward=True
+    data = await client.set_direction("t1", False)
+    assert data["forward"] is False
+    await client.close()
+
+
+async def test_set_direction_noop_skips_request_without_hanging(fake_jmri, monkeypatch):
+    import jmri_mcp.jmri_ws as ws_module
+    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)  # starts forward=True
+    data = await client.set_direction("t1", True)  # already True -> must not send
+    assert data == {"throttle": "t1", "forward": True}
+    await client.close()
+
+
+async def test_set_direction_pushes_to_other_connection_holding_same_address(fake_jmri):
+    a = JmriWsClient()
+    b = JmriWsClient()
+    await a.acquire_throttle("a1", 9)
+    await b.acquire_throttle("b1", 9)
+
+    await b.set_direction("b1", False)
+
+    for _ in range(50):
+        if a._throttles["a1"]["forward"] is False:
+            break
+        await asyncio.sleep(0.05)
+    assert a._throttles["a1"]["forward"] is False
+
+    await a.close()
+    await b.close()
+
+
 async def test_pending_request_not_corrupted_by_push_for_other_throttle(fake_jmri):
     # While connection A is mid-request on throttle id "a-other", a push
     # about a *different* throttle id it also holds ("a1") must not be

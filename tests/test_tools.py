@@ -100,7 +100,7 @@ async def test_system_status_unreachable_reports_honestly():
 async def test_acquire_throttle_returns_state(fake_jmri):
     mcp = make_server()
     out = await call(mcp, "acquire_throttle", address=3)
-    assert out == {"acquired": True, "address": 3, "speed": 0.0, "forward": True}
+    assert out == {"acquired": True, "address": 3, "speed": 0.0, "direction": "forward"}
 
 
 async def test_acquire_throttle_passes_prefix(fake_jmri):
@@ -153,4 +153,29 @@ async def test_set_speed_reports_error_honestly(monkeypatch):
     monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
     mcp = make_server()
     out = await call(mcp, "set_speed", address=3, speed_percent=50)
+    assert "error" in out
+
+
+async def test_set_direction_auto_acquires_and_sets_reverse(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_direction", address=3, direction="reverse")
+    assert out == {"address": 3, "direction": "reverse"}
+
+
+async def test_set_direction_is_case_insensitive(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_direction", address=3, direction="Forward")
+    assert out == {"address": 3, "direction": "forward"}
+
+
+async def test_set_direction_rejects_invalid_value(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_direction", address=3, direction="sideways")
+    assert "error" in out
+
+
+async def test_set_direction_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "set_direction", address=3, direction="forward")
     assert "error" in out

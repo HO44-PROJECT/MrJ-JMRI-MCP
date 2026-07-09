@@ -147,6 +147,38 @@ async def test_find_locomotive_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
+async def test_get_locomotive_functions_returns_labels(mock_roster):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "get_locomotive_functions" in tool_names
+
+    out = await call(mcp, "get_locomotive_functions", name="autorail")
+    assert out == {
+        "name": "Autorail",
+        "address": 4,
+        "functions": {"F0": "Lumières avant", "F1": "Lumières cabine", "F2": "Lumières arrière"},
+    }
+
+
+async def test_get_locomotive_functions_empty_when_none_labeled(mock_roster):
+    mcp = make_server()
+    out = await call(mcp, "get_locomotive_functions", name="boite a sel")
+    assert out == {"name": "Boite à Sel", "address": 8, "functions": {}}
+
+
+async def test_get_locomotive_functions_unknown_name_returns_error(mock_roster):
+    mcp = make_server()
+    out = await call(mcp, "get_locomotive_functions", name="tgv")
+    assert "error" in out and "tgv" in out["error"]
+
+
+async def test_get_locomotive_functions_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "get_locomotive_functions", name="autorail")
+    assert "error" in out
+
+
 async def test_acquire_throttle_returns_state(fake_jmri):
     mcp = make_server()
     out = await call(mcp, "acquire_throttle", address=3)

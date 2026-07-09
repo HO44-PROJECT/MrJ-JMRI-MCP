@@ -6,6 +6,9 @@ everything on DCC address — see _throttle_id. list_roster/find_locomotive
 are how the LLM turns a spoken name ("the Autorail") into the address
 those tools need: list_roster for browsing, find_locomotive for resolving
 one specific name (fuzzy, accent/case-insensitive) directly to an address.
+get_locomotive_functions exposes the user's own per-loco function labels
+(set in JMRI's roster editor) so "turn on the rear lights" can resolve to
+the right F-number without any hardcoded name->function mapping.
 """
 
 import logging
@@ -202,6 +205,41 @@ def register(mcp) -> None:
             logger.warning("find_locomotive(%r) failed: %s", name, exc)
             return {"error": str(exc)}
         return entry
+
+    @mcp.tool()
+    async def get_locomotive_functions(name: str) -> dict:
+        """List a locomotive's named decoder functions (e.g. "F2": "Rear lights").
+
+        JMRI lets the user label each loco's functions individually in its
+        roster editor — call this BEFORE set_function whenever the user
+        refers to a function by what it does ("turn on the rear lights",
+        "blow the whistle") instead of an F-number, so you can look up the
+        right number instead of guessing or asking. Only labels the user
+        actually set are returned; most locos have few or none (an empty
+        "functions" dict is normal, not an error — it means this loco has
+        no custom labels, so ask the user for an F-number instead).
+
+        Args:
+            name: The locomotive's name (fuzzy-resolved the same way as
+                find_locomotive — call this directly, you don't need to
+                call find_locomotive first just to get the exact name).
+
+        Returns functions as {"F0": "label", ...}. Function numbers with no
+        label set are omitted entirely (JMRI has 29 possible slots, F0-F28,
+        per loco — only the labeled ones are useful to you).
+        """
+        try:
+            roster = await jmri_client.get_roster()
+            entry = resolve_roster_entry(name, roster)
+            labels = await jmri_client.get_roster_function_labels(entry["name"])
+        except JmriError as exc:
+            logger.warning("get_locomotive_functions(%r) failed: %s", name, exc)
+            return {"error": str(exc)}
+        return {
+            "name": entry["name"],
+            "address": entry["address"],
+            "functions": {f"F{n}": label for n, label in sorted(labels.items())},
+        }
 
     @mcp.tool()
     async def acquire_throttle(address: int, prefix: str | None = None) -> dict:
@@ -415,14 +453,15 @@ def register(mcp) -> None:
             function: Function number, 0-28 inclusive (validated; anything
                 outside that range returns an error rather than being sent
                 to JMRI). What each number actually controls is decoder/
-                roster-specific and NOT known by this tool — F0 is almost
-                universally the headlight(s) (see lights_on/lights_off
-                below for that common case), but F1-F28 vary loco to loco
-                (bell, horn, sound effects, couplers, etc.) and this project
-                has no roster-driven function-name lookup yet. If a user
-                names a function by effect ("turn on the bell") rather than
-                number and you don't already know the mapping for this
-                loco, ask which F-number it is rather than guessing.
+                roster-specific — F0 is almost universally the headlight(s)
+                (see lights_on/lights_off below for that common case), but
+                F1-F28 vary loco to loco (bell, horn, sound effects,
+                couplers, etc.). If a user names a function by effect
+                ("turn on the bell", "rear lights") rather than a number,
+                call get_locomotive_functions(name) FIRST to check for a
+                user-set label before guessing or asking — only fall back
+                to asking the user for the F-number if that loco has no
+                label matching what they described.
             state: True to turn the function on, False to turn it off.
 
         Safe to call repeatedly with the same state: like set_speed/

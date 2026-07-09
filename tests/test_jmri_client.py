@@ -5,6 +5,7 @@ from httpx import ConnectError, Response
 from jmri_mcp.jmri_client import (
     JmriError,
     get_roster,
+    get_roster_function_labels,
     get_systems,
     resolve_roster_entry,
     resolve_system,
@@ -91,6 +92,31 @@ async def test_get_roster_raises_on_non_list_non_dict_payload():
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json="oops"))
         with pytest.raises(JmriError, match="Unexpected /json/roster payload"):
             await get_roster()
+
+
+# --- get_roster_function_labels ---
+
+
+async def test_get_roster_function_labels_returns_only_labeled(mock_roster):
+    labels = await get_roster_function_labels("Autorail")
+    assert labels == {0: "Lumières avant", 1: "Lumières cabine", 2: "Lumières arrière"}
+
+
+async def test_get_roster_function_labels_empty_when_none_set(mock_roster):
+    labels = await get_roster_function_labels("Boite à Sel")
+    assert labels == {}
+
+
+async def test_get_roster_function_labels_unknown_name_raises(mock_roster):
+    with pytest.raises(JmriError, match="No roster entry named 'tgv'"):
+        await get_roster_function_labels("tgv")
+
+
+async def test_get_roster_function_labels_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await get_roster_function_labels("Autorail")
 
 
 # --- resolve_roster_entry: pure function, no I/O ---

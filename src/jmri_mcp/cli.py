@@ -7,6 +7,7 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli status
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster find autorail
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster functions autorail
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle acquire 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle release 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle speed 3 40
@@ -34,6 +35,7 @@ import sys
 from jmri_mcp.jmri_client import (
     JmriError,
     get_roster,
+    get_roster_function_labels,
     get_systems,
     get_version,
     resolve_roster_entry,
@@ -113,6 +115,24 @@ async def roster_find(args: argparse.Namespace) -> int:
     road = entry["road"] or "-"
     model = entry["model"] or "-"
     print(f"address={entry['address']} name={entry['name']} road={road} model={model}")
+    return 0
+
+
+async def roster_functions(args: argparse.Namespace) -> int:
+    try:
+        roster = await get_roster()
+        entry = resolve_roster_entry(args.name, roster)
+        labels = await get_roster_function_labels(entry["name"])
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"{entry['name']} (address={entry['address']})")
+    if not labels:
+        print("  no labeled functions")
+        return 0
+    for n in sorted(labels):
+        print(f"  F{n}: {labels[n]}")
     return 0
 
 
@@ -385,6 +405,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     roster_find_cmd.add_argument("name", help="Locomotive name, or a fragment of it")
     roster_find_cmd.set_defaults(func=roster_find)
+
+    roster_functions_cmd = roster_sub.add_parser(
+        "functions", help="List a locomotive's user-labeled decoder functions"
+    )
+    roster_functions_cmd.add_argument("name", help="Locomotive name, or a fragment of it")
+    roster_functions_cmd.set_defaults(func=roster_functions)
 
     throttle = subparsers.add_parser("throttle", help="Throttle commands (persistent WebSocket)")
     throttle_sub = throttle.add_subparsers(dest="throttle_command", required=True)

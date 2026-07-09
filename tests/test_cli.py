@@ -52,3 +52,17 @@ async def test_roster_find_unknown_name(mock_roster, capsys):
     code, _, err = await run(capsys, "roster", "find", "tgv")
     assert code == 1
     assert "Unknown locomotive 'tgv'" in err
+
+
+async def test_roster_functions_lists_labels(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "functions", "autorail")
+    assert code == 0
+    assert "Autorail (address=4)" in out
+    assert "F0: Lumières avant" in out
+    assert "F2: Lumières arrière" in out
+
+
+async def test_roster_functions_reports_none_labeled(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "functions", "boite a sel")
+    assert code == 0
+    assert "no labeled functions" in out

@@ -6,15 +6,16 @@ src/jmri_mcp/
 ├── jmri_client.py  # async HTTP client for JMRI's JSON API (power, version, ...)
 ├── jmri_ws.py      # persistent WebSocket client (ws://<jmri>/json/) for throttles
 ├── tools.py        # MCP tools exposed to the LLM (list_systems, get_power, set_power,
-│                   #   system_status, list_roster, find_locomotive, acquire_throttle,
-│                   #   release_throttle, set_speed, stop, emergency_stop, set_direction,
-│                   #   set_function, lights_on, lights_off)
+│                   #   system_status, list_roster, find_locomotive,
+│                   #   get_locomotive_functions, acquire_throttle, release_throttle,
+│                   #   set_speed, stop, emergency_stop, set_direction, set_function,
+│                   #   lights_on, lights_off)
 ├── cli.py          # jmri-cli: manual command-line tool, no MCP client needed
 └── server.py       # FastMCP entry point (stdio; logging → stderr only)
 ```
 
-More tools (function labels, turnouts, sensors) will land here as their
-milestones are implemented — see the
+M3 (roster) is now complete. More tools (turnouts, sensors) will land here
+as later milestones are implemented — see the
 [project board](https://github.com/orgs/HO44-PROJECT/projects/3).
 
 ## Two JMRI clients, two different shapes
@@ -99,8 +100,18 @@ tolerant-match design (exact name, then unambiguous fragment) plus an
 accent-insensitive fold (`_fold()`, via `unicodedata` NFKD-strip) so French
 names like "Boite à Sel" match "boite a sel". An ambiguous or unknown name
 returns an "error" explaining why (with the candidate list) rather than
-guessing — the LLM is expected to ask the user to clarify. Function-label
-exposure ("blow the whistle" → the right F-number) is still open, #14.
+guessing — the LLM is expected to ask the user to clarify.
+
+`get_locomotive_functions` exposes the per-loco function labels the user
+sets in JMRI's own roster editor (`functionKeys[].label`, `null` when
+unset — most locos have none) via `jmri_client.get_roster_function_labels()`,
+matching by exact roster name (resolved fuzzily first via
+`resolve_roster_entry`, same as `find_locomotive`). Its docstring tells the
+LLM to call it before `set_function` whenever the user names a function by
+effect ("turn on the rear lights") rather than a number, and only fall
+back to asking for an explicit F-number if that loco has no matching
+label — this closes the gap `set_function`'s own docstring used to flag
+("this project has no roster-driven function-name lookup yet").
 
 ## Throttle tool surface: DCC address as the only key
 

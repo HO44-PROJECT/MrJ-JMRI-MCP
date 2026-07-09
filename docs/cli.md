@@ -103,6 +103,31 @@ Error: Unknown locomotive 'tgv'. Available: ['141R', 'Autorail', ...]
 A name matching more than one entry (e.g. `"a"`) is reported as an
 `Ambiguous locomotive` error listing every match, rather than guessing one.
 
+## `jmri-cli roster functions <name>`
+
+List a locomotive's user-labeled decoder functions — the names the user
+typed into JMRI's own roster editor (PanelPro's Roster Entry, Function
+Panel). Resolves `<name>` the same fuzzy way as `roster find`. Most locos
+have no labels set at all (JMRI always has 29 possible slots, F0-F28, per
+loco — only the ones the user actually named are shown); that's reported
+plainly, not as an error.
+
+```bash
+$ jmri-cli roster functions autorail
+Autorail (address=4)
+  F0: Lumières avant
+  F1: Lumières cabine
+  F2: Lumières arrières
+
+$ jmri-cli roster functions 141r
+141R (address=2)
+  no labeled functions
+```
+
+Use this to find the right F-number for `throttle function`/`set_function`
+when the user names a function by what it does ("the rear lights") instead
+of a number.
+
 ## `jmri-cli throttle acquire <address> [--prefix P]`
 
 Acquire a loco by DCC address on a fresh WebSocket connection, print its
@@ -202,11 +227,13 @@ Acquire a loco by DCC address (if not already held) on a fresh connection,
 set decoder function `F<function>` (0-28) on or off, print the state JMRI
 actually reports back, then close the connection. What each function
 number controls is decoder/roster-specific (F0 is almost universally the
-headlight, see `lights-on`/`lights-off` below) — this command has no
-function-name lookup, it just sends the number given. Out-of-range numbers
-(outside 0-28) are rejected locally without contacting JMRI. Safe to call
-repeatedly with the same state — same no-op/cache behavior as
-`speed`/`stop`/`estop`/`direction` (see below).
+headlight, see `lights-on`/`lights-off` below) — this command takes the
+number directly, it does not look up a name. Use `roster functions <name>`
+above to find the right number first if you only know a function by what
+it does ("the rear lights"). Out-of-range numbers (outside 0-28) are
+rejected locally without contacting JMRI. Safe to call repeatedly with the
+same state — same no-op/cache behavior as `speed`/`stop`/`estop`/`direction`
+(see below).
 
 ```bash
 $ jmri-cli throttle function 3 1 on

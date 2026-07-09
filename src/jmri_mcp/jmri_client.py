@@ -112,6 +112,37 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     return {**observed, "confirmed": confirmed}
 
 
+async def get_roster_function_labels(name: str) -> dict[int, str]:
+    """Return {function_number: label} for a roster entry's user-set function names.
+
+    JMRI's /json/roster always carries all 29 functionKeys (F0-F28) per
+    entry, but `label` is null unless the user typed one in in JMRI (e.g.
+    PanelPro's Roster Entry editor) — most locos in a roster have none set.
+    This returns only the ones that ARE labeled, keyed by function number;
+    an empty dict means the user hasn't labeled anything for this loco (not
+    an error). Matches a roster entry by exact `name` (as returned by
+    get_roster()/resolve_roster_entry(), not fuzzy here — callers should
+    already have resolved the exact name before calling this).
+    """
+    payload = await _get_json("/json/roster")
+    if isinstance(payload, dict):
+        payload = [payload]
+    if not isinstance(payload, list):
+        raise JmriError(f"Unexpected /json/roster payload: {payload!r}")
+    entries = [_unwrap(entry) for entry in payload]
+    match = next((e for e in entries if e.get("name") == name), None)
+    if match is None:
+        raise JmriError(f"No roster entry named {name!r}")
+
+    labels: dict[int, str] = {}
+    for fk in match.get("functionKeys", []):
+        label = fk.get("label")
+        fname = fk.get("name", "")
+        if label and fname[:1] == "F" and fname[1:].isdigit():
+            labels[int(fname[1:])] = label
+    return labels
+
+
 async def get_roster() -> list[dict[str, Any]]:
     """Return every roster entry, compacted to the fields worth 2 KB of raw JSON.
 

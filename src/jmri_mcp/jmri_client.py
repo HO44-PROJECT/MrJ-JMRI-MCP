@@ -112,6 +112,39 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     return {**observed, "confirmed": confirmed}
 
 
+async def get_roster() -> list[dict[str, Any]]:
+    """Return every roster entry, compacted to the fields worth 2 KB of raw JSON.
+
+    Each raw entry is wrapped ({"type": "rosterEntry", "data": {...}}, the
+    legacy prototype bug was reading the envelope level instead of ["data"])
+    and carries ~2 KB of fields (functionKeys, comment, icon paths, ...) not
+    useful for a voice/chat summary. This returns only name, address (as
+    int; JMRI reports it as a numeric string), road, and model — road/model
+    can be empty strings if the user never filled them in JMRI, not missing.
+    """
+    payload = await _get_json("/json/roster")
+    if isinstance(payload, dict):
+        payload = [payload]
+    if not isinstance(payload, list):
+        raise JmriError(f"Unexpected /json/roster payload: {payload!r}")
+    entries = [_unwrap(entry) for entry in payload]
+    compact = []
+    for e in entries:
+        try:
+            address = int(e["address"])
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Roster entry %r has unusable address %r, skipping",
+                           e.get("name"), e.get("address"))
+            continue
+        compact.append({
+            "name": e.get("name", ""),
+            "address": address,
+            "road": e.get("road", ""),
+            "model": e.get("model", ""),
+        })
+    return compact
+
+
 def resolve_system(
     query: str | None, systems: list[dict[str, Any]]
 ) -> dict[str, Any]:

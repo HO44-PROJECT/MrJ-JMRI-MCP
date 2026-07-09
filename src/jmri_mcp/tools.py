@@ -1,8 +1,10 @@
-"""Power and throttle tools exposed to the LLM.
+"""Power, roster, and throttle tools exposed to the LLM.
 
 Throttle tools (acquire_throttle, release_throttle, set_speed, stop,
 emergency_stop, set_direction, set_function, lights_on, lights_off) key
-everything on DCC address — see _throttle_id.
+everything on DCC address — see _throttle_id. list_roster is the current
+way to discover which address belongs to which named locomotive; it does
+not (yet) resolve a name to an address on the tool's behalf.
 """
 
 import logging
@@ -28,9 +30,10 @@ def _compact(system: dict) -> dict:
 def _throttle_id(address: int) -> str:
     """Derive a stable throttle id from a DCC address.
 
-    The LLM identifies a loco by its DCC address alone (no roster yet, see
-    M3) — this hides JMRI's separate "throttle" id from callers so tools
-    only ever deal in addresses.
+    The LLM identifies a loco by its DCC address (list_roster maps a name
+    to one; see #13/#14 for automatic name/function-label resolution) —
+    this hides JMRI's separate "throttle" id from callers so tools only
+    ever deal in addresses.
     """
     return f"addr{address}"
 
@@ -142,6 +145,30 @@ def register(mcp) -> None:
             status["systems_error"] = str(exc)
 
         return status
+
+    @mcp.tool()
+    async def list_roster() -> dict:
+        """List every locomotive in JMRI's roster: name, DCC address, road, model.
+
+        Use this to discover what locomotives exist and their DCC addresses
+        before calling acquire_throttle/set_speed/etc. — those tools take a
+        DCC address, not a name, and this is currently the only way to find
+        out which address belongs to which named loco (e.g. the user says
+        "start the Autorail" but set_speed needs address=4). road/model can
+        be empty strings if the user never filled them in in JMRI — that's
+        normal, not an error. No side effects.
+
+        This does NOT yet resolve a name to an address for you automatically
+        (that's a future tool) — read the returned list and match the name
+        yourself, tolerating case and partial matches the way a human would
+        ("autorail" / "Autorail" should both find the "Autorail" entry).
+        """
+        try:
+            roster = await jmri_client.get_roster()
+        except JmriError as exc:
+            logger.warning("list_roster failed: %s", exc)
+            return {"error": str(exc)}
+        return {"roster": roster}
 
     @mcp.tool()
     async def acquire_throttle(address: int, prefix: str | None = None) -> dict:

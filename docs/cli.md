@@ -67,6 +67,24 @@ DCC++ Zou      : OFF
 WARNING: requested ON but observed state did not confirm after re-read
 ```
 
+## `jmri-cli roster`
+
+List every locomotive in JMRI's roster: DCC address, name, road, model.
+Uses `jmri_client.py` (one-shot HTTP), like `power`/`status`. No side
+effects. Empty road/model print as `-` (the user never filled them in in
+JMRI — not an error).
+
+```bash
+$ jmri-cli roster
+2     141R                 Mikado 141 R                   8273
+4     Autorail             Railcar                        4185A
+8     Boite à Sel          -                              -
+```
+
+This is the current way to find a loco's DCC address by name before using
+any `throttle` subcommand below — there's no name-based lookup yet (planned
+for issue #13), so match the name yourself from this list.
+
 ## `jmri-cli throttle acquire <address> [--prefix P]`
 
 Acquire a loco by DCC address on a fresh WebSocket connection, print its

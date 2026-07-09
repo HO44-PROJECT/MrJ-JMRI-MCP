@@ -25,3 +25,18 @@ async def test_power_status_unknown_system(mock_power, capsys):
     code, _, err = await run(capsys, "power", "status", "tgv")
     assert code == 1
     assert "Unknown system 'tgv'" in err
+
+
+async def test_roster_lists_every_entry(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster")
+    assert code == 0
+    assert "141R" in out and "Mikado 141 R" in out and "8273" in out
+    assert "Autorail" in out and "Railcar" in out
+    assert "Boite à Sel" in out and "-" in out  # empty road/model shown as "-"
+
+
+async def test_roster_reports_error_on_unreachable(monkeypatch, capsys):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    code, _, err = await run(capsys, "roster")
+    assert code == 1
+    assert "Error" in err

@@ -1,0 +1,75 @@
+[
+  {
+    "type": "rosterEntry",
+    "data": {
+      "name": "141R",
+      "address": "2",
+      "isLongAddress": false,
+      "road": "Mikado 141 R",
+      "number": "141 R 1246, dépôt de Miramas",
+      "mfg": "Jouef",
+      "decoderModel": "8x00nn - 4 outputs",
+      "decoderFamily": "Locomotive Decoders",
+      "model": "8273",
+      "comment": "Locomotive 141 Mikado série 141 R",
+      "maxSpeedPct": 100,
+      "image": "/roster/141R/image",
+      "icon": "/roster/141R/icon",
+      "shuntingFunction": "",
+      "owner": "SNCF",
+      "dateModified": "2024-01-20T13:18:40.774+00:00",
+      "functionKeys": [
+        {"name": "F0", "label": null, "lockable": true, "icon": null, "selectedIcon": null},
+        {"name": "F1", "label": null, "lockable": true, "icon": null, "selectedIcon": null}
+      ]
+    }
+  },
+  {
+    "type": "rosterEntry",
+    "data": {
+      "name": "Autorail",
+      "address": "4",
+      "isLongAddress": false,
+      "road": "Railcar",
+      "number": "",
+      "mfg": "",
+      "decoderModel": "",
+      "decoderFamily": "",
+      "model": "4185A",
+      "comment": "",
+      "maxSpeedPct": 100,
+      "image": "/roster/Autorail/image",
+      "icon": "/roster/Autorail/icon",
+      "shuntingFunction": "",
+      "owner": "",
+      "dateModified": "2024-01-20T13:18:40.774+00:00",
+      "functionKeys": [
+        {"name": "F0", "label": "Lumières avant", "lockable": true, "icon": null, "selectedIcon": null},
+        {"name": "F1", "label": "Lumières cabine", "lockable": true, "icon": null, "selectedIcon": null},
+        {"name": "F2", "label": "Lumières arrière", "lockable": true, "icon": null, "selectedIcon": null}
+      ]
+    }
+  },
+  {
+    "type": "rosterEntry",
+    "data": {
+      "name": "Boite à Sel",
+      "address": "8",
+      "isLongAddress": false,
+      "road": "",
+      "number": "",
+      "mfg": "",
+      "decoderModel": "",
+      "decoderFamily": "",
+      "model": "",
+      "comment": "",
+      "maxSpeedPct": 100,
+      "image": "/roster/BoiteASel/image",
+      "icon": "/roster/BoiteASel/icon",
+      "shuntingFunction": "",
+      "owner": "",
+      "dateModified": "2024-01-20T13:18:40.774+00:00",
+      "functionKeys": []
+    }
+  }
+]

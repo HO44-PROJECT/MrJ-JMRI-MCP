@@ -43,6 +43,21 @@ def mock_power(power_fixture):
 
 
 @pytest.fixture
+def roster_fixture() -> list[dict]:
+    return json.loads((FIXTURES / "roster_response.json").read_text())
+
+
+@pytest.fixture
+def mock_roster(roster_fixture):
+    """Mock GET /json/roster to return the captured JMRI 5.4 fixture (3 entries)."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(
+            return_value=Response(200, json=roster_fixture)
+        )
+        yield router
+
+
+@pytest.fixture
 def version_fixture() -> list[dict]:
     return json.loads((FIXTURES / "version_response.json").read_text())
 

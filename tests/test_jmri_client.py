@@ -2,7 +2,7 @@ import pytest
 import respx
 from httpx import ConnectError, Response
 
-from jmri_mcp.jmri_client import JmriError, get_systems, resolve_system
+from jmri_mcp.jmri_client import JmriError, get_roster, get_systems, resolve_system
 from tests.conftest import MOCK_JMRI_URL
 
 
@@ -40,6 +40,51 @@ async def test_get_systems_raises_on_non_list_non_dict_payload():
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json="oops"))
         with pytest.raises(JmriError, match="Unexpected /json/power payload"):
             await get_systems()
+
+
+# --- get_roster ---
+
+
+async def test_get_roster_compacts_fixture_entries(mock_roster, roster_fixture):
+    roster = await get_roster()
+    assert roster == [
+        {"name": "141R", "address": 2, "road": "Mikado 141 R", "model": "8273"},
+        {"name": "Autorail", "address": 4, "road": "Railcar", "model": "4185A"},
+        {"name": "Boite à Sel", "address": 8, "road": "", "model": ""},
+    ]
+
+
+async def test_get_roster_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await get_roster()
+
+
+async def test_get_roster_skips_entries_with_unusable_address():
+    bad = [
+        {"type": "rosterEntry", "data": {"name": "Ghost", "address": "not-a-number"}},
+        {"type": "rosterEntry", "data": {"name": "141R", "address": "2", "road": "Mikado", "model": "8273"}},
+    ]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=bad))
+        roster = await get_roster()
+    assert roster == [{"name": "141R", "address": 2, "road": "Mikado", "model": "8273"}]
+
+
+async def test_get_roster_accepts_bare_data():
+    bare = [{"name": "141R", "address": "2", "road": "Mikado", "model": "8273"}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=bare))
+        roster = await get_roster()
+    assert roster == [{"name": "141R", "address": 2, "road": "Mikado", "model": "8273"}]
+
+
+async def test_get_roster_raises_on_non_list_non_dict_payload():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json="oops"))
+        with pytest.raises(JmriError, match="Unexpected /json/roster payload"):
+            await get_roster()
 
 
 # --- resolve_system: pure function, no I/O ---

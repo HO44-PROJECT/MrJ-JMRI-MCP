@@ -5,6 +5,7 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status ohara
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power set ohara on
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli status
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle acquire 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle release 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle speed 3 40
@@ -31,6 +32,7 @@ import sys
 
 from jmri_mcp.jmri_client import (
     JmriError,
+    get_roster,
     get_systems,
     get_version,
     resolve_system,
@@ -78,6 +80,23 @@ async def power_set(args: argparse.Namespace) -> int:
         print(f"WARNING: requested {args.state.upper()} but observed state "
               f"did not confirm after re-read", file=sys.stderr)
         return 1
+    return 0
+
+
+async def roster_list(args: argparse.Namespace) -> int:
+    try:
+        roster = await get_roster()
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if not roster:
+        print("Roster is empty")
+        return 0
+    for entry in roster:
+        road = entry["road"] or "-"
+        model = entry["model"] or "-"
+        print(f"{entry['address']:<5} {entry['name']:<20} {road:<30} {model}")
     return 0
 
 
@@ -338,6 +357,11 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="One-call diagnostic: JMRI reachability, version, power systems"
     )
     status_cmd.set_defaults(func=system_status)
+
+    roster_cmd = subparsers.add_parser(
+        "roster", help="List every locomotive in JMRI's roster (name, address, road, model)"
+    )
+    roster_cmd.set_defaults(func=roster_list)
 
     throttle = subparsers.add_parser("throttle", help="Throttle commands (persistent WebSocket)")
     throttle_sub = throttle.add_subparsers(dest="throttle_command", required=True)

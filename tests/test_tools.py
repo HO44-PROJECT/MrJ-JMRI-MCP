@@ -97,6 +97,28 @@ async def test_system_status_unreachable_reports_honestly():
     assert "systems" not in out
 
 
+async def test_list_roster_registered_and_compact(mock_roster):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "list_roster" in tool_names
+
+    out = await call(mcp, "list_roster")
+    assert out == {
+        "roster": [
+            {"name": "141R", "address": 2, "road": "Mikado 141 R", "model": "8273"},
+            {"name": "Autorail", "address": 4, "road": "Railcar", "model": "4185A"},
+            {"name": "Boite à Sel", "address": 8, "road": "", "model": ""},
+        ]
+    }
+
+
+async def test_list_roster_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "list_roster")
+    assert "error" in out
+
+
 async def test_acquire_throttle_returns_state(fake_jmri):
     mcp = make_server()
     out = await call(mcp, "acquire_throttle", address=3)

@@ -35,3 +35,10 @@ design notes.
 | Variable | Default | Description |
 |---|---|---|
 | `JMRI_URL` | `http://localhost:12080` | Base URL of the JMRI Web Server |
+
+## License
+
+[AGPL-3.0-or-later](LICENSE). Chosen deliberately over a permissive license
+(MIT/Apache) so that anyone who modifies this project and offers it as a
+network service (not just redistributes the code) must also publish their
+modified source — see the [license text](LICENSE) for the exact terms.

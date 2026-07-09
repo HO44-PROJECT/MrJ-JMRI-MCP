@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MCP server for JMRI - voice/chat control of DCC model railroads (xiaozhi, Claude, ...)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "TBD" }
+license = { text = "AGPL-3.0-or-later" }
 dependencies = [
     "mcp>=1.8.1",
     "httpx>=0.27",

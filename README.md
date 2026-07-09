@@ -12,17 +12,10 @@ MCP (Model Context Protocol) server for [JMRI](https://www.jmri.org/) — contro
 
 ## Architecture
 
-```
-src/jmri_mcp/
-├── config.py       # env vars: JMRI_URL (e.g. http://10.0.20.20:12080)
-├── jmri_client.py  # async HTTP client for JMRI's JSON API (power, version, ...)
-├── tools.py        # MCP tools exposed to the LLM (list_systems, get_power, set_power, system_status)
-├── cli.py          # jmri-cli: manual command-line tool, no MCP client needed
-└── server.py       # FastMCP entry point (stdio; logging → stderr only)
-```
-
-More tools (throttle, roster, turnouts, sensors, lights) will land here as
-their milestones are implemented — see the [project board](https://github.com/orgs/HO44-PROJECT/projects/3).
+Pure stdio MCP server, two JMRI clients under the hood (plain HTTP for
+one-shot calls, a persistent WebSocket for throttles) — see
+[docs/architecture.md](docs/architecture.md) for the module layout and
+design notes.
 
 ## Requirements
 
@@ -31,6 +24,7 @@ their milestones are implemented — see the [project board](https://github.com/
 
 ## Documentation
 
+- **[docs/architecture.md](docs/architecture.md)** — module layout, the two JMRI clients, WebSocket design notes.
 - **[docs/install.md](docs/install.md)** — installing the package, verifying `jmri-mcp`/`jmri-cli`.
 - **[docs/cli.md](docs/cli.md)** — `jmri-cli` command reference.
 - **[docs/llm-setup.md](docs/llm-setup.md)** — wiring the server into Claude Desktop, Claude Code, xiaozhi/Kira.

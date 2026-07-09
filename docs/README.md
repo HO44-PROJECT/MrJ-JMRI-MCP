@@ -1,5 +1,6 @@
 # Documentation
 
+- [Architecture](architecture.md) — module layout, the two JMRI clients, WebSocket design notes.
 - [Installation](install.md) — requirements, `pip install`, verifying the entry points.
 - [CLI reference](cli.md) — `jmri-cli`, every subcommand, examples.
 - [LLM client setup](llm-setup.md) — wiring the MCP server into Claude Desktop, Claude Code, and xiaozhi/Kira.

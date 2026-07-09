@@ -37,8 +37,16 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
   (the legacy prototype searched the envelope level → always empty). Entries are ~2 KB each
   (functionKeys, comments) → summarize for LLM output.
 - **Throttles require a persistent connection**: acquire with
-  `{"type":"throttle","data":{"name":"<id>","address":<n>}}` on the WebSocket, then send
+  `{"type":"throttle","data":{"throttle":"<id>","address":<n>}}` on the WebSocket, then send
   speed/`F<n>` on the SAME connection; JMRI releases the throttle when the connection closes.
+  (Corrected 2026-07-09: the acquire key is `"throttle"`, not `"name"` — verified live; the
+  reply echoes both `"throttle"` and `"name"` set to the same id, `"release":true` releases.)
+- **WebSocket protocol has no request-id.** On connect JMRI sends
+  `{"type":"hello","data":{...,"heartbeat":<ms>}}` — use that ms value to pace keepalive
+  `{"type":"ping"}` → `{"type":"pong"}`. Verified live: concurrent requests of different
+  types can come back in an order that doesn't match send order, and `{"type":"error",...}`
+  replies carry no reference to the request that caused them. **Correlation is only safe if
+  requests are serialized** (one in flight on the socket at a time) — see `jmri_ws.py`.
 
 ## Repo / board structure
 
@@ -61,26 +69,34 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
 2. Implement + smoke-test for real (e.g. MCP `initialize`/`tools/list` over stdio, checking
    stdout stays pure JSON-RPC; JMRI reads against the live server are OK, writes only as
    no-ops or with the user's go-ahead).
-3. Update the relevant doc chapter(s) under `docs/` (install/cli/llm-setup/testing) and the
-   README if the card adds a new tool, CLI subcommand, config key, or changes setup steps —
-   docs land in the same commit as the card, not as a separate later pass.
+3. Update the relevant doc chapter(s) under `docs/` (architecture/install/cli/llm-setup/testing)
+   and the README if the card adds a new tool, CLI subcommand, config key, module, or changes
+   setup steps — docs land in the same commit as the card, not as a separate later pass.
 4. Present the result to the user; **wait for their validation**.
 5. On validation: commit with `Closes #N` in the message, push, move the card to **Done**.
 
 ## Current state (end of session 2026-07-09)
 
-- Issues #1–#5 implemented, validated, committed, closed. M1 nearly done.
-- **Issue #6 (`system_status` tool) implemented, smoke-tested, AWAITING USER VALIDATION**
-  (not committed yet): `get_version()` in `jmri_client.py`, `system_status` MCP tool in
-  `tools.py`, `jmri-cli status` subcommand, tests + `tests/fixtures/version_response.json`.
-- `docs/` chapter structure created this session (install/cli/llm-setup/testing), README
-  trimmed to point at it. Also not committed yet — bundle with #6 or commit separately,
-  ask the user which.
-- `environment.yml` added: dedicated `jmri-mcp` conda env on Python 3.12, independent of
-  `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently still run the
-  `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env means updating
-  the hardcoded path in `claude_desktop_config.json` and Kira's `mcp_config.json` — not
-  done yet, pending user decision.
+- Issues #1–#6 implemented, validated, committed, closed. M1 done.
+- **Issue #7 (persistent WebSocket client) implemented, smoke-tested against real JMRI,
+  AWAITING USER VALIDATION** (not committed yet): `src/jmri_mcp/jmri_ws.py` —
+  `JmriWsClient` with lazy connect, auto-reconnect (exponential backoff), heartbeat-paced
+  keepalive ping/pong, serialized request/response (see verified facts above for why),
+  and a throttle registry that re-acquires after reconnect. `get_ws_client()` gives a
+  process-wide shared instance. Not yet wired into any MCP tool (that's #8+ — this card
+  was foundation only, no throttle tool exposed to the LLM yet).
+- `tests/test_jmri_ws.py` added: a local `websockets` server fixture (`fake_jmri`) stands
+  in for JMRI since `respx` only mocks HTTP, not WebSockets. 8 new tests.
+- Fixed a pre-existing, unrelated test-collection bug while running the full suite:
+  `tests/__init__.py` was missing, so `from tests.conftest import MOCK_JMRI_URL` (used by
+  3 older test files) broke depending on how pytest was invoked. Added the empty
+  `__init__.py` to make `tests/` a real package; not caused by and not scoped to #7, but
+  fixed in the same commit since it blocked running the suite at all.
+- `environment.yml` added (prior session): dedicated `jmri-mcp` conda env on Python 3.12,
+  independent of `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently
+  still run the `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env
+  means updating the hardcoded path in `claude_desktop_config.json` and Kira's
+  `mcp_config.json` — not yet done, pending user decision.
 - Kira integration (issue #18) already working end-to-end: `mcp_config.json` +
   `launch.sh` (`python mcp_pipe.py`, config mode) verified live against xiaozhi.
 - Claude Desktop integration already working: `jmri` entry added to

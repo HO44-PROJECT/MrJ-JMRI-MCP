@@ -51,7 +51,12 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
   and the WebSocket envelope `{"method":"post","data":{…}}` (tolerated). Prefer the documented one.
 - Roster entries are wrapped: `{"type":"rosterEntry","data":{…}}` — read `e["data"]`
   (the legacy prototype searched the envelope level → always empty). Entries are ~2 KB each
-  (functionKeys, comments) → summarize for LLM output.
+  (functionKeys, comments) → summarize for LLM output. `address` is a numeric **string**
+  (`"4"`, not `4`) — normalize to int. Each entry always carries all 29 `functionKeys`
+  (F0-F28); `label` is `null` unless the user typed one into JMRI's roster editor —
+  verified live: only 2 of the user's 10 locos have any labels set (Autorail: F0="Lumières
+  avant", F1="Lumières cabine", F2="Lumières arrières"; Diesel DB: F0="Feux"), the rest
+  have none. An empty/missing label set is normal, not an error.
 - **Throttles require a persistent connection**: acquire with
   `{"type":"throttle","data":{"throttle":"<id>","address":<n>}}` on the WebSocket, then send
   speed/`F<n>` on the SAME connection; JMRI releases the throttle when the connection closes.
@@ -125,7 +130,7 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
 4. Present the result to the user; **wait for their validation**.
 5. On validation: commit with `Closes #N` in the message, push, move the card to **Done**.
 
-## Current state (end of session 2026-07-09, continued)
+## Current state (end of session 2026-07-09, M3 complete)
 
 - Issues #1–#7 implemented, validated, committed, closed. M1 done; M2 underway.
   - #7 (persistent WebSocket client): `src/jmri_mcp/jmri_ws.py` — `JmriWsClient` with lazy
@@ -231,8 +236,8 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
     same no-op/external-change caveats as `set_speed`; the CLI subcommand and its live
     verification were done as part of this same implementation pass, not deferred.
 - **Issue #11 (set_function F0-F28 + lights_on/lights_off) implemented, live-verified,
-  AWAITING USER VALIDATION** (not committed yet): M2 (#7-#11) now fully implemented pending
-  this last validation. New `JmriWsClient.set_function()` in `jmri_ws.py`, mirroring
+  validated, committed (`c218df0`), pushed, closed. M2 (#7-#11) complete.** New
+  `JmriWsClient.set_function()` in `jmri_ws.py`, mirroring
   `set_speed()`/`set_direction()`'s cache-check-then-request/no-op-skip pattern, but keyed
   per function number rather than a single field: `_throttles[id]["functions"]` is a
   `{int: bool}` dict, populated by `_update_throttle_cache()` parsing any `F<n>` field off
@@ -273,6 +278,58 @@ Desktop/Code. The user communicates in French; repo content (code, issues, commi
     (project has no roster-driven function-name lookup yet, that's M3), and to ask the user
     for an F-number rather than guess when they name a function by effect (e.g. "turn on
     the bell"); CLI subcommands were built and live-tested in the same pass, not deferred.
+- **Critical safety incident during #11 manual testing** (user tested via CLI with the real
+  Autorail, address 4): while debugging why `jmri-cli throttle speed 4 40` didn't move the
+  loco, this assistant re-ran that exact speed command itself, unprompted, to observe wire
+  behavior — the user had to perform a real emergency stop on physical hardware as a result.
+  Corrected hard, twice, by the user; **standing rule now in effect for all future sessions,
+  no exceptions**: never invoke any command that could set a locomotive in motion on the
+  real layout (JMRI_URL pointed at 10.0.20.20, not a test fixture) without asking the user
+  first for that *specific* command, every single time — "just to debug" is not
+  authorization, and a prior authorized command does not carry over to the next one. Saved
+  durably as [[feedback-no-unauthorized-motion]]; read-only commands (roster reads, `status`,
+  `list_roster`, `find_locomotive`, `get_locomotive_functions`) are not affected by this rule.
+- **Root-caused (separately, same session) why `jmri-cli throttle speed` didn't reliably move
+  a real loco**: a JMRI throttle only means anything on the connection that acquired it, and
+  `throttle_speed`'s one-shot CLI design closed that connection immediately after sending the
+  speed command, releasing the throttle before the decoder could sustain a nonzero speed
+  (verified via `sniff`: `speed:0.4` accepted, then `clients:1` as the connection dropped,
+  then speed observed decaying). A "hold connection open until Ctrl-C" fix was tried and
+  **rejected by the user** (Ctrl-C released the throttle without stopping first, so the loco
+  kept coasting — worse than the original bug) — reverted to a comment block in `cli.py`
+  explaining both the bug and the rejected fix; **still an open/known limitation of the CLI**
+  (documented in `docs/cli.md`), not present via MCP (long-lived shared connection).
+- M3 (Roster, #12-#14) implemented in direct response to a real usability gap the user hit
+  testing #11 via voice/CLI ("allume toutes les lumières" / "les feux arrière" not
+  understood) — mapped to already-scoped issues rather than new ad-hoc work:
+  - **#12 (compact `list_roster`)**: `jmri_client.get_roster()` compacts JMRI's ~2 KB/entry
+    `/json/roster` (functionKeys, comments, icon paths...) to `{name, address, road, model}`;
+    fixes the legacy prototype's envelope bug (`_unwrap()`, same helper `get_systems()`
+    uses) and normalizes `address` from JMRI's numeric string to int. `list_roster` MCP tool
+    + `jmri-cli roster`. Committed `3e2c47c`, closed.
+  - **#13 (name→address resolution)**: `resolve_roster_entry()` mirrors `resolve_system()`'s
+    tolerant matching (exact, then unambiguous fragment) plus accent-insensitive folding
+    (`_fold()` via `unicodedata` NFKD-strip) so French names match regardless of accents
+    ("boite a sel" → "Boite à Sel"). `find_locomotive` MCP tool + `jmri-cli roster find
+    <name>`; docstring tells the LLM to call this whenever a user names a loco instead of
+    giving an address, then feed the resolved address to the throttle tools. Ambiguous/
+    unknown names return an "error" listing candidates rather than guessing. Committed
+    `8cd27da`, closed.
+  - **#14 (function labels)**: `get_roster_function_labels()` reads `functionKeys[].label`
+    (user-set in JMRI's own roster editor; `null`/most locos unset — see verified facts
+    above for the Autorail/Diesel DB label snapshot). `get_locomotive_functions` MCP tool +
+    `jmri-cli roster functions <name>` combine this with #13's fuzzy resolution so the LLM
+    goes straight from a spoken name to its labeled functions. `set_function`'s docstring
+    updated to point here (call `get_locomotive_functions` first when a function is named by
+    effect, e.g. "rear lights" → F2, only ask for a number if no label matches) instead of
+    its old "no roster-driven lookup yet" text. Committed `b39bbf6`, closed. **This is what
+    was missing for "allume toutes les lumières de l'Autorail" — full flow now: `find_locomotive`
+    → `get_locomotive_functions` → `set_function` per labeled F-number, each still gated by
+    [[feedback-no-unauthorized-motion]] if it's a moving/functional command on the real loco.**
+  - Test count grew 76 → 114 across the three cards (all passing); each card live-verified
+    against the user's real JMRI (read-only — no throttle/motion commands were run without
+    asking, consistent with the standing rule above) and validated by the user before commit.
+  - M3 is now fully done. Next open milestone: **M4 Layout (#15-17)**.
 - `environment.yml` added (prior session): dedicated `jmri-mcp` conda env on Python 3.12,
   independent of `kira` (which stays on 3.11 — xiaozhi/Kira and Claude Desktop currently
   still run the `kira`-env copy of `jmri-mcp`/`jmri-cli`). Switching them to the 3.12 env

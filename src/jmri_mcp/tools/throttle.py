@@ -317,6 +317,9 @@ def register(mcp) -> None:
         so this is the tool to reach for on a plain "turn the lights on"
         voice request without asking the user for a function number. Same
         auto-acquire and no-op-safe behavior as set_function.
+
+        This is the locomotive's own headlight, NOT layout/scenery lighting
+        (depot, street lamps, signals) — for those, use set_light instead.
         """
         return await set_function(address, 0, True)
 
@@ -326,5 +329,8 @@ def register(mcp) -> None:
 
         See lights_on for why F0. Same auto-acquire and no-op-safe behavior
         as set_function.
+
+        This is the locomotive's own headlight, NOT layout/scenery lighting
+        (depot, street lamps, signals) — for those, use set_light instead.
         """
         return await set_function(address, 0, False)

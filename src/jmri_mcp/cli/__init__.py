@@ -19,12 +19,20 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle lights-off 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle sniff
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle sniff --address 3 --address 7
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli light list
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli light status "Depot Lighting"
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli light set "Depot Lighting" on
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli turnout list
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli turnout status "Layout Turnout A"
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli turnout set "Layout Turnout A" thrown
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli sensor list
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli sensor status "Montagne B"
 
-`power`/`status` talk to jmri_client.py directly (one-shot HTTP, no
-MCP/JSON-RPC involved). `throttle` talks to jmri_ws.py (a fresh WebSocket
-connection for the one command, then closed) — useful for quick manual
-checks against a real layout, same role test_manuel.py used to play before
-it became tests/test_live.py.
+`power`/`status`/`light`/`turnout`/`sensor` talk to jmri_client.py directly
+(one-shot HTTP, no MCP/JSON-RPC involved). `throttle` talks to jmri_ws.py (a
+fresh WebSocket connection for the one command, then closed) — useful for
+quick manual checks against a real layout, same role test_manuel.py used to
+play before it became tests/test_live.py.
 
 Package layout:
     constants.py  Shared constants (state names, id prefixes, ranges).
@@ -34,6 +42,10 @@ Package layout:
     roster.py     roster / roster find / roster functions (jmri_client.py).
     throttle.py   throttle acquire/release/speed/stop/estop/direction/
                   function/lights-on/lights-off/sniff (jmri_ws.py).
+    light.py      light list/status/set (jmri_client.py, one-shot HTTP;
+                  layout/scenery lights, not loco headlights).
+    turnout.py    turnout list/status/set (jmri_client.py, one-shot HTTP).
+    sensor.py     sensor list/status (jmri_client.py, one-shot HTTP; read-only).
     parser.py     build_parser(): wires all of the above into one CLI.
 """
 

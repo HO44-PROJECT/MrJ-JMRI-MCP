@@ -1,0 +1,29 @@
+[
+    {
+        "type": "light",
+        "data": {
+            "name": "IL1",
+            "userName": "Depot Lighting",
+            "state": 4,
+            "comment": null
+        }
+    },
+    {
+        "type": "light",
+        "data": {
+            "name": "IL2",
+            "userName": "Street Lamps",
+            "state": 2,
+            "comment": null
+        }
+    },
+    {
+        "type": "light",
+        "data": {
+            "name": "IL3",
+            "userName": null,
+            "state": 4,
+            "comment": null
+        }
+    }
+]

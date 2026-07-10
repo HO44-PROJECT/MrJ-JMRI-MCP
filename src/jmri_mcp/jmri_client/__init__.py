@@ -8,9 +8,12 @@ throttle is bound to its connection), everything here is a one-shot HTTP
 request with no state kept between calls.
 
 Package layout:
-    _http.py   Shared GET/POST plumbing, JmriError, envelope unwrapping.
-    power.py   Version, power-system discovery, power on/off, resolve_system.
-    roster.py  Roster listing, name resolution, function labels.
+    _http.py    Shared GET/POST plumbing, JmriError, envelope unwrapping.
+    power.py    Version, power-system discovery, power on/off, resolve_system.
+    roster.py   Roster listing, name resolution, function labels.
+    light.py    Layout light discovery, on/off, resolve_light.
+    turnout.py  Turnout discovery, closed/thrown, resolve_turnout.
+    sensor.py   Sensor discovery (read-only), resolve_sensor.
 
 Every public name below is re-exported here so existing callers can keep
 doing `from jmri_mcp.jmri_client import get_roster` etc. without knowing
@@ -18,6 +21,13 @@ which domain module actually defines it.
 """
 
 from jmri_mcp.jmri_client._http import JmriError
+from jmri_mcp.jmri_client.light import (
+    LIGHT_OFF,
+    LIGHT_ON,
+    get_lights,
+    resolve_light,
+    set_light,
+)
 from jmri_mcp.jmri_client.power import (
     POWER_OFF,
     POWER_ON,
@@ -31,6 +41,19 @@ from jmri_mcp.jmri_client.roster import (
     get_roster_function_labels,
     resolve_roster_entry,
 )
+from jmri_mcp.jmri_client.sensor import (
+    SENSOR_ACTIVE,
+    SENSOR_INACTIVE,
+    get_sensors,
+    resolve_sensor,
+)
+from jmri_mcp.jmri_client.turnout import (
+    TURNOUT_CLOSED,
+    TURNOUT_THROWN,
+    get_turnouts,
+    resolve_turnout,
+    set_turnout,
+)
 
 __all__ = [
     "JmriError",
@@ -43,4 +66,18 @@ __all__ = [
     "get_roster",
     "get_roster_function_labels",
     "resolve_roster_entry",
+    "LIGHT_ON",
+    "LIGHT_OFF",
+    "get_lights",
+    "set_light",
+    "resolve_light",
+    "TURNOUT_CLOSED",
+    "TURNOUT_THROWN",
+    "get_turnouts",
+    "set_turnout",
+    "resolve_turnout",
+    "SENSOR_ACTIVE",
+    "SENSOR_INACTIVE",
+    "get_sensors",
+    "resolve_sensor",
 ]

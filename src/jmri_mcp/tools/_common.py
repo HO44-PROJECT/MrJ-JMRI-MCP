@@ -7,6 +7,9 @@ compaction.
 """
 
 POWER_STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
+LIGHT_STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "INCONSISTENT"}
+TURNOUT_STATE_NAMES = {2: "CLOSED", 4: "THROWN", 0: "UNKNOWN", 8: "INCONSISTENT"}
+SENSOR_STATE_NAMES = {2: "ACTIVE", 4: "INACTIVE", 0: "UNKNOWN", 8: "INCONSISTENT"}
 
 
 def compact_power(system: dict) -> dict:
@@ -23,6 +26,61 @@ def compact_power(system: dict) -> dict:
         "name": system.get("name"),
         "state": POWER_STATE_NAMES.get(system.get("state"), "UNKNOWN"),
         "default": bool(system.get("default")),
+    }
+
+
+def compact_light(light: dict) -> dict:
+    """Reduce a raw JMRI light dict to the fields worth showing the LLM.
+
+    Args:
+        light: A light dict as returned by jmri_client.get_lights(), with
+            at least "name" and "state", and optionally "userName".
+
+    Returns:
+        {"name": ..., "state": "ON"/"OFF"/"UNKNOWN"/"INCONSISTENT"}. "name"
+        is the user-friendly userName if JMRI has one set, else falls back
+        to the raw system name (e.g. "IL1") — this is what the LLM should
+        show/match against, not JMRI's internal system name.
+    """
+    return {
+        "name": light.get("userName") or light.get("name"),
+        "state": LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN"),
+    }
+
+
+def compact_turnout(turnout: dict) -> dict:
+    """Reduce a raw JMRI turnout dict to the fields worth showing the LLM.
+
+    Args:
+        turnout: A turnout dict as returned by jmri_client.get_turnouts(),
+            with at least "name" and "state", and optionally "userName".
+
+    Returns:
+        {"name": ..., "state": "CLOSED"/"THROWN"/"UNKNOWN"/"INCONSISTENT"}.
+        "name" is the user-friendly userName if JMRI has one set, else
+        falls back to the raw system name (e.g. "IT100").
+    """
+    return {
+        "name": turnout.get("userName") or turnout.get("name"),
+        "state": TURNOUT_STATE_NAMES.get(turnout.get("state"), "UNKNOWN"),
+    }
+
+
+def compact_sensor(sensor: dict) -> dict:
+    """Reduce a raw JMRI sensor dict to the fields worth showing the LLM.
+
+    Args:
+        sensor: A sensor dict as returned by jmri_client.get_sensors(),
+            with at least "name" and "state", and optionally "userName".
+
+    Returns:
+        {"name": ..., "state": "ACTIVE"/"INACTIVE"/"UNKNOWN"/"INCONSISTENT"}.
+        "name" is the user-friendly userName if JMRI has one set, else
+        falls back to the raw system name (e.g. "RS22").
+    """
+    return {
+        "name": sensor.get("userName") or sensor.get("name"),
+        "state": SENSOR_STATE_NAMES.get(sensor.get("state"), "UNKNOWN"),
     }
 
 

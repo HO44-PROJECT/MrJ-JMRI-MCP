@@ -1,0 +1,29 @@
+[
+    {
+        "type": "turnout",
+        "data": {
+            "name": "IT100",
+            "userName": "Layout Turnout A",
+            "state": 2,
+            "comment": null
+        }
+    },
+    {
+        "type": "turnout",
+        "data": {
+            "name": "IT101",
+            "userName": "Layout Turnout BL",
+            "state": 2,
+            "comment": null
+        }
+    },
+    {
+        "type": "turnout",
+        "data": {
+            "name": "OT23",
+            "userName": "A / Mountain A -> Platform A/B",
+            "state": 4,
+            "comment": null
+        }
+    }
+]

@@ -4,11 +4,17 @@ from httpx import ConnectError, Response
 
 from jmri_mcp.jmri_client import (
     JmriError,
+    get_lights,
     get_roster,
     get_roster_function_labels,
+    get_sensors,
     get_systems,
+    get_turnouts,
+    resolve_light,
     resolve_roster_entry,
+    resolve_sensor,
     resolve_system,
+    resolve_turnout,
 )
 from tests.conftest import MOCK_JMRI_URL
 
@@ -47,6 +53,236 @@ async def test_get_systems_raises_on_non_list_non_dict_payload():
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json="oops"))
         with pytest.raises(JmriError, match="Unexpected /json/power payload"):
             await get_systems()
+
+
+# --- get_lights ---
+
+
+async def test_get_lights_unwraps_envelope_and_matches_fixture(mock_lights, lights_fixture):
+    lights = await get_lights()
+    assert lights == [entry["data"] for entry in lights_fixture]
+
+
+async def test_get_lights_accepts_bare_data():
+    bare = [{"name": "IL1", "userName": "Depot Lighting", "state": 4}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/lights").mock(return_value=Response(200, json=bare))
+        lights = await get_lights()
+    assert lights == bare
+
+
+async def test_get_lights_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/lights").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await get_lights()
+
+
+async def test_get_lights_raises_on_non_list_non_dict_payload():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/lights").mock(return_value=Response(200, json="oops"))
+        with pytest.raises(JmriError, match="Unexpected /json/lights payload"):
+            await get_lights()
+
+
+# --- resolve_light: pure function, no I/O ---
+
+LIGHTS = [
+    {"name": "IL1", "userName": "Depot Lighting", "state": 4},
+    {"name": "IL2", "userName": "Street Lamps", "state": 2},
+    {"name": "IL3", "userName": None, "state": 4},
+]
+
+
+@pytest.mark.parametrize(
+    "query,expected_name",
+    [
+        ("Depot Lighting", "IL1"),
+        ("depot lighting", "IL1"),
+        ("DEPOT LIGHTING", "IL1"),
+        ("depot", "IL1"),
+        ("IL1", "IL1"),
+        ("il1", "IL1"),
+        ("IL3", "IL3"),
+    ],
+)
+def test_resolve_light_tolerant_match(query, expected_name):
+    assert resolve_light(query, LIGHTS)["name"] == expected_name
+
+
+def test_resolve_light_ambiguous_fragment_raises():
+    with pytest.raises(JmriError, match="Ambiguous light"):
+        resolve_light("l", LIGHTS)  # matches both "Depot Lighting" and "Street Lamps"
+
+
+def test_resolve_light_unknown_name_raises():
+    with pytest.raises(JmriError, match="Unknown light 'tgv'"):
+        resolve_light("tgv", LIGHTS)
+
+
+def test_resolve_light_empty_lights_raises():
+    with pytest.raises(JmriError, match="no lights"):
+        resolve_light("Depot Lighting", [])
+
+
+def test_resolve_light_empty_query_raises():
+    with pytest.raises(JmriError, match="No light name given"):
+        resolve_light("", LIGHTS)
+    with pytest.raises(JmriError, match="No light name given"):
+        resolve_light("   ", LIGHTS)
+
+
+# --- get_turnouts ---
+
+
+async def test_get_turnouts_unwraps_envelope_and_matches_fixture(mock_turnouts, turnouts_fixture):
+    turnouts = await get_turnouts()
+    assert turnouts == [entry["data"] for entry in turnouts_fixture]
+
+
+async def test_get_turnouts_accepts_bare_data():
+    bare = [{"name": "IT100", "userName": "Layout Turnout A", "state": 2}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(return_value=Response(200, json=bare))
+        turnouts = await get_turnouts()
+    assert turnouts == bare
+
+
+async def test_get_turnouts_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await get_turnouts()
+
+
+async def test_get_turnouts_raises_on_non_list_non_dict_payload():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(return_value=Response(200, json="oops"))
+        with pytest.raises(JmriError, match="Unexpected /json/turnouts payload"):
+            await get_turnouts()
+
+
+# --- resolve_turnout: pure function, no I/O ---
+
+TURNOUTS = [
+    {"name": "IT100", "userName": "Layout Turnout A", "state": 2},
+    {"name": "IT101", "userName": "Layout Turnout BL", "state": 2},
+    {"name": "OT23", "userName": "A / Mountain A -> Platform A/B", "state": 4},
+]
+
+
+@pytest.mark.parametrize(
+    "query,expected_name",
+    [
+        ("Layout Turnout A", "IT100"),
+        ("layout turnout a", "IT100"),
+        ("LAYOUT TURNOUT A", "IT100"),
+        ("IT100", "IT100"),
+        ("it100", "IT100"),
+        ("OT23", "OT23"),
+    ],
+)
+def test_resolve_turnout_tolerant_match(query, expected_name):
+    assert resolve_turnout(query, TURNOUTS)["name"] == expected_name
+
+
+def test_resolve_turnout_ambiguous_fragment_raises():
+    with pytest.raises(JmriError, match="Ambiguous turnout"):
+        resolve_turnout("Layout Turnout", TURNOUTS)  # matches A and BL
+
+
+def test_resolve_turnout_unknown_name_raises():
+    with pytest.raises(JmriError, match="Unknown turnout 'tgv'"):
+        resolve_turnout("tgv", TURNOUTS)
+
+
+def test_resolve_turnout_empty_turnouts_raises():
+    with pytest.raises(JmriError, match="no turnouts"):
+        resolve_turnout("Layout Turnout A", [])
+
+
+def test_resolve_turnout_empty_query_raises():
+    with pytest.raises(JmriError, match="No turnout name given"):
+        resolve_turnout("", TURNOUTS)
+    with pytest.raises(JmriError, match="No turnout name given"):
+        resolve_turnout("   ", TURNOUTS)
+
+
+# --- get_sensors ---
+
+
+async def test_get_sensors_unwraps_envelope_and_matches_fixture(mock_sensors, sensors_fixture):
+    sensors = await get_sensors()
+    assert sensors == [entry["data"] for entry in sensors_fixture]
+
+
+async def test_get_sensors_accepts_bare_data():
+    bare = [{"name": "RS22", "userName": "Montagne B", "state": 4}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/sensors").mock(return_value=Response(200, json=bare))
+        sensors = await get_sensors()
+    assert sensors == bare
+
+
+async def test_get_sensors_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/sensors").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await get_sensors()
+
+
+async def test_get_sensors_raises_on_non_list_non_dict_payload():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/sensors").mock(return_value=Response(200, json="oops"))
+        with pytest.raises(JmriError, match="Unexpected /json/sensors payload"):
+            await get_sensors()
+
+
+# --- resolve_sensor: pure function, no I/O ---
+
+SENSORS = [
+    {"name": "ISCLOCKRUNNING", "userName": None, "state": 2},
+    {"name": "RS22", "userName": "Montagne B", "state": 4},
+    {"name": "RS23", "userName": "Montagne A int", "state": 2},
+]
+
+
+@pytest.mark.parametrize(
+    "query,expected_name",
+    [
+        ("Montagne B", "RS22"),
+        ("montagne b", "RS22"),
+        ("MONTAGNE B", "RS22"),
+        ("RS22", "RS22"),
+        ("rs22", "RS22"),
+        ("ISCLOCKRUNNING", "ISCLOCKRUNNING"),
+        ("isclockrunning", "ISCLOCKRUNNING"),
+    ],
+)
+def test_resolve_sensor_tolerant_match(query, expected_name):
+    assert resolve_sensor(query, SENSORS)["name"] == expected_name
+
+
+def test_resolve_sensor_ambiguous_fragment_raises():
+    with pytest.raises(JmriError, match="Ambiguous sensor"):
+        resolve_sensor("Montagne", SENSORS)  # matches "Montagne B" and "Montagne A int"
+
+
+def test_resolve_sensor_unknown_name_raises():
+    with pytest.raises(JmriError, match="Unknown sensor 'tgv'"):
+        resolve_sensor("tgv", SENSORS)
+
+
+def test_resolve_sensor_empty_sensors_raises():
+    with pytest.raises(JmriError, match="no sensors"):
+        resolve_sensor("Montagne B", [])
+
+
+def test_resolve_sensor_empty_query_raises():
+    with pytest.raises(JmriError, match="No sensor name given"):
+        resolve_sensor("", SENSORS)
+    with pytest.raises(JmriError, match="No sensor name given"):
+        resolve_sensor("   ", SENSORS)
 
 
 # --- get_roster ---

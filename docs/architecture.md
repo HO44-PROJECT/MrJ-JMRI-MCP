@@ -11,19 +11,26 @@ src/jmri_mcp/
 ├── config/             # env vars: JMRI_URL (e.g. http://10.0.20.20:12080)
 │   └── __init__.py
 ├── jmri_client/       # async HTTP client for JMRI's JSON API
-│   ├── __init__.py    #   re-exports every public name (power.py + roster.py)
+│   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor)
 │   ├── _http.py        #  shared GET/POST plumbing, JmriError, envelope unwrap
 │   ├── power.py        #  version, power-system discovery, power on/off, resolve_system
-│   └── roster.py        # roster listing, name resolution, function labels
+│   ├── roster.py        # roster listing, name resolution, function labels
+│   ├── light.py         # layout light discovery, on/off, resolve_light
+│   ├── turnout.py       # turnout discovery, closed/thrown, resolve_turnout
+│   └── sensor.py        # sensor discovery (read-only), resolve_sensor
 ├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
 │   └── __init__.py
 ├── tools/             # MCP tools exposed to the LLM
-│   ├── __init__.py    #   register(mcp): wires power.py + roster.py + throttle.py
-│   ├── _common.py      #  shared helpers (throttle_id, compact_power/throttle, ensure_acquired)
+│   ├── __init__.py    #   register(mcp): wires every domain module below
+│   ├── _common.py      #  shared helpers (throttle_id, compact_*, ensure_acquired)
 │   ├── power.py         # list_systems, get_power, set_power, system_status
 │   ├── roster.py        # list_roster, find_locomotive, get_locomotive_functions
-│   └── throttle.py      # acquire/release_throttle, set_speed/stop/emergency_stop,
-│                        #   set_direction, set_function, lights_on/lights_off
+│   ├── throttle.py      # acquire/release_throttle, set_speed/stop/emergency_stop,
+│   │                    #   set_direction, set_function, lights_on/lights_off
+│   ├── light.py         # list_lights, get_light, set_light (layout/scenery lights,
+│   │                    #   distinct from a locomotive's F0 headlight function)
+│   ├── turnout.py       # list_turnouts, get_turnout, set_turnout
+│   └── sensor.py        # list_sensors, get_sensor (read-only)
 ├── server/            # jmri-mcp: the MCP stdio server, no MCP client needed to build it
 │   ├── __init__.py    #   main(); FastMCP wiring; logging → stderr only
 │   └── __main__.py    #   enables `python -m jmri_mcp.server`
@@ -36,13 +43,17 @@ src/jmri_mcp/
     ├── power.py       #   power status/set, status (jmri_client)
     ├── roster.py      #   roster / roster find / roster functions (jmri_client)
     ├── throttle.py    #   throttle acquire/release/speed/.../sniff (jmri_ws)
+    ├── light.py       #   light list/status/set (jmri_client)
+    ├── turnout.py     #   turnout list/status/set (jmri_client)
+    ├── sensor.py      #   sensor list/status (jmri_client, read-only)
     └── parser.py      #   build_parser(): wires the above into one CLI
 ```
 
-Three domains — **power**, **roster**, **throttle** — recur across the
-project and are split the same way everywhere they get big enough to
-warrant it: `jmri_client/` (HTTP), `tools/` (MCP surface), and `cli/`
-(manual CLI) each have their own `power.py`/`roster.py`/`throttle.py`.
+Six domains — **power**, **roster**, **throttle**, **light**, **turnout**,
+**sensor** — recur across the project and are split the same way everywhere
+they get big enough to warrant it: `jmri_client/` (HTTP), `tools/` (MCP
+surface), and `cli/` (manual CLI) each have their own
+`power.py`/`roster.py`/`throttle.py`/`light.py`/`turnout.py`/`sensor.py`.
 `jmri_ws/__init__.py` stays a single file within its package — it's one
 cohesive unit of tightly-coupled state (a WebSocket connection's
 request/reply/cache logic) with no natural seam to split along.
@@ -68,8 +79,9 @@ nothing from `jmri_mcp`. It was ported into this repo from the separate
 `kira` project on 2026-07-09, since `pyproject.toml`'s `[project.scripts]`
 already coupled the two — see `src/xiaozhi_wrapper/__init__.py`'s docstring.
 
-M3 (roster) is now complete. More tools (turnouts, sensors) will land here
-as later milestones are implemented — see the
+M3 (roster) is complete; M4 (layout) has all three cards implemented —
+`light.py` (#17), `turnout.py` (#15), `sensor.py` (#16) — pending user
+validation before being marked Done on the
 [project board](https://github.com/orgs/HO44-PROJECT/projects/3).
 
 ## Two JMRI clients, two different shapes
@@ -167,6 +179,81 @@ effect ("turn on the rear lights") rather than a number, and only fall
 back to asking for an explicit F-number if that loco has no matching
 label — this closes the gap `set_function`'s own docstring used to flag
 ("this project has no roster-driven function-name lookup yet").
+
+## Layout lights: `list_lights` / `get_light` / `set_light`
+
+`jmri_client/light.py` mirrors `power.py`'s shape almost exactly: JMRI's
+`/json/lights` (list) and `/json/light/<name>` (single get/set) are the
+same REST-ish pattern as `/json/power`, with `state` 2=ON/4=OFF (JMRI can
+also report 0=UNKNOWN or 8=INCONSISTENT for a feedback-wired light — see
+`LIGHT_STATE_NAMES`). `set_light()` re-reads via `get_lights()` after the
+POST and reports `confirmed` honestly, same contract as `set_power()`.
+
+These are JMRI `light` *objects* — layout/scenery lighting (depot, street,
+signal lamps, ...) wired up as their own devices in JMRI, keyed by JMRI
+system name (e.g. `"IL1"`) — **not** a locomotive's F0 headlight function
+(`tools/throttle.py`'s `lights_on`/`lights_off`, keyed by DCC address).
+`resolve_light()` (in `jmri_client/light.py`) matches a user-supplied name
+tolerantly like `resolve_system()`/`resolve_roster_entry()`: case-
+insensitive, exact match against either JMRI's system name or its
+user-friendly `userName` first, then an unambiguous substring fragment of
+`userName`. Unlike `resolve_system()` there's no default fallback — a
+light must be named, there's no single "the" light. `compact_light()` (in
+`tools/_common.py`) prefers `userName` over the raw system name for
+display/matching, falling back to the system name only if the user never
+labeled the light in JMRI. Both MCP tool docstrings (`get_light`/
+`set_light`) and the light-domain modules explicitly flag this
+scenery-vs-headlight distinction so the LLM asks itself "did the user name
+a place or a locomotive?" before picking a tool.
+
+## Turnouts: `list_turnouts` / `get_turnout` / `set_turnout`
+
+`jmri_client/turnout.py` is a structural copy of `light.py`: JMRI's
+`/json/turnouts` (list) and `/json/turnout/<name>` (single get/set), state
+2=CLOSED/4=THROWN (0=UNKNOWN, 8=INCONSISTENT for a feedback-wired turnout
+that hasn't settled — see `TURNOUT_STATE_NAMES`). `set_turnout()` re-reads
+via `get_turnouts()` after the POST and reports `confirmed` honestly, same
+contract as `set_power()`/`set_light()`. `resolve_turnout()` uses the same
+tolerant case-insensitive exact-then-fragment match as `resolve_light()`,
+with no default fallback (a turnout must be named).
+
+The tool surface deliberately uses JMRI/PanelPro's own **CLOSED/THROWN**
+vocabulary rather than track terminology like "open"/"closed", which would
+be ambiguous about which of the two routes is which — both the MCP tool
+docstrings and `resolve_turnout()`'s design note this explicitly, so the
+LLM's own language when talking to the user stays consistent with what
+JMRI/PanelPro shows. `set_turnout` writes to JMRI and can move a physical
+turnout motor on the real layout, so — like the throttle tools — its
+confirmation is never assumed; a turnout with a feedback sensor wired up
+can fail to settle to the commanded position, which shows up as
+`confirmed: false` rather than being silently reported as success.
+
+## Sensors: `list_sensors` / `get_sensor` (read-only)
+
+`jmri_client/sensor.py` mirrors `light.py`/`turnout.py`'s read side only —
+`/json/sensors` (list) and `/json/sensor/<name>` (single get), state
+2=ACTIVE/4=INACTIVE (0=UNKNOWN, 8=INCONSISTENT — see `SENSOR_STATE_NAMES`).
+There is deliberately **no `set_sensor`**, in either `jmri_client/`,
+`tools/`, or `cli/`: a sensor reports real-world state JMRI detects from
+its own hardware inputs (block occupancy, turnout motor feedback, a
+clock-running flag like `ISCLOCKRUNNING`), not a command this project
+should ever issue — writing to one would be lying to JMRI about the
+layout's physical state. `resolve_sensor()` uses the same tolerant match as
+`resolve_light()`/`resolve_turnout()`.
+
+Confirmed live against the user's real JMRI: turnout motor feedback shows
+up as its own sensor entries (e.g. `OS37`-`OS47`), separate from the
+`sensor` field nested inside each `get_turnouts()` entry — `list_sensors`
+surfaces both a turnout's own feedback sensor and every other block/utility
+sensor in one flat list, since JMRI itself treats them as the same kind of
+object.
+
+Card #16 originally suggested a WebSocket listener might be needed to catch
+spontaneous sensor updates, but live testing showed a one-shot HTTP GET
+already returns full current state synchronously (same as power/roster/
+light) — no listener needed for a stateless list/get tool, so this domain
+follows the simpler `jmri_client/` (one-shot HTTP) pattern rather than
+`jmri_ws/`'s persistent-connection one.
 
 ## Throttle tool surface: DCC address as the only key
 

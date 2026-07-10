@@ -43,6 +43,51 @@ def mock_power(power_fixture):
 
 
 @pytest.fixture
+def lights_fixture() -> list[dict]:
+    return json.loads((FIXTURES / "lights_response.json").read_text())
+
+
+@pytest.fixture
+def mock_lights(lights_fixture):
+    """Mock GET /json/lights to return the captured JMRI 5.4-shaped fixture."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/lights").mock(
+            return_value=Response(200, json=lights_fixture)
+        )
+        yield router
+
+
+@pytest.fixture
+def turnouts_fixture() -> list[dict]:
+    return json.loads((FIXTURES / "turnouts_response.json").read_text())
+
+
+@pytest.fixture
+def mock_turnouts(turnouts_fixture):
+    """Mock GET /json/turnouts to return the captured JMRI 5.4-shaped fixture."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(
+            return_value=Response(200, json=turnouts_fixture)
+        )
+        yield router
+
+
+@pytest.fixture
+def sensors_fixture() -> list[dict]:
+    return json.loads((FIXTURES / "sensors_response.json").read_text())
+
+
+@pytest.fixture
+def mock_sensors(sensors_fixture):
+    """Mock GET /json/sensors to return the captured JMRI 5.4-shaped fixture."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/sensors").mock(
+            return_value=Response(200, json=sensors_fixture)
+        )
+        yield router
+
+
+@pytest.fixture
 def roster_fixture() -> list[dict]:
     return json.loads((FIXTURES / "roster_response.json").read_text())
 

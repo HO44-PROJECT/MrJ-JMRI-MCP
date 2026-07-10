@@ -1,0 +1,29 @@
+[
+    {
+        "type": "sensor",
+        "data": {
+            "name": "ISCLOCKRUNNING",
+            "userName": null,
+            "state": 2,
+            "comment": null
+        }
+    },
+    {
+        "type": "sensor",
+        "data": {
+            "name": "RS22",
+            "userName": "Montagne B",
+            "state": 4,
+            "comment": null
+        }
+    },
+    {
+        "type": "sensor",
+        "data": {
+            "name": "RS23",
+            "userName": "Montagne A int",
+            "state": 2,
+            "comment": null
+        }
+    }
+]

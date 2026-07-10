@@ -11,20 +11,25 @@ labels (set in JMRI's roster editor) so "turn on the rear lights" can
 resolve to the right F-number without any hardcoded name->function mapping.
 
 Package layout:
-    _common.py  Shared helpers (throttle_id, compact_power/throttle, ensure_acquired).
+    _common.py  Shared helpers (throttle_id, compact_power/throttle/light/
+                turnout/sensor, ensure_acquired).
     power.py    list_systems, get_power, set_power, system_status.
     roster.py   list_roster, find_locomotive, get_locomotive_functions.
     throttle.py acquire/release_throttle, set_speed/stop/emergency_stop,
                 set_direction, set_function, lights_on/lights_off.
+    light.py    list_lights, get_light, set_light (layout/scenery lights,
+                distinct from a locomotive's F0 headlight function).
+    turnout.py  list_turnouts, get_turnout, set_turnout.
+    sensor.py   list_sensors, get_sensor (read-only).
 """
 
-from jmri_mcp.tools import power, roster, throttle
+from jmri_mcp.tools import light, power, roster, sensor, throttle, turnout
 
 __all__ = ["register"]
 
 
 def register(mcp) -> None:
-    """Register every tool from power.py/roster.py/throttle.py on `mcp`.
+    """Register every tool from every domain module on `mcp`.
 
     Args:
         mcp: The FastMCP server instance to register tools on.
@@ -32,3 +37,6 @@ def register(mcp) -> None:
     power.register(mcp)
     roster.register(mcp)
     throttle.register(mcp)
+    light.register(mcp)
+    turnout.register(mcp)
+    sensor.register(mcp)

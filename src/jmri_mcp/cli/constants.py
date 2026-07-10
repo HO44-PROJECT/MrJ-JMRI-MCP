@@ -1,6 +1,9 @@
 """Shared constants for jmri-cli's command modules."""
 
 POWER_STATE_NAMES: dict[int, str] = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
+LIGHT_STATE_NAMES: dict[int, str] = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "INCONSISTENT"}
+TURNOUT_STATE_NAMES: dict[int, str] = {2: "CLOSED", 4: "THROWN", 0: "UNKNOWN", 8: "INCONSISTENT"}
+SENSOR_STATE_NAMES: dict[int, str] = {2: "ACTIVE", 4: "INACTIVE", 0: "UNKNOWN", 8: "INCONSISTENT"}
 
 CLI_THROTTLE_ID_PREFIX = "cli"
 SNIFF_THROTTLE_ID_PREFIX = "sniff"

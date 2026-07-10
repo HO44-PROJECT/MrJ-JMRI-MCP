@@ -295,3 +295,158 @@ async def test_lights_off_sets_function_zero(fake_jmri):
     await call(mcp, "lights_on", address=3)
     out = await call(mcp, "lights_off", address=3)
     assert out == {"address": 3, "function": 0, "state": False}
+
+
+async def test_list_lights_registered_and_compact(mock_lights):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "list_lights" in tool_names
+
+    out = await call(mcp, "list_lights")
+    assert out == {
+        "lights": [
+            {"name": "Depot Lighting", "state": "OFF"},
+            {"name": "Street Lamps", "state": "ON"},
+            {"name": "IL3", "state": "OFF"},
+        ]
+    }
+
+
+async def test_list_lights_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "list_lights")
+    assert "error" in out
+
+
+async def test_get_light_resolves_by_fragment(mock_lights):
+    mcp = make_server()
+    out = await call(mcp, "get_light", name="depot")
+    assert out == {"name": "Depot Lighting", "state": "OFF"}
+
+
+async def test_get_light_unknown_name_returns_error_not_exception(mock_lights):
+    mcp = make_server()
+    out = await call(mcp, "get_light", name="tgv")
+    assert "error" in out and "tgv" in out["error"]
+
+
+async def test_set_light_turns_on_and_confirms():
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/lights").mock(
+            return_value=Response(200, json=[
+                {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": 2}},
+                {"type": "light", "data": {"name": "IL2", "userName": "Street Lamps", "state": 2}},
+                {"type": "light", "data": {"name": "IL3", "userName": None, "state": 4}},
+            ])
+        )
+        router.post(f"{MOCK_JMRI_URL}/json/light/IL1").mock(return_value=Response(200, json={}))
+        out = await call(mcp, "set_light", name="depot", turn_on=True)
+    assert out == {"name": "Depot Lighting", "state": "ON", "confirmed": True}
+
+
+async def test_set_light_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "set_light", name="depot", turn_on=True)
+    assert "error" in out
+
+
+async def test_list_turnouts_registered_and_compact(mock_turnouts):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "list_turnouts" in tool_names
+
+    out = await call(mcp, "list_turnouts")
+    assert out == {
+        "turnouts": [
+            {"name": "Layout Turnout A", "state": "CLOSED"},
+            {"name": "Layout Turnout BL", "state": "CLOSED"},
+            {"name": "A / Mountain A -> Platform A/B", "state": "THROWN"},
+        ]
+    }
+
+
+async def test_list_turnouts_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "list_turnouts")
+    assert "error" in out
+
+
+async def test_get_turnout_resolves_by_fragment(mock_turnouts):
+    mcp = make_server()
+    out = await call(mcp, "get_turnout", name="Layout Turnout A")
+    assert out == {"name": "Layout Turnout A", "state": "CLOSED"}
+
+
+async def test_get_turnout_unknown_name_returns_error_not_exception(mock_turnouts):
+    mcp = make_server()
+    out = await call(mcp, "get_turnout", name="tgv")
+    assert "error" in out and "tgv" in out["error"]
+
+
+async def test_set_turnout_throws_and_confirms():
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(
+            return_value=Response(200, json=[
+                {"type": "turnout", "data": {"name": "IT100", "userName": "Layout Turnout A", "state": 4}},
+                {"type": "turnout", "data": {"name": "IT101", "userName": "Layout Turnout BL", "state": 2}},
+            ])
+        )
+        router.post(f"{MOCK_JMRI_URL}/json/turnout/IT100").mock(return_value=Response(200, json={}))
+        out = await call(mcp, "set_turnout", name="Layout Turnout A", thrown=True)
+    assert out == {"name": "Layout Turnout A", "state": "THROWN", "confirmed": True}
+
+
+async def test_set_turnout_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "set_turnout", name="Layout Turnout A", thrown=True)
+    assert "error" in out
+
+
+async def test_list_sensors_registered_and_compact(mock_sensors):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "list_sensors" in tool_names
+
+    out = await call(mcp, "list_sensors")
+    assert out == {
+        "sensors": [
+            {"name": "ISCLOCKRUNNING", "state": "ACTIVE"},
+            {"name": "Montagne B", "state": "INACTIVE"},
+            {"name": "Montagne A int", "state": "ACTIVE"},
+        ]
+    }
+
+
+async def test_list_sensors_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "list_sensors")
+    assert "error" in out
+
+
+async def test_get_sensor_resolves_by_fragment(mock_sensors):
+    mcp = make_server()
+    out = await call(mcp, "get_sensor", name="montagne b")
+    assert out == {"name": "Montagne B", "state": "INACTIVE"}
+
+
+async def test_get_sensor_unknown_name_returns_error_not_exception(mock_sensors):
+    mcp = make_server()
+    out = await call(mcp, "get_sensor", name="tgv")
+    assert "error" in out and "tgv" in out["error"]

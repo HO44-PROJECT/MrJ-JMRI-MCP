@@ -66,3 +66,60 @@ async def test_roster_functions_reports_none_labeled(mock_roster, capsys):
     code, out, _ = await run(capsys, "roster", "functions", "boite a sel")
     assert code == 0
     assert "no labeled functions" in out
+
+
+async def test_light_list_all(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "list")
+    assert code == 0
+    assert "Depot Lighting" in out and "OFF" in out
+    assert "Street Lamps" in out and "ON" in out
+
+
+async def test_light_status_one(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "status", "depot")
+    assert code == 0
+    assert out.strip() == "Depot Lighting      : OFF"
+
+
+async def test_light_status_unknown(mock_lights, capsys):
+    code, _, err = await run(capsys, "light", "status", "tgv")
+    assert code == 1
+    assert "Unknown light 'tgv'" in err
+
+
+async def test_turnout_list_all(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "list")
+    assert code == 0
+    assert "Layout Turnout A" in out and "CLOSED" in out
+    assert "A / Mountain A -> Platform A/B" in out and "THROWN" in out
+
+
+async def test_turnout_status_one(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "status", "Layout Turnout A")
+    assert code == 0
+    assert out.strip() == "Layout Turnout A    : CLOSED"
+
+
+async def test_turnout_status_unknown(mock_turnouts, capsys):
+    code, _, err = await run(capsys, "turnout", "status", "tgv")
+    assert code == 1
+    assert "Unknown turnout 'tgv'" in err
+
+
+async def test_sensor_list_all(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "list")
+    assert code == 0
+    assert "ISCLOCKRUNNING" in out and "ACTIVE" in out
+    assert "Montagne B" in out and "INACTIVE" in out
+
+
+async def test_sensor_status_one(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "status", "Montagne B")
+    assert code == 0
+    assert out.strip() == "Montagne B          : INACTIVE"
+
+
+async def test_sensor_status_unknown(mock_sensors, capsys):
+    code, _, err = await run(capsys, "sensor", "status", "tgv")
+    assert code == 1
+    assert "Unknown sensor 'tgv'" in err

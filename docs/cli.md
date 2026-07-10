@@ -297,8 +297,116 @@ change, so this also correctly reflects a speed/direction/function change
 made by another client (a JMRI panel, another `jmri-cli`/MCP session) —
 see [architecture.md](architecture.md) for the wire-level detail.
 
+## `jmri-cli light list`
+
+Show the state of every layout light known to JMRI — depot lighting,
+street lamps, signal lamps, etc, wired up in JMRI as their own `light`
+objects. **Not** a locomotive's headlight (that's F0, via `throttle
+lights-on`/`lights-off` above). No side effects.
+
+```bash
+$ jmri-cli light list
+Depot Lighting      : OFF
+Street Lamps        : ON
+IL3                 : OFF
+```
+
+A light with no `userName` set in JMRI prints its raw system name (`IL3`
+above) instead — not an error, just unlabeled.
+
+## `jmri-cli light status <name>`
+
+Show one light's state. `<name>` matches either JMRI's system name
+(`"IL1"`) or its user-friendly `userName` (`"Depot Lighting"`), case-
+insensitive, tolerant of an unambiguous fragment (`"depot"` matches
+`"Depot Lighting"`). No side effects.
+
+```bash
+$ jmri-cli light status depot
+Depot Lighting      : OFF
+```
+
+## `jmri-cli light set <name> <on|off>`
+
+Turn a layout light on or off. **This writes to JMRI.** Resolves `<name>`
+the same tolerant way as `light status`.
+
+```bash
+$ jmri-cli light set depot on
+Depot Lighting      : ON
+```
+
+The state is re-read after the command and confirmed the same honest way
+as `power set` — if the observed state doesn't match the request (e.g. a
+feedback-wired light that didn't actually switch), the command prints a
+warning to stderr and exits with code 1.
+
+## `jmri-cli turnout list`
+
+Show the state of every turnout known to JMRI. No side effects.
+
+```bash
+$ jmri-cli turnout list
+Layout Turnout A    : CLOSED
+Layout Turnout BL   : CLOSED
+A / Mountain A -> Platform A/B: THROWN
+```
+
+## `jmri-cli turnout status <name>`
+
+Show one turnout's state. `<name>` matches either JMRI's system name
+(`"IT100"`) or its user-friendly `userName` (`"Layout Turnout A"`), case-
+insensitive, tolerant of an unambiguous fragment. No side effects.
+
+```bash
+$ jmri-cli turnout status "layout turnout a"
+Layout Turnout A    : CLOSED
+```
+
+## `jmri-cli turnout set <name> <closed|thrown>`
+
+Set a turnout closed or thrown. **This writes to JMRI and can move a
+physical turnout motor on the real layout.** Resolves `<name>` the same
+tolerant way as `turnout status`. Uses JMRI/PanelPro's own CLOSED/THROWN
+vocabulary rather than "open"/"closed" track terminology, which would be
+ambiguous about which route is which.
+
+```bash
+$ jmri-cli turnout set "layout turnout a" thrown
+Layout Turnout A    : THROWN
+```
+
+The state is re-read after the command and confirmed the same honest way
+as `power set`/`light set` — if the observed state doesn't match the
+request (e.g. a feedback-wired turnout that didn't settle), the command
+prints a warning to stderr and exits with code 1.
+
+## `jmri-cli sensor list`
+
+Show the state of every sensor known to JMRI — block occupancy, turnout
+motor feedback, utility flags like `ISCLOCKRUNNING`. Read-only: there is no
+`sensor set`, since a sensor reports real-world state JMRI detects from its
+own hardware inputs, not a command this project should issue.
+
+```bash
+$ jmri-cli sensor list
+ISCLOCKRUNNING      : ACTIVE
+Montagne B          : INACTIVE
+```
+
+## `jmri-cli sensor status <name>`
+
+Show one sensor's state. `<name>` matches either JMRI's system name
+(`"RS22"`) or its user-friendly `userName` (`"Montagne B"`), case-
+insensitive, tolerant of an unambiguous fragment. No side effects.
+
+```bash
+$ jmri-cli sensor status "montagne b"
+Montagne B          : INACTIVE
+```
+
 ## Exit codes
 
 All subcommands return 0 on success, 1 on error (JMRI unreachable, unknown
-system, ambiguous system name, or an unconfirmed `power set`). Errors go to
+name, ambiguous name, or an unconfirmed `set` command). Errors go to
 stderr; normal output goes to stdout.

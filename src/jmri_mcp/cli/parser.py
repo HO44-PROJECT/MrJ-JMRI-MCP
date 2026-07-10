@@ -7,7 +7,7 @@ tree (see the package docstring in jmri_mcp/cli/__init__.py).
 
 import argparse
 
-from jmri_mcp.cli import power, roster, throttle
+from jmri_mcp.cli import light, power, roster, sensor, throttle, turnout
 from jmri_mcp.cli._doc import CLI_DESCRIPTION
 
 
@@ -115,5 +115,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include keepalive pong messages (hidden by default, no info)",
     )
     sniff.set_defaults(func=throttle.throttle_sniff)
+
+    light_cmd = subparsers.add_parser(
+        "light", help="Layout light commands (depot/street/signal lamps, not loco headlights)"
+    )
+    light_sub = light_cmd.add_subparsers(dest="light_command", required=True)
+
+    light_list_cmd = light_sub.add_parser("list", help="Show every light's state")
+    light_list_cmd.set_defaults(func=light.light_list)
+
+    light_status_cmd = light_sub.add_parser("status", help="Show one light's state")
+    light_status_cmd.add_argument("name", help="Light system name, userName, or fragment")
+    light_status_cmd.set_defaults(func=light.light_status)
+
+    light_set_cmd = light_sub.add_parser("set", help="Turn a light on/off (writes to JMRI)")
+    light_set_cmd.add_argument("name", help="Light system name, userName, or fragment")
+    light_set_cmd.add_argument("state", choices=["on", "off"])
+    light_set_cmd.set_defaults(func=light.light_set)
+
+    turnout_cmd = subparsers.add_parser("turnout", help="Turnout commands")
+    turnout_sub = turnout_cmd.add_subparsers(dest="turnout_command", required=True)
+
+    turnout_list_cmd = turnout_sub.add_parser("list", help="Show every turnout's state")
+    turnout_list_cmd.set_defaults(func=turnout.turnout_list)
+
+    turnout_status_cmd = turnout_sub.add_parser("status", help="Show one turnout's state")
+    turnout_status_cmd.add_argument("name", help="Turnout system name, userName, or fragment")
+    turnout_status_cmd.set_defaults(func=turnout.turnout_status)
+
+    turnout_set_cmd = turnout_sub.add_parser("set", help="Set a turnout closed/thrown (writes to JMRI)")
+    turnout_set_cmd.add_argument("name", help="Turnout system name, userName, or fragment")
+    turnout_set_cmd.add_argument("state", choices=["closed", "thrown"])
+    turnout_set_cmd.set_defaults(func=turnout.turnout_set)
+
+    sensor_cmd = subparsers.add_parser("sensor", help="Sensor commands (read-only)")
+    sensor_sub = sensor_cmd.add_subparsers(dest="sensor_command", required=True)
+
+    sensor_list_cmd = sensor_sub.add_parser("list", help="Show every sensor's state")
+    sensor_list_cmd.set_defaults(func=sensor.sensor_list)
+
+    sensor_status_cmd = sensor_sub.add_parser("status", help="Show one sensor's state")
+    sensor_status_cmd.add_argument("name", help="Sensor system name, userName, or fragment")
+    sensor_status_cmd.set_defaults(func=sensor.sensor_status)
 
     return parser

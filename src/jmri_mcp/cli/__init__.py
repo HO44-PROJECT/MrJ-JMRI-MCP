@@ -4,6 +4,7 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power status ohara
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power set ohara on
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli power stop-all
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli status
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli roster find autorail
@@ -13,6 +14,7 @@ Usage:
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle speed 3 40
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle stop 3
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle estop 3
+    JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle stop-all -a 3 -a 7
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle direction 3 reverse
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle function 3 1 on
     JMRI_URL=http://10.0.20.20:12080 python -m jmri_mcp.cli throttle lights-on 3

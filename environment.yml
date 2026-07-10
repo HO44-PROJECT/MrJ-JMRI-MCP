@@ -1,4 +1,4 @@
-name: jmri-mcp
+name: jmri-mcp-cli
 channels:
   - conda-forge
 dependencies:

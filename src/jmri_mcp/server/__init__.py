@@ -22,7 +22,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jmri_mcp")
 
-mcp = FastMCP("JMRI")
+# MCP's `instructions` field (delivered once, in the `initialize` response —
+# distinct from `@mcp.prompt()`, which a user must invoke manually) is the
+# one server-level channel that reaches the host LLM before any tool is
+# called. Used here only for the whole-layout STOP/START tools' voice
+# trigger phrases: without this, the LLM has no signal connecting a French
+# command with no named target ("arrête tout") to the right tool until it
+# has already read that tool's own docstring, which only happens if it
+# guesses to look. Respecting `instructions` is still up to the MCP client
+# (Claude Desktop, Kira's bridge) — this is not a guaranteed override, just
+# the best-effort mechanism the protocol actually provides.
+_SERVER_INSTRUCTIONS = (
+    "This server controls a DCC model railroad via JMRI. Four tools act on "
+    "the WHOLE layout at once, with no address/system argument — route any "
+    "command with no specific locomotive/system named to one of these "
+    "instead of asking the user to name one: "
+    "emergency_stop_all (\"stop everything\", \"arrête tout\" — stops MOTION "
+    "only, on throttles this session already holds), "
+    "power_off_all (\"cut the power\", \"coupe le courant\", \"coupe tout\" — "
+    "cuts POWER to every system, reaching every locomotive regardless of "
+    "who's driving it), "
+    "power_on_all (\"turn everything on\", \"allume tout\"), "
+    "set_executor_mode (\"be concise\", \"mode exécutant\"). "
+    "power_off_all and emergency_stop_all are NOT interchangeable: a phrase "
+    "naming power/current (\"courant\", \"power\") always means "
+    "power_off_all, never emergency_stop_all, even though both sound like "
+    "stop commands."
+)
+
+mcp = FastMCP("JMRI", instructions=_SERVER_INSTRUCTIONS)
 tools.register(mcp)
 
 

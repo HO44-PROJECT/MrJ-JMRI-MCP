@@ -208,6 +208,40 @@ async def test_set_function_pushes_to_other_connection_holding_same_address(fake
     await b.close()
 
 
+async def test_emergency_stop_all_stops_every_acquired_throttle(fake_jmri):
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)
+    await client.acquire_throttle("t2", 7)
+
+    result = await client.emergency_stop_all()
+
+    assert sorted(result["stopped"]) == ["t1", "t2"]
+    assert result["failed"] == []
+    assert client._throttles["t1"]["speed"] == -1.0
+    assert client._throttles["t2"]["speed"] == -1.0
+    await client.close()
+
+
+async def test_emergency_stop_all_with_no_throttles_is_a_noop(fake_jmri):
+    client = JmriWsClient()
+    result = await client.emergency_stop_all()
+    assert result == {"stopped": [], "failed": []}
+    await client.close()
+
+
+async def test_emergency_stop_all_skips_already_stopped_without_hanging(fake_jmri, monkeypatch):
+    import jmri_mcp.jmri_ws as ws_module
+    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 3)
+    await client.set_speed("t1", -1.0)  # already e-stopped
+
+    result = await client.emergency_stop_all()
+    assert result == {"stopped": ["t1"], "failed": []}
+    await client.close()
+
+
 async def test_pending_request_not_corrupted_by_push_for_other_throttle(fake_jmri):
     # While connection A is mid-request on throttle id "a-other", a push
     # about a *different* throttle id it also holds ("a1") must not be

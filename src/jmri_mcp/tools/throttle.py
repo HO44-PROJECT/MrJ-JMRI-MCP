@@ -177,6 +177,50 @@ def register(mcp) -> None:
         return {"address": address, "stopped": data.get("speed") == -1.0}
 
     @mcp.tool()
+    async def emergency_stop_all() -> dict:
+        """Emergency-stop EVERY locomotive currently under this session's control at once.
+
+        No arguments — this is the panic button for "stop everything NOW"
+        (derailment, collision risk, or any situation where you can't take
+        the time to name individual locomotives). Call this for phrases
+        like "stop everything", "stop all trains", "arrête tout",
+        "arrête toutes les locos" — any request to stop MOTION generically,
+        without a specific locomotive named. Sends the same decoder e-stop
+        as emergency_stop(address) to every address this session has
+        acquired (via acquire_throttle or any prior set_speed/stop/
+        emergency_stop/set_direction/set_function call), not just one.
+
+        Do NOT use this for "cut the power"/"coupe le courant"/"kill the
+        power"/"coupe tout" — those mean power_off_all instead (a real
+        power cut to every DCC system, reaching locomotives regardless of
+        who's driving them). This tool only sends a throttle command, never
+        touches track power, and only reaches locomotives already acquired
+        by this session — see the limitation below.
+
+        IMPORTANT LIMITATION: this only reaches locomotives THIS MCP
+        session has acquired a throttle for. A locomotive being driven only
+        from a JMRI panel, PanelPro, or another MCP/voice session — never
+        acquired here — is NOT stopped by this call, because JMRI has no
+        "stop every throttle in the whole system" command; only the
+        connection holding a throttle can command it. If you need to
+        guarantee everything on the layout stops regardless of who's
+        driving it, use power_off_all to cut power to every DCC system
+        instead — that's the only real "stop absolutely everything" tool.
+
+        Returns {"stopped": [...addresses e-stopped...], "failed": [...]}.
+        An address with no error is confirmed at emergency-stop speed
+        either way (already-stopped locos are a safe no-op, not skipped
+        silently without being reported).
+        """
+        client = get_ws_client()
+        result = await client.emergency_stop_all()
+        to_address = {tid: info.get("address") for tid, info in client._throttles.items()}
+        return {
+            "stopped": [to_address.get(tid, tid) for tid in result["stopped"]],
+            "failed": [to_address.get(tid, tid) for tid in result["failed"]],
+        }
+
+    @mcp.tool()
     async def set_direction(address: int, direction: str) -> dict:
         """Set a locomotive's direction of travel: "forward" or "reverse".
 

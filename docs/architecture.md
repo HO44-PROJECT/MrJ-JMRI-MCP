@@ -13,24 +13,29 @@ src/jmri_mcp/
 ├── jmri_client/       # async HTTP client for JMRI's JSON API
 │   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor)
 │   ├── _http.py        #  shared GET/POST plumbing, JmriError, envelope unwrap
-│   ├── power.py        #  version, power-system discovery, power on/off, resolve_system
+│   ├── power.py        #  version, power-system discovery, power on/off,
+│   │                   #  power_off_all/power_on_all, resolve_system
 │   ├── roster.py        # roster listing, name resolution, function labels
 │   ├── light.py         # layout light discovery, on/off, resolve_light
 │   ├── turnout.py       # turnout discovery, closed/thrown, resolve_turnout
 │   └── sensor.py        # sensor discovery (read-only), resolve_sensor
 ├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
-│   └── __init__.py
+│   └── __init__.py     #   incl. emergency_stop_all() (every acquired throttle at once)
 ├── tools/             # MCP tools exposed to the LLM
 │   ├── __init__.py    #   register(mcp): wires every domain module below
 │   ├── _common.py      #  shared helpers (throttle_id, compact_*, ensure_acquired)
-│   ├── power.py         # list_systems, get_power, set_power, system_status
+│   ├── power.py         # list_systems, get_power, set_power, power_off_all,
+│   │                    #   power_on_all, system_status
 │   ├── roster.py        # list_roster, find_locomotive, get_locomotive_functions
 │   ├── throttle.py      # acquire/release_throttle, set_speed/stop/emergency_stop,
-│   │                    #   set_direction, set_function, lights_on/lights_off
+│   │                    #   emergency_stop_all, set_direction, set_function,
+│   │                    #   lights_on/lights_off
 │   ├── light.py         # list_lights, get_light, set_light (layout/scenery lights,
 │   │                    #   distinct from a locomotive's F0 headlight function)
 │   ├── turnout.py       # list_turnouts, get_turnout, set_turnout
-│   └── sensor.py        # list_sensors, get_sensor (read-only)
+│   ├── sensor.py        # list_sensors, get_sensor (read-only)
+│   └── mode.py           # set_executor_mode, get_executor_mode (concise/
+│   │                    #   no-narration response style, no JMRI I/O)
 ├── server/            # jmri-mcp: the MCP stdio server, no MCP client needed to build it
 │   ├── __init__.py    #   main(); FastMCP wiring; logging → stderr only
 │   └── __main__.py    #   enables `python -m jmri_mcp.server`
@@ -40,9 +45,9 @@ src/jmri_mcp/
     ├── constants.py   #   shared constants (state names, id prefixes, ranges)
     ├── _common.py     #   cross-module helpers (cli_throttle_id)
     ├── _doc.py        #   top-level --help description text
-    ├── power.py       #   power status/set, status (jmri_client)
+    ├── power.py       #   power status/set/stop-all, status (jmri_client)
     ├── roster.py      #   roster / roster find / roster functions (jmri_client)
-    ├── throttle.py    #   throttle acquire/release/speed/.../sniff (jmri_ws)
+    ├── throttle.py    #   throttle acquire/release/speed/.../stop-all/sniff (jmri_ws)
     ├── light.py       #   light list/status/set (jmri_client)
     ├── turnout.py     #   turnout list/status/set (jmri_client)
     ├── sensor.py      #   sensor list/status (jmri_client, read-only)
@@ -57,6 +62,11 @@ surface), and `cli/` (manual CLI) each have their own
 `jmri_ws/__init__.py` stays a single file within its package — it's one
 cohesive unit of tightly-coupled state (a WebSocket connection's
 request/reply/cache logic) with no natural seam to split along.
+`tools/mode.py` is the one module with no `jmri_client`/`jmri_ws`
+counterpart and no `cli/` equivalent — it holds no JMRI state at all (see
+"Executor mode" below), so there's nothing for a one-shot CLI process to
+usefully exercise (its whole point is a flag that persists across tool
+calls within one long-lived MCP session).
 
 Every directory at the package root is a package (`__init__.py`, no
 flat `.py` files at the root) — this project's two executables,
@@ -79,10 +89,13 @@ nothing from `jmri_mcp`. It was ported into this repo from the separate
 `kira` project on 2026-07-09, since `pyproject.toml`'s `[project.scripts]`
 already coupled the two — see `src/xiaozhi_wrapper/__init__.py`'s docstring.
 
-M3 (roster) is complete; M4 (layout) has all three cards implemented —
-`light.py` (#17), `turnout.py` (#15), `sensor.py` (#16) — pending user
-validation before being marked Done on the
-[project board](https://github.com/orgs/HO44-PROJECT/projects/3).
+M3 (roster) and M4 (layout — `light.py` #17, `turnout.py` #15, `sensor.py`
+#16) are both complete and closed on the
+[project board](https://github.com/orgs/HO44-PROJECT/projects/3). Four
+"whole-layout" features tracked together under issue #23
+(`emergency_stop_all`, `power_off_all`, `power_on_all`, executor mode — see
+their own sections below) have been implemented on top of that, pending
+user validation.
 
 ## Two JMRI clients, two different shapes
 
@@ -293,3 +306,165 @@ range); `lights_on`/`lights_off` are thin wrappers calling
 `set_function(address, 0, True/False)` directly as a plain Python call
 (not through the MCP dispatcher) since F0 is the near-universal DCC
 headlight convention.
+
+## `emergency_stop_all`: stop every acquired throttle at once
+
+`JmriWsClient.emergency_stop_all()` (in `jmri_ws/__init__.py`) iterates
+`_throttles` — every address this connection currently holds, not just
+ones a single call names — and calls the existing `set_speed(tid, -1.0)`
+per throttle, inheriting its no-op-skip/cache logic for free: an
+already-e-stopped loco is silently skipped rather than resent, but still
+reported as stopped in the result. This is a thin iteration wrapper
+reusing already-verified low-level logic rather than new protocol code.
+
+The MCP tool (`tools/throttle.py`) takes no arguments and translates the
+returned throttle ids back to DCC addresses via `client._throttles`
+before returning `{"stopped": [...], "failed": [...]}` to the LLM. Its
+docstring is deliberately explicit about a real limitation: this only
+reaches locomotives *this* MCP session has acquired a throttle for — a
+loco being driven from a JMRI panel, PanelPro, or another MCP/voice
+session that never went through this connection is untouched, because
+JMRI has no server-side "stop every throttle" call; only the connection
+holding a throttle can command it. The docstring points at `power_off_all`
+for the case where the caller needs a guarantee that covers every
+locomotive regardless of who's driving it.
+
+The CLI has no equivalent long-lived session to iterate, so `jmri-cli
+throttle stop-all [-a ADDR ...]` resolves its population of throttles
+differently: with no `-a`/`--address` given, it calls `get_roster()`
+(`jmri_client/roster.py`) and uses every roster address — mirroring how
+`power stop-all` needs no argument at all, "all" cannot mean "type every
+address by hand" — then acquires each on a fresh connection and calls the
+same `JmriWsClient.emergency_stop_all()` the MCP tool uses. `-a` remains
+available to limit the stop to specific addresses instead of the whole
+roster. This has its own honestly-documented limitation, distinct from the
+MCP tool's: the roster is JMRI's only exposed list of known addresses
+(verified live against the real server — no RailCom/reporters configured,
+`GET /json/throttle` list still 400s), not a scan of what's actually
+transmitting on the DCC bus, so hardware never added to the roster is out
+of reach here.
+
+## `power_off_all` / `power_on_all`: cut or restore power to every DCC system at once
+
+`jmri_client/power.py`'s private `_set_power_all(turn_on)` discovers every
+system via `get_systems()` and calls the existing
+`set_power(prefix, turn_on)` on each in turn, inheriting the same
+re-read-and-confirm honesty contract as a single `set_power()` call.
+`power_off_all()` and `power_on_all()` are both thin wrappers over this one
+shared loop — same reasoning as `_power_set_all` in `cli/power.py` and the
+`turn_on: bool` shared `power_off_all`/`power_on_all` MCP tool pair, so the
+sequential/re-read logic exists exactly once instead of being copied per
+direction. Systems are processed **sequentially, not concurrently** —
+`set_power`'s own `_POST_RECHECK_DELAY` already serializes one system's
+round-trip, and going one at a time avoids hammering JMRI/DCC++ with
+simultaneous POSTs to different command stations.
+
+`power_off_all` is the real "stop absolutely everything on the layout"
+primitive, distinct from `emergency_stop_all` above: cutting power stops
+every decoder on every system unconditionally, including locomotives with
+no throttle acquired anywhere, because they lose track power entirely.
+It's also more drastic — re-powering afterward requires an explicit
+`power_on_all` (or per-system `set_power(system, turn_on=True)`) before
+anything can move again, so both MCP tools' docstrings and `jmri-cli power
+stop-all`/`start-all` frame `power_off_all` as a genuine-emergency tool,
+not a routine "stop the train" command. `power_on_all`'s own docstring is
+explicit that restoring power does **not** resume any locomotive's
+previous speed — every decoder stays stopped until a new speed command is
+sent, since JMRI's throttle software state is untouched by a power cycle;
+it is not an "undo" of `power_off_all`/`emergency_stop_all`. Both MCP
+tools return one compact, individually-`confirmed` result per system (same
+shape as `get_power`/`set_power`), so a caller checks per-system
+confirmation rather than assuming the whole layout changed state.
+
+Both tools' docstrings explicitly anchor to the natural-language phrasings
+that should trigger them (English and French: "cut the power"/"coupe le
+courant"/"coupe tout" for `power_off_all`, "turn everything on"/"allume
+tout" for `power_on_all`, "stop everything"/"arrête tout" for
+`emergency_stop_all`) — the LLM has no other signal to map a generic,
+no-target-named voice command to the right whole-layout tool instead of
+asking the user to name a system/locomotive.
+
+## Executor mode: `set_executor_mode` / `get_executor_mode`
+
+`tools/mode.py` answers a different kind of request — not "stop the
+layout" but "stop narrating." MCP does have one server-level channel that
+reaches the host LLM without a tool call (`instructions`, see the section
+below), but it's static and one-shot — set once at server construction,
+delivered once at `initialize`, no way to update mid-conversation — so it
+cannot carry a flag that flips on/off as the user asks for it mid-session.
+`@mcp.prompt()` is dynamic but opt-in and client-controlled (e.g. a user
+must manually invoke it as a slash command in Claude Desktop), not
+something a tool call can force either. The only mechanism actually
+available to a tool at any point in the conversation is its own **return
+value**, since the LLM reads every tool result before deciding what to say
+next.
+
+So "executor mode" is a module-level flag, `_executor_mode` — process-wide
+is correct here, not a bug, because this MCP server runs one process per
+stdio client session, so there's no cross-session leakage to worry about.
+`set_executor_mode(enabled)` flips it and returns an explicit natural-
+language instruction string (terse, no narration, no restating the
+request, report outcomes only); `get_executor_mode()` re-delivers the same
+instruction if it's on, for a caller unsure whether it's still active after
+a long gap. The instruction is re-delivered on every call rather than sent
+once and assumed to "stick," since there's no system-prompt-level way for
+this server to keep reminding the LLM otherwise — this is a behavioral
+nudge via tool output, not an enforced constraint.
+
+`mode.py` deliberately has **no `jmri_client`/`jmri_ws` counterpart and no
+`cli/` equivalent** — it holds no JMRI state and makes no JMRI calls at
+all, so there's nothing for a one-shot `jmri-cli` process to usefully
+exercise; the whole point of the flag is that it persists across tool
+calls within one long-lived MCP session, which a fresh CLI invocation
+never has.
+
+## `server/__init__.py`: MCP `instructions` — standing guidance delivered at `initialize`
+
+`FastMCP`'s `instructions` constructor argument flows through the
+underlying SDK (`Server.create_initialization_options()`) into
+`InitializationOptions`, which becomes a top-level field of the MCP
+protocol's `initialize` response — delivered once, before the LLM has
+necessarily read any tool's docstring. Verified live: a bare
+`FastMCP("JMRI")` with no `instructions=` produces an `initialize`
+response with only `protocolVersion`, `capabilities`, `serverInfo` — no
+`instructions` key at all until one is passed in.
+
+`server/__init__.py` sets `_SERVER_INSTRUCTIONS` and passes it as
+`FastMCP("JMRI", instructions=_SERVER_INSTRUCTIONS)`. Content is scoped to
+exactly one thing: mapping the four whole-layout, no-argument tools to the
+French/English phrases that should trigger them (`emergency_stop_all`,
+`power_off_all`, `power_on_all`, `set_executor_mode`) — without this, the
+LLM has no signal connecting a generic, no-target-named command like
+"arrête tout" to the right tool until it has already read that tool's own
+docstring, which only happens if it guesses to look there first. This is
+deliberately narrow: a general safety reminder (e.g. about unauthorized
+motion commands) and general project context were both considered and
+left out, kept instead in `CLAUDE.md`/this repo's docs, not the MCP
+protocol payload.
+
+Two real limits on this mechanism, both by design of the protocol, not
+bugs here:
+- **Static and one-shot** — set at server construction, delivered once at
+  `initialize`, no way to update mid-conversation. This is exactly why it
+  cannot carry `mode.py`'s executor-mode flag (which needs to flip on/off
+  as the user asks) — that still has to work by returning an instruction
+  in a tool's own result on every call, since that is the only channel
+  that can change mid-session.
+- **Best-effort, not guaranteed** — respecting `instructions` is up to the
+  MCP client (Claude Desktop, Kira's bridge via `xiaozhi_wrapper`). The
+  protocol defines the field; nothing forces a client to surface it into
+  the underlying LLM's context.
+
+**Listing the right phrase is not sufficient by itself.** A live user test
+found "coupe le courant" ("cut the power") routing to `emergency_stop_all`
+instead of `power_off_all`, even though `_SERVER_INSTRUCTIONS` and
+`power_off_all`'s own docstring both already listed that exact phrase —
+the LLM can still pattern-match "this sounds like a stop request" ahead of
+actually comparing which specific tool the phrase is mapped to, especially
+when two tools' purposes are this close (both are "stop the whole layout"
+in spirit, but one only touches throttles, the other cuts power). The fix
+was an explicit negative clause added to both docstrings and
+`_SERVER_INSTRUCTIONS`: a phrase naming power/current always means
+`power_off_all`, never `emergency_stop_all`, stated as a direct
+"NOT interchangeable" rule rather than relying on the trigger-phrase lists
+alone to disambiguate by omission.

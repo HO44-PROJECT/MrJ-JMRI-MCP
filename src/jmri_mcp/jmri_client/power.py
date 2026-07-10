@@ -76,6 +76,59 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     return {**observed, "confirmed": confirmed}
 
 
+async def _set_power_all(turn_on: bool) -> list[dict[str, Any]]:
+    """Shared implementation for power_off_all/power_on_all — see their docstrings.
+
+    Discovers every system via get_systems() and calls
+    set_power(prefix, turn_on) on each in turn, sequentially not
+    concurrently: set_power's own _POST_RECHECK_DELAY re-read already
+    serializes each system's own round-trip, and sequential calls avoid
+    hammering JMRI/DCC++ with simultaneous POSTs to different command
+    stations.
+
+    Returns:
+        One compact result per system, in get_systems() order:
+        {**observed_system_fields, "confirmed": bool}, same shape as a
+        single set_power() call. A system whose prefix vanishes mid-call
+        raises JmriError for THAT system only after the ones before it in
+        the list have already been posted — callers should treat a raised
+        JmriError here as "some systems may already be in the new state,
+        check get_systems() to see which."
+    """
+    systems = await get_systems()
+    results = []
+    for system in systems:
+        results.append(await set_power(system["prefix"], turn_on=turn_on))
+    return results
+
+
+async def power_off_all() -> list[dict[str, Any]]:
+    """Cut power to EVERY DCC system JMRI knows about, confirming each by re-read.
+
+    Unlike set_power (one system by prefix), this discovers every system
+    and turns each off in turn — the real "stop absolutely everything on
+    the layout" primitive, since cutting power stops every locomotive
+    regardless of who's driving it (a JMRI panel, PanelPro, another MCP
+    session), unlike a throttle e-stop which only reaches locomotives the
+    caller's own connection has acquired.
+    """
+    return await _set_power_all(turn_on=False)
+
+
+async def power_on_all() -> list[dict[str, Any]]:
+    """Restore power to EVERY DCC system JMRI knows about, confirming each by re-read.
+
+    The inverse of power_off_all — discovers every system and turns each
+    on in turn. Locomotives do NOT resume their previous speed just
+    because power is restored: JMRI's throttle software state (this
+    session's own _throttles cache, and any other client's) is untouched
+    by a power cycle, so re-powering leaves every decoder stopped until a
+    new speed command is sent. This only restores track power, it is not
+    an "undo" of power_off_all/emergency_stop_all.
+    """
+    return await _set_power_all(turn_on=True)
+
+
 def resolve_system(
     query: str | None, systems: list[dict[str, Any]]
 ) -> dict[str, Any]:

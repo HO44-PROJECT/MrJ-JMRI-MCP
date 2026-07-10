@@ -27,6 +27,16 @@ def reset_ws_client():
     ws_module._client = None
 
 
+@pytest.fixture(autouse=True)
+def reset_executor_mode():
+    """Reset tools.mode's process-wide flag so tests don't leak state across each other."""
+    import jmri_mcp.tools.mode as mode_module
+
+    mode_module._executor_mode = False
+    yield
+    mode_module._executor_mode = False
+
+
 @pytest.fixture
 def power_fixture() -> list[dict]:
     return json.loads((FIXTURES / "power_response.json").read_text())

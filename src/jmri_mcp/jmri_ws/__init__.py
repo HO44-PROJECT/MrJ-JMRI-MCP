@@ -226,6 +226,37 @@ class JmriWsClient:
             return {"throttle": throttle_id, "forward": forward}
         return await self.request("throttle", {"throttle": throttle_id, "forward": forward})
 
+    async def emergency_stop_all(self) -> dict[str, list[str]]:
+        """Emergency-stop every locomotive this connection currently holds a throttle for.
+
+        Iterates `_throttles` (every address acquired on this connection,
+        not just ones this call touches) and sends the same speed=-1.0
+        decoder e-stop as `set_speed(throttle_id, -1.0)` to each, reusing
+        its existing no-op-skip/cache logic — a loco already at -1.0 (e.g.
+        already e-stopped by another client) is silently skipped, not
+        resent. Does NOT reach locomotives held only by some other JMRI
+        client/connection (there is no "stop every throttle in JMRI"
+        server-side call — see module docstring on why cross-connection
+        control doesn't exist for throttles the way it does for pushes).
+
+        Returns:
+            {"stopped": [...ids successfully e-stopped...],
+             "failed": [...ids that raised an error...]}. A `throttle_id`
+            with no error is not necessarily freshly-sent (see no-op above)
+            but IS confirmed at -1.0 either way, since the no-op path only
+            triggers when the cache already reads -1.0.
+        """
+        stopped: list[str] = []
+        failed: list[str] = []
+        for tid in list(self._throttles):
+            try:
+                await self.set_speed(tid, -1.0)
+                stopped.append(tid)
+            except JmriError as exc:
+                logger.warning("emergency_stop_all: failed to stop %r: %s", tid, exc)
+                failed.append(tid)
+        return {"stopped": stopped, "failed": failed}
+
     async def set_function(self, throttle_id: str, function: int, state: bool) -> dict[str, Any]:
         """Set a decoder function (F0-F28) on an already-acquired throttle.
 

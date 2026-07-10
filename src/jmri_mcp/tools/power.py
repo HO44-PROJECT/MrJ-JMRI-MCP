@@ -1,4 +1,5 @@
-"""Power/status MCP tools: list_systems, get_power, set_power, system_status.
+"""Power/status MCP tools: list_systems, get_power, set_power, power_off_all,
+power_on_all, system_status.
 
 Talks to jmri_client.py (one-shot HTTP), same as roster.py.
 """
@@ -7,6 +8,8 @@ import logging
 
 from jmri_mcp import jmri_client
 from jmri_mcp.jmri_client import JmriError, get_systems, get_version, resolve_system
+from jmri_mcp.jmri_client import power_off_all as _power_off_all
+from jmri_mcp.jmri_client import power_on_all as _power_on_all
 from jmri_mcp.tools._common import compact_power
 
 logger = logging.getLogger("jmri_mcp.tools")
@@ -74,6 +77,71 @@ def register(mcp) -> None:
             logger.warning("set_power(%r, %r) failed: %s", system, turn_on, exc)
             return {"error": str(exc)}
         return {**compact_power(result), "confirmed": result["confirmed"]}
+
+    @mcp.tool()
+    async def power_off_all() -> dict:
+        """Cut power to EVERY DCC system at once — the real "stop absolutely everything" button.
+
+        No arguments. Call this for phrases like "cut the power", "cut
+        everything", "kill the power", "coupe le courant", "coupe tout",
+        "coupe l'alimentation" — any request to cut POWER generically,
+        without a specific system named. This is the tool for those phrases
+        even if they sound like a stop command — "coupe le courant"/"cut
+        the power" means THIS tool, not emergency_stop_all, because the
+        user is naming power, not motion. Use this for a genuine layout-wide
+        emergency where you need every locomotive to stop NOW regardless of
+        who's driving it — including locomotives controlled from a JMRI
+        panel, PanelPro, or another MCP/voice session that this tool has no
+        other way to reach. Unlike emergency_stop_all (which only e-stops
+        locomotives THIS session has acquired a throttle for, and does not
+        touch power), cutting power stops every decoder on every system
+        unconditionally, because they lose track power entirely.
+
+        This is more drastic than emergency_stop_all: it also stops
+        anything with no throttle acquired at all, but re-powering
+        afterward requires an explicit set_power(system, turn_on=True) per
+        system before any locomotive can move again — don't reach for this
+        for a routine "stop the train", only for a real emergency.
+
+        Each system's result is re-read and confirmed the same way
+        set_power does (see its docstring) — check "confirmed" per system
+        rather than assuming the whole layout is now unpowered.
+        """
+        try:
+            results = await _power_off_all()
+        except JmriError as exc:
+            logger.warning("power_off_all failed: %s", exc)
+            return {"error": str(exc)}
+        return {"systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in results]}
+
+    @mcp.tool()
+    async def power_on_all() -> dict:
+        """Restore power to EVERY DCC system at once.
+
+        No arguments. Call this for phrases like "turn everything on",
+        "power everything on", "allume tout", "remets le courant" — any
+        request to restore/turn on power generically, without a specific
+        system named. The inverse of power_off_all — use this after a
+        layout-wide power cut (power_off_all, or manually turning systems
+        off) to bring every system back to ON in one call, rather than
+        naming each system individually with set_power.
+
+        IMPORTANT: restoring power does NOT make locomotives resume their
+        previous speed. Every decoder stays stopped until a new speed
+        command is sent — this only restores track power, it is not an
+        "undo" of power_off_all or emergency_stop_all. Tell the user
+        locomotives will need to be started again after calling this.
+
+        Each system's result is re-read and confirmed the same way
+        set_power does (see its docstring) — check "confirmed" per system
+        rather than assuming the whole layout is now powered.
+        """
+        try:
+            results = await _power_on_all()
+        except JmriError as exc:
+            logger.warning("power_on_all failed: %s", exc)
+            return {"error": str(exc)}
+        return {"systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in results]}
 
     @mcp.tool()
     async def system_status() -> dict:

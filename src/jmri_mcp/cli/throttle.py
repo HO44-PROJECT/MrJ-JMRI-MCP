@@ -20,6 +20,8 @@ from jmri_mcp.cli.constants import (
     MIN_SPEED_PERCENT,
     SNIFF_THROTTLE_ID_PREFIX,
 )
+from jmri_mcp.jmri_client import JmriError as JmriHttpError
+from jmri_mcp.jmri_client import get_roster
 from jmri_mcp.jmri_ws import JmriError as JmriWsError
 from jmri_mcp.jmri_ws import JmriWsClient
 
@@ -174,6 +176,67 @@ async def throttle_estop(args: argparse.Namespace) -> int:
 
     print(f"address={args.address} emergency-stopped")
     return 0
+
+
+async def throttle_stop_all(args: argparse.Namespace) -> int:
+    """Emergency-stop EVERY roster locomotive at once, on one fresh connection.
+
+    Unlike the MCP tool's emergency_stop_all() (which iterates whatever
+    this long-lived session already has acquired), a CLI invocation starts
+    with nothing acquired — so "all" is resolved from JMRI's own roster
+    (get_roster()) rather than requiring the caller to type every address
+    by hand, the same way `power stop-all` needs no arguments. This only
+    reaches roster-known addresses: JMRI has no server-side scan of what's
+    actually on the DCC bus (no RailCom/reporters, no "list active
+    throttles" call — verified live), so hardware never added to the
+    roster is out of reach here, the same limitation any roster-driven
+    tool in this project has.
+
+    Pass -a/--address (repeatable) to limit the stop to specific addresses
+    instead of the whole roster.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.address` (list of DCC
+            addresses, or None to use every roster entry).
+
+    Returns:
+        0 if every resolved address was acquired and stopped, 1 if JMRI is
+        unreachable or any address failed to resolve/acquire/stop.
+    """
+    if args.address:
+        addresses = args.address
+    else:
+        try:
+            addresses = [entry["address"] for entry in await get_roster()]
+        except JmriHttpError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        if not addresses:
+            print("Roster is empty, nothing to stop.", file=sys.stderr)
+            return 0
+
+    client = JmriWsClient()
+    failed_acquire: list[int] = []
+    try:
+        for address in addresses:
+            try:
+                await client.acquire_throttle(cli_throttle_id(address), address)
+            except JmriWsError as exc:
+                print(f"Warning: could not acquire {address}: {exc}", file=sys.stderr)
+                failed_acquire.append(address)
+        result = await client.emergency_stop_all()
+    except JmriWsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await client.close()
+
+    to_address = {cli_throttle_id(a): a for a in addresses}
+    for tid in result["stopped"]:
+        print(f"address={to_address.get(tid, tid)} emergency-stopped")
+    for tid in result["failed"]:
+        print(f"address={to_address.get(tid, tid)} FAILED to stop", file=sys.stderr)
+    return 1 if (result["failed"] or failed_acquire) else 0
 
 
 async def throttle_direction(args: argparse.Namespace) -> int:

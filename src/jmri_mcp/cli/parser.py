@@ -34,6 +34,16 @@ def build_parser() -> argparse.ArgumentParser:
     set_.add_argument("state", choices=["on", "off"])
     set_.set_defaults(func=power.power_set)
 
+    stop_all = power_sub.add_parser(
+        "stop-all", help="Cut power to EVERY system at once (layout-wide emergency stop)"
+    )
+    stop_all.set_defaults(func=power.power_stop_all)
+
+    start_all = power_sub.add_parser(
+        "start-all", help="Restore power to EVERY system at once (inverse of stop-all)"
+    )
+    start_all.set_defaults(func=power.power_start_all)
+
     status_cmd = subparsers.add_parser(
         "status", help="One-call diagnostic: JMRI reachability, version, power systems"
     )
@@ -70,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("address", type=int, help="DCC address")
     release.set_defaults(func=throttle.throttle_release)
 
-    speed = throttle_sub.add_parser("speed", help="Set a loco's speed (0-100%)")
+    speed = throttle_sub.add_parser("speed", help="Set a loco's speed (0-100%%)")
     speed.add_argument("address", type=int, help="DCC address")
     speed.add_argument("speed_percent", type=float, help="Speed, 0-100")
     speed.set_defaults(func=throttle.throttle_speed)
@@ -82,6 +92,15 @@ def build_parser() -> argparse.ArgumentParser:
     estop = throttle_sub.add_parser("estop", help="Emergency stop (JMRI decoder e-stop)")
     estop.add_argument("address", type=int, help="DCC address")
     estop.set_defaults(func=throttle.throttle_estop)
+
+    stop_all = throttle_sub.add_parser(
+        "stop-all", help="Emergency-stop EVERY roster locomotive at once (panic button)"
+    )
+    stop_all.add_argument(
+        "-a", "--address", type=int, action="append", default=None,
+        help="Limit to this DCC address instead of the whole roster (repeatable)",
+    )
+    stop_all.set_defaults(func=throttle.throttle_stop_all)
 
     direction = throttle_sub.add_parser("direction", help="Set direction (forward/reverse)")
     direction.add_argument("address", type=int, help="DCC address")

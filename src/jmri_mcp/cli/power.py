@@ -7,7 +7,15 @@ import argparse
 import sys
 
 from jmri_mcp.cli.constants import POWER_STATE_NAMES
-from jmri_mcp.jmri_client import JmriError, get_systems, get_version, resolve_system, set_power
+from jmri_mcp.jmri_client import (
+    JmriError,
+    get_systems,
+    get_version,
+    power_off_all,
+    power_on_all,
+    resolve_system,
+    set_power,
+)
 
 
 def _format_system(system: dict) -> str:
@@ -77,6 +85,56 @@ async def power_set(args: argparse.Namespace) -> int:
               f"did not confirm after re-read", file=sys.stderr)
         return 1
     return 0
+
+
+async def _power_set_all(turn_on: bool) -> int:
+    """Shared body for power_stop_all/power_start_all — see their docstrings."""
+    try:
+        results = await (power_on_all() if turn_on else power_off_all())
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    state_name = "ON" if turn_on else "OFF"
+    all_confirmed = True
+    for result in results:
+        print(_format_system(result))
+        if not result["confirmed"]:
+            all_confirmed = False
+    if not all_confirmed:
+        print(f"WARNING: not every system confirmed {state_name} after re-read", file=sys.stderr)
+        return 1
+    return 0
+
+
+async def power_stop_all(args: argparse.Namespace) -> int:
+    """Cut power to every DCC system at once, confirming each by re-read.
+
+    Args:
+        args: Parsed CLI arguments; no fields used.
+
+    Returns:
+        0 if every system confirmed OFF, 1 if JMRI is unreachable or any
+        system's re-read didn't confirm OFF.
+    """
+    return await _power_set_all(turn_on=False)
+
+
+async def power_start_all(args: argparse.Namespace) -> int:
+    """Restore power to every DCC system at once, confirming each by re-read.
+
+    The inverse of power_stop_all. Does NOT resume any locomotive's
+    previous speed — decoders stay stopped until a new speed command is
+    sent, this only restores track power.
+
+    Args:
+        args: Parsed CLI arguments; no fields used.
+
+    Returns:
+        0 if every system confirmed ON, 1 if JMRI is unreachable or any
+        system's re-read didn't confirm ON.
+    """
+    return await _power_set_all(turn_on=True)
 
 
 async def system_status(args: argparse.Namespace) -> int:

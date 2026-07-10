@@ -231,6 +231,31 @@ async def test_emergency_stop_reports_stopped(fake_jmri):
     assert out == {"address": 3, "stopped": True}
 
 
+async def test_emergency_stop_all_stops_every_acquired_address(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "acquire_throttle", address=3)
+    await call(mcp, "acquire_throttle", address=7)
+    out = await call(mcp, "emergency_stop_all")
+    assert sorted(out["stopped"]) == [3, 7]
+    assert out["failed"] == []
+
+
+async def test_emergency_stop_all_with_nothing_acquired(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "emergency_stop_all")
+    assert out == {"stopped": [], "failed": []}
+
+
+async def test_emergency_stop_all_with_nothing_acquired_and_unreachable_jmri(monkeypatch):
+    # Nothing acquired means the stop loop has nothing to iterate, so this
+    # succeeds trivially even with JMRI unreachable -- no throttles means
+    # no requests are ever sent.
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "emergency_stop_all")
+    assert out == {"stopped": [], "failed": []}
+
+
 async def test_set_speed_reports_error_honestly(monkeypatch):
     monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
     mcp = make_server()
@@ -450,3 +475,95 @@ async def test_get_sensor_unknown_name_returns_error_not_exception(mock_sensors)
     mcp = make_server()
     out = await call(mcp, "get_sensor", name="tgv")
     assert "error" in out and "tgv" in out["error"]
+
+
+async def test_power_off_all_confirms_every_system(monkeypatch):
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
+            return_value=Response(200, json=[
+                {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": 4, "default": False}},
+                {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": 4, "default": True}},
+            ])
+        )
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
+        out = await call(mcp, "power_off_all")
+
+    assert out == {
+        "systems": [
+            {"name": "DCC++ Ohara", "state": "OFF", "default": False, "confirmed": True},
+            {"name": "DCC++ Raijin", "state": "OFF", "default": True, "confirmed": True},
+        ]
+    }
+
+
+async def test_power_off_all_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "power_off_all")
+    assert "error" in out
+
+
+async def test_power_on_all_confirms_every_system(monkeypatch):
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
+            return_value=Response(200, json=[
+                {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": 2, "default": False}},
+                {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": 2, "default": True}},
+            ])
+        )
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
+        out = await call(mcp, "power_on_all")
+
+    assert out == {
+        "systems": [
+            {"name": "DCC++ Ohara", "state": "ON", "default": False, "confirmed": True},
+            {"name": "DCC++ Raijin", "state": "ON", "default": True, "confirmed": True},
+        ]
+    }
+
+
+async def test_power_on_all_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "power_on_all")
+    assert "error" in out
+
+
+async def test_set_executor_mode_on_returns_instruction():
+    mcp = make_server()
+    out = await call(mcp, "set_executor_mode", enabled=True)
+    assert out["executor_mode"] is True
+    assert "instruction" in out and len(out["instruction"]) > 0
+
+
+async def test_set_executor_mode_off_returns_instruction():
+    mcp = make_server()
+    await call(mcp, "set_executor_mode", enabled=True)
+    out = await call(mcp, "set_executor_mode", enabled=False)
+    assert out["executor_mode"] is False
+    assert "instruction" in out
+
+
+async def test_get_executor_mode_reflects_current_state():
+    mcp = make_server()
+    out = await call(mcp, "get_executor_mode")
+    assert out == {"executor_mode": False}
+
+    await call(mcp, "set_executor_mode", enabled=True)
+    out = await call(mcp, "get_executor_mode")
+    assert out["executor_mode"] is True
+    assert "instruction" in out

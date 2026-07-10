@@ -67,6 +67,47 @@ DCC++ Zou      : OFF
 WARNING: requested ON but observed state did not confirm after re-read
 ```
 
+## `jmri-cli power stop-all`
+
+Cut power to **every** system JMRI knows about, one after another. **This
+writes to JMRI** for each system — the layout-wide emergency stop: since
+locomotives lose track power entirely, this stops everything regardless of
+who's driving it (a JMRI panel, another `jmri-cli`/MCP session), unlike
+`throttle stop-all` below which only reaches roster-known addresses. More
+drastic than a routine stop — re-powering afterward needs `power start-all`
+(or an explicit `power set <system> on` per system) before anything can
+move again.
+
+```bash
+$ jmri-cli power stop-all
+DCC++ Ohara    : OFF
+DCC++ Zou      : OFF
+DCC++ Raijin   : OFF (default)
+```
+
+Each system is re-read and confirmed the same honest way as `power set` —
+if any system doesn't confirm OFF, the command prints a warning to stderr
+and exits with code 1, listing which systems did confirm alongside the one
+that didn't.
+
+## `jmri-cli power start-all`
+
+Restore power to **every** system JMRI knows about, one after another —
+the inverse of `stop-all`. **This writes to JMRI** for each system.
+
+```bash
+$ jmri-cli power start-all
+DCC++ Ohara    : ON
+DCC++ Zou      : ON
+DCC++ Raijin   : ON (default)
+```
+
+Restoring power does **not** make any locomotive resume its previous
+speed — every decoder stays stopped until a new speed command is sent,
+since JMRI's throttle state is untouched by a power cycle. This is not an
+"undo" of `stop-all`, only a restoration of track power. Same re-read/
+confirm honesty contract as `power stop-all`/`power set`.
+
 ## `jmri-cli roster`
 
 List every locomotive in JMRI's roster: DCC address, name, road, model.
@@ -206,6 +247,41 @@ speed 0. Use for safety-critical stops.
 $ jmri-cli throttle estop 3
 address=3 emergency-stopped
 ```
+
+## `jmri-cli throttle stop-all [-a ADDR ...]`
+
+Emergency-stop **every roster locomotive** at once — the panic button, no
+address needed, matching how `power stop-all` needs none. With no
+`-a`/`--address`, resolves the address list from JMRI's own roster
+(`get_roster()`), acquires each on one fresh connection, then
+emergency-stops all of them in a single call. Pass `-a`/`--address`
+(repeatable) to limit the stop to specific addresses instead.
+
+```bash
+$ jmri-cli throttle stop-all
+address=2 emergency-stopped
+address=4 emergency-stopped
+address=8 emergency-stopped
+...
+
+$ jmri-cli throttle stop-all -a 3 -a 7
+address=3 emergency-stopped
+address=7 emergency-stopped
+```
+
+If an address fails to acquire or stop, it's reported to stderr and the
+command exits with code 1, but every other address is still attempted —
+one bad address doesn't block stopping the rest.
+
+**Known limitation, same as any roster-driven tool in this project**: this
+only reaches addresses JMRI's roster knows about. JMRI exposes no scan of
+what's actually transmitting on the DCC bus (no RailCom/reporters
+configured, no "list active throttles" call — verified live against the
+real server: `reporter` list is empty, `GET /json/throttle` list → 400),
+so a locomotive never added to the roster is out of reach here. The
+inverse "cut everything regardless of roster" guarantee is `power
+stop-all` above, since cutting track power stops every decoder
+unconditionally.
 
 ## `jmri-cli throttle direction <address> <forward|reverse>`
 
@@ -404,6 +480,16 @@ insensitive, tolerant of an unambiguous fragment. No side effects.
 $ jmri-cli sensor status "montagne b"
 Montagne B          : INACTIVE
 ```
+
+## No CLI for executor mode
+
+The MCP-only `set_executor_mode`/`get_executor_mode` tools (concise,
+no-narration response style — see [architecture.md](architecture.md))
+have no `jmri-cli` equivalent, unlike every other tool in this project.
+They hold no JMRI state and make no JMRI calls at all — the whole point of
+the flag is that it persists across tool calls within one long-lived MCP
+session, which a fresh, one-shot `jmri-cli` invocation never has, so there
+would be nothing for a CLI command to meaningfully exercise.
 
 ## Exit codes
 

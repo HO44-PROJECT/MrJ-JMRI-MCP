@@ -33,6 +33,8 @@ from jmri_mcp.jmri_client.power import (
     POWER_ON,
     get_systems,
     get_version,
+    power_off_all,
+    power_on_all,
     resolve_system,
     set_power,
 )
@@ -62,6 +64,8 @@ __all__ = [
     "get_version",
     "get_systems",
     "set_power",
+    "power_off_all",
+    "power_on_all",
     "resolve_system",
     "get_roster",
     "get_roster_function_labels",

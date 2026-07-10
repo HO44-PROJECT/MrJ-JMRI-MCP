@@ -307,6 +307,27 @@ range); `lights_on`/`lights_off` are thin wrappers calling
 (not through the MCP dispatcher) since F0 is the near-universal DCC
 headlight convention.
 
+## `get_power` / `list_systems`: connection name doubles as system description
+
+JMRI has no dedicated field for "what is this power system for" — the
+user names each DCC connection directly in JMRI's own connection setup,
+and any purpose description they add lives as a plain parenthetical
+inside that same name string, e.g. `"zou (test)"`, `"raijin (tracks)"`,
+`"ohara (turnouts)"`, `"taya (accessories)"` (the user's real systems,
+verified live). `get_systems()`/`compact_power()` do no parsing or
+splitting of this — the full name string, parenthetical included, passes
+through untouched as the `"name"` field both `get_power` and
+`list_systems` return.
+
+The fix here (issue #24) is docstring-only: `compact_power()`,
+`get_power`, and `list_systems` all now explicitly tell the LLM that this
+`"name"` field is the answer to "what is system X for?" — without this,
+the LLM had the description in front of it (verified: `get_power("zou")`
+already returned `{"name": "zou (test)", ...}` before this fix) but no
+instruction that it was safe/expected to read purpose out of it, so a
+"à quoi sert le système zou ?" question risked an "I don't have that
+information" answer despite the answer being present in the payload.
+
 ## `emergency_stop_all`: stop every acquired throttle at once
 
 `JmriWsClient.emergency_stop_all()` (in `jmri_ws/__init__.py`) iterates

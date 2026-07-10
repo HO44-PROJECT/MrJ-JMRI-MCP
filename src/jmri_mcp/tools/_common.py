@@ -21,6 +21,13 @@ def compact_power(system: dict) -> dict:
 
     Returns:
         {"name": ..., "state": "ON"/"OFF"/"UNKNOWN"/"IDLE", "default": bool}.
+        "name" is JMRI's full connection name verbatim, e.g. "zou (test)" —
+        the user names each of their DCC systems in JMRI's own connection
+        setup, often with a short parenthetical describing its purpose
+        ("test", "tracks", "turnouts", "accessories"). This is the only
+        place that purpose is recorded; if asked what a system is for
+        ("à quoi sert le système zou ?"), read it straight out of this
+        name rather than saying the information isn't available.
     """
     return {
         "name": system.get("name"),

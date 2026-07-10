@@ -46,6 +46,12 @@ $ jmri-cli power status ohara
 DCC++ Ohara    : OFF
 ```
 
+The name shown is JMRI's connection name verbatim — if the user has added
+a parenthetical in JMRI's own connection setup (e.g. `"zou (test)"`,
+`"raijin (tracks)"`), it prints as part of the name unchanged, since
+that's the only place JMRI records a connection's purpose (see issue #24
+and `docs/architecture.md`).
+
 ## `jmri-cli power set <system> <on|off>`
 
 Turn a system's power on or off. **This writes to JMRI** — on real DCC++

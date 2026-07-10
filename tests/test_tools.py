@@ -63,6 +63,23 @@ async def test_get_power_unknown_system_returns_error_not_exception(mock_power):
     assert "error" in out and "tgv" in out["error"]
 
 
+async def test_compact_power_preserves_parenthetical_description(monkeypatch):
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
+            return_value=Response(200, json=[
+                {"type": "power", "data": {"name": "zou (test)", "prefix": "Z", "state": 2, "default": True}},
+            ])
+        )
+        out = await call(mcp, "get_power", system="zou")
+    assert out["name"] == "zou (test)"
+
+
 async def test_system_status_reports_version_and_systems(mock_power, version_fixture):
     import respx
     from httpx import Response

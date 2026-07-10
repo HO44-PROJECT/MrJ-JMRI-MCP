@@ -57,6 +57,17 @@ package version stays `0.1.0` during active milestone development).
     session holds, `power_off_all` cuts power to every system regardless of
     who's driving. Covered by a new assertion in `tests/test_server.py`.
 
+- **Fixed** (#24): `get_power`/`list_systems` returned JMRI's connection
+  name verbatim (e.g. `"zou (test)"`), but nothing told the LLM this
+  parenthetical was a usable answer to "what is system X for?" — JMRI has
+  no separate field for a connection's purpose, the parenthetical is the
+  only place it's recorded. `compact_power()`, `get_power`, and
+  `list_systems` docstrings now explicitly say to read a system's purpose
+  from `"name"` instead of saying the information isn't available.
+  Docstring-only change, no parsing/new field, per explicit user
+  preference. Live-verified against the real JMRI server: `ohara
+  (turnouts)`, `zou (test)`, `taya (accessories)`, `raijin (tracks)`.
+
 ## [0.1.0] - milestones M1-M4
 
 Initial implementation, built milestone by milestone against a real JMRI 5.4.0

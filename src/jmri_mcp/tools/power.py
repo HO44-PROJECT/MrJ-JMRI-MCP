@@ -28,6 +28,12 @@ def register(mcp) -> None:
 
         Use this to discover what systems exist before calling get_power, or to
         answer "what systems are there?". No side effects.
+
+        Each system's "name" is JMRI's full connection name, often with a
+        parenthetical describing what it's for (e.g. "zou (test)", "raijin
+        (tracks)") — the user set these themselves in JMRI. If asked what a
+        system is used for, this name is the answer; don't say that
+        information isn't available.
         """
         try:
             systems = await get_systems()
@@ -45,6 +51,11 @@ def register(mcp) -> None:
                 Case-insensitive. Omit to use JMRI's default system.
 
         No side effects — this only reads state, it never changes power.
+
+        The returned "name" is JMRI's full connection name, often with a
+        parenthetical describing what the system is for (e.g. "zou
+        (test)"). If the user asks what a system is used for rather than
+        its power state, answer from this name.
         """
         try:
             systems = await get_systems()

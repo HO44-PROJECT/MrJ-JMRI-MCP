@@ -24,6 +24,7 @@ design notes.
 
 ## Documentation
 
+- **[docs/quickstart.md](docs/quickstart.md)** — fastest path from a fresh clone to a working voice/chat command.
 - **[docs/architecture.md](docs/architecture.md)** — module layout, the two JMRI clients, WebSocket design notes.
 - **[docs/install.md](docs/install.md)** — installing the package, verifying `jmri-mcp`/`jmri-cli`.
 - **[docs/cli.md](docs/cli.md)** — `jmri-cli` command reference.
@@ -42,3 +43,11 @@ design notes.
 (MIT/Apache) so that anyone who modifies this project and offers it as a
 network service (not just redistributes the code) must also publish their
 modified source — see the [license text](LICENSE) for the exact terms.
+
+### Third-party code
+
+`src/xiaozhi_wrapper/` is adapted from the MCP pipe example in
+[xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) (MIT License,
+Copyright (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and Project
+Contributors) — see the package docstring
+(`src/xiaozhi_wrapper/__init__.py`) for the full notice.

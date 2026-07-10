@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "jmri": {
-      "command": "jmri-mcp",
-      "env": { "JMRI_URL": "http://10.0.20.20:12080" }
+      "command": "jmri-mcp"
     }
   }
 }

@@ -21,7 +21,7 @@ an entry under `mcpServers`:
     "jmri": {
       "command": "/absolute/path/to/your/env/bin/jmri-mcp",
       "env": {
-        "JMRI_URL": "http://10.0.20.20:12080"
+        "JMRI_URL": "http://localhost:12080"
       }
     }
   }
@@ -53,9 +53,37 @@ without warning even when the server code itself is fine.
 ## Claude Code
 
 Claude Code (this CLI) can also be configured to use the server as an MCP tool
-provider — same `jmri-mcp` command and `JMRI_URL` env var, wired through
-Claude Code's own MCP configuration (see `claude mcp add` / project-level
-`.mcp.json`). Not yet formally documented here — see issue #19.
+provider — same `jmri-mcp` command and `JMRI_URL` env var as Claude Desktop,
+wired through Claude Code's own MCP configuration instead of a JSON file you
+edit by hand.
+
+Unlike Claude Desktop, `claude mcp add` runs `jmri-mcp` through your shell, so
+it **does** inherit your shell `PATH` — a bare `jmri-mcp` works as long as the
+right environment is active when you run the command (and, for `user`/
+`project` scope, when Claude Code itself later launches the server).
+
+```bash
+claude mcp add jmri -e JMRI_URL=http://localhost:12080 -- jmri-mcp
+```
+
+- `-e JMRI_URL=...` sets the same env var as Claude Desktop's config.
+- The bare `--` separates `claude mcp add`'s own flags from the command to
+  run; everything after it (`jmri-mcp`) is passed through untouched.
+- `-s/--scope` picks where the config is stored: `local` (default, this
+  machine only), `user` (all your projects), or `project` (checked into a
+  `.mcp.json` next to this repo, shared with anyone who clones it — don't use
+  `project` scope if `JMRI_URL` shouldn't be committed).
+
+Verify it's registered and reachable:
+
+```bash
+claude mcp list
+claude mcp get jmri
+```
+
+Then ask Claude Code something that needs a tool call (e.g. "what's the
+status of the JMRI power systems?") to confirm the tools are actually being
+called, not just registered.
 
 ## xiaozhi / Kira
 
@@ -66,22 +94,27 @@ between the two packages is `mcp_config.json`'s `"command": "jmri-mcp"`. See
 the package docstring (`src/xiaozhi_wrapper/__init__.py`) for the full design.
 
 `src/xiaozhi_wrapper/mcp_config.json` is checked into the repo as-is (not a
-template to copy) — nothing in it is secret, it's the same `JMRI_URL`
-already published throughout this repo's own docs:
+template to copy) — it has no `env` block at all:
 
 ```json
 {
   "mcpServers": {
     "jmri": {
-      "command": "jmri-mcp",
-      "env": { "JMRI_URL": "http://10.0.20.20:12080" }
+      "command": "jmri-mcp"
     }
   }
 }
 ```
 
+`build_server_command()` merges any per-server `env` from this file onto a
+**copy of the bridge's own environment**, not a replacement of it — so
+`JMRI_URL` doesn't need to be duplicated here, it just needs to already be
+exported wherever `jmri-xiaozhi-bridge` is launched from (same variable used
+everywhere else in this project).
+
 Install the extra dependency this package needs beyond the core install
-(`python-dotenv`, for optionally loading `MCP_ENDPOINT` from a `.env` file):
+(`python-dotenv`, for optionally loading `MCP_ENDPOINT`/`JMRI_URL` from a
+`.env` file):
 
 ```bash
 pip install -e ".[xiaozhi]"
@@ -90,11 +123,12 @@ pip install -e ".[xiaozhi]"
 The bridge is launched from your own shell, so it **does** inherit your
 shell `PATH` — a bare `"jmri-mcp"` in the config works as long as the right
 conda env is active when you launch it. Set `MCP_ENDPOINT` (your xiaozhi
-WebSocket URL) and run it from anywhere — it finds its own `mcp_config.json`
-next to the installed package, not the current directory:
+WebSocket URL) and `JMRI_URL` and run it from anywhere — it finds its own
+`mcp_config.json` next to the installed package, not the current directory:
 
 ```bash
 export MCP_ENDPOINT=<your xiaozhi ws endpoint>
+export JMRI_URL=http://localhost:12080
 jmri-xiaozhi-bridge
 ```
 

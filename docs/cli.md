@@ -13,7 +13,7 @@ Every command needs to know where JMRI is — set `JMRI_URL`, or rely on the
 default `http://localhost:12080`:
 
 ```bash
-export JMRI_URL=http://10.0.20.20:12080
+export JMRI_URL=http://localhost:12080
 ```
 
 ## `jmri-cli status`

@@ -5,10 +5,10 @@ src/xiaozhi_wrapper/    # generic stdio<->WebSocket bridge for xiaozhi/Kira (no 
 ├── __init__.py         #   main(); build_server_command(), connect_with_retry(), ...
 ├── __main__.py         #   enables `python -m xiaozhi_wrapper`
 ├── constants.py         #  env var names, mcp_config.json keys/transport types, backoff/timeout tunables
-└── mcp_config.json      #  checked in as-is — nothing secret (same JMRI_URL published elsewhere)
+└── mcp_config.json      #  checked in as-is — no env block, JMRI_URL comes from the launching shell
 
 src/jmri_mcp/
-├── config/             # env vars: JMRI_URL (e.g. http://10.0.20.20:12080)
+├── config/             # env vars: JMRI_URL (e.g. http://localhost:12080)
 │   └── __init__.py
 ├── jmri_client/       # async HTTP client for JMRI's JSON API
 │   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor)

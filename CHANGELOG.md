@@ -10,6 +10,49 @@ package version stays `0.1.0` during active milestone development).
 
 ### Added
 
+- **Fixed**: `src/xiaozhi_wrapper` is adapted from the MCP pipe example in
+  [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) (MIT License) but
+  only referenced it in prose, with no copyright notice — MIT requires the
+  original copyright/permission notice to be included in copies or
+  substantial portions of the software. Added the full MIT notice and a
+  direct link to the source repo in `src/xiaozhi_wrapper/__init__.py`'s
+  module docstring, plus a "Third-party code" section in the README
+  pointing to it.
+
+- **Fixed**: docs, CLI `--help` examples, and `src/xiaozhi_wrapper/mcp_config.json`
+  used the maintainer's real network address (`10.0.20.20`) as their example
+  JMRI URL. Replaced with a generic `http://localhost:12080` everywhere
+  public (docs/, CLI help text, tests). While auditing `mcp_config.json`,
+  found its `"env": {"JMRI_URL": ...}` block was redundant — `build_server_command()`
+  already merges any per-server `env` onto a **copy** of the bridge's own
+  environment, so `JMRI_URL` was already inherited if exported before
+  launching `jmri-xiaozhi-bridge`. Removed the block entirely rather than
+  just changing its value; `docs/llm-setup.md`'s xiaozhi/Kira section
+  updated to say so. `config/live.ini` (gitignored, names the real address)
+  and `CLAUDE.md` (gitignored, personal working context) are untouched —
+  neither is public.
+
+- **Fixed**: the live test suite (`pytest -m live`) required its own
+  `config/live.ini` `url` or `JMRI_URL_LIVE` env var, duplicating the
+  `JMRI_URL` most setups already export for the CLI/MCP server. It now
+  falls back to plain `JMRI_URL` when neither is set — `config/live.ini`
+  is only still required for the write-test safety knobs
+  (`write_test_system`, `enable_write_tests`,
+  `min_toggle_interval_seconds`), which have no env-var-elsewhere
+  equivalent.
+
+- Documentation (#19):
+  - `docs/quickstart.md` — a single fast path from a fresh clone to a working
+    voice/chat command, linking out to the existing install/CLI/llm-setup
+    docs for detail instead of duplicating them. Linked from the README.
+  - `docs/llm-setup.md` gained a real Claude Code section (`claude mcp add`
+    config example, scope flags, `claude mcp list`/`get` verification) —
+    previously just a stub pointing at this issue.
+  - Verified live that the server's `initialize` response is pure
+    single-line JSON-RPC on stdout with nothing else mixed in (per this
+    issue's own text, referencing #1) — no code change needed, `print()`
+    only exists in `jmri-cli`, never in the MCP server path.
+
 - Layout-wide STOP features (#23):
   - `emergency_stop_all` — emergency-stop every locomotive throttle this MCP
     session currently holds, in one call, instead of naming addresses one at a

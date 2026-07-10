@@ -9,16 +9,16 @@ def test_default_when_unset(monkeypatch):
 
 
 def test_reads_env(monkeypatch):
-    monkeypatch.setenv("JMRI_URL", "http://10.0.20.20:12080")
-    assert get_jmri_url() == "http://10.0.20.20:12080"
+    monkeypatch.setenv("JMRI_URL", "http://192.0.2.1:12080")
+    assert get_jmri_url() == "http://192.0.2.1:12080"
 
 
 def test_strips_trailing_slash(monkeypatch):
-    monkeypatch.setenv("JMRI_URL", "http://10.0.20.20:12080/")
-    assert get_jmri_url() == "http://10.0.20.20:12080"
+    monkeypatch.setenv("JMRI_URL", "http://192.0.2.1:12080/")
+    assert get_jmri_url() == "http://192.0.2.1:12080"
 
 
-@pytest.mark.parametrize("bad", ["banana", "ftp://10.0.20.20", "", "   ", "http://"])
+@pytest.mark.parametrize("bad", ["banana", "ftp://192.0.2.1", "", "   ", "http://"])
 def test_rejects_invalid_url(monkeypatch, bad):
     monkeypatch.setenv("JMRI_URL", bad)
     with pytest.raises(ValueError, match="Invalid JMRI_URL"):

@@ -5,10 +5,16 @@ jmri_mcp. It pipes any number of configured stdio MCP servers (started as
 subprocesses) to a xiaozhi WebSocket endpoint, so any MCP server (this
 repo's `jmri-mcp`, or any other) can be exposed to a xiaozhi/Kira device
 without xiaozhi-specific code living inside the MCP server itself. Ported
-from the `kira` project's standalone `mcp_pipe.py` script (originally
-adapted from xiaozhi-esp32-server's MCP pipe example) so this repo can
-version it alongside the `jmri-mcp`/`jmri-cli` entry points it's usually
-paired with via mcp_config.json's `"command": "jmri-mcp"`.
+from the `kira` project's standalone `mcp_pipe.py` script, itself adapted
+from the MCP pipe example in xiaozhi-esp32
+(https://github.com/78/xiaozhi-esp32), so this repo can version it
+alongside the `jmri-mcp`/`jmri-cli` entry points it's usually paired with
+via mcp_config.json's `"command": "jmri-mcp"`.
+
+Original xiaozhi-esp32 MCP pipe example: MIT License, Copyright (c) 2025
+Shenzhen Xinzhi Future Technology Co., Ltd. and Project Contributors
+(https://github.com/78/xiaozhi-esp32/blob/main/LICENSE). Reused/modified
+here under those terms.
 
 Usage (env):
     export MCP_ENDPOINT=<ws_endpoint>
@@ -22,9 +28,9 @@ Run a single local server script (back-compat, bypasses config):
 
 Config discovery order:
     $MCP_CONFIG, then this package's own mcp_config.json (checked in, works
-    from any directory — one entry per MCP server, keyed by name; nothing
-    in it is secret, it's the same JMRI_URL already published throughout
-    this repo).
+    from any directory — one entry per MCP server, keyed by name; has no
+    `env` block, JMRI_URL is inherited from the shell that launches the
+    bridge, see build_server_command()).
 
 Package layout:
     constants.py  Env var names, mcp_config.json key/transport-type

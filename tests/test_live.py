@@ -6,7 +6,13 @@ layout in config/live.ini (copy from config/live.example.ini), then run:
 
     pytest -m live
 
-JMRI_URL_LIVE / JMRI_WRITE_TEST_SYSTEM env vars override config/live.ini if set.
+JMRI_URL_LIVE / JMRI_WRITE_TEST_SYSTEM env vars override config/live.ini if
+set. The URL alone doesn't need any of that duplicated: if neither
+JMRI_URL_LIVE nor config/live.ini's `url` is set, this falls back to the
+same JMRI_URL already used everywhere else in the project (CLI, MCP server).
+config/live.ini remains the only way to set the write-test safety knobs
+(write_test_system, enable_write_tests, min_toggle_interval_seconds), which
+have no equivalent env var used elsewhere.
 """
 
 import asyncio
@@ -21,6 +27,10 @@ from jmri_mcp.jmri_client import get_systems, resolve_system, set_power
 pytestmark = pytest.mark.live
 
 _CONFIG_PATH = Path(__file__).parent.parent / "config" / "live.ini"
+
+# Captured at import time, before conftest.py's autouse `jmri_url` fixture
+# overwrites JMRI_URL with the mock host for every test in the suite.
+_SHELL_JMRI_URL = os.environ.get("JMRI_URL")
 
 
 def _read_config() -> configparser.ConfigParser:
@@ -38,11 +48,11 @@ def _config_value(env_var: str, ini_key: str) -> str | None:
 
 @pytest.fixture(autouse=True)
 def real_jmri_url(monkeypatch):
-    url = _config_value("JMRI_URL_LIVE", "url")
+    url = _config_value("JMRI_URL_LIVE", "url") or _SHELL_JMRI_URL
     if not url:
         pytest.skip(
-            "No live JMRI configured: copy config/live.example.ini to "
-            "config/live.ini, or set JMRI_URL_LIVE"
+            "No live JMRI configured: set JMRI_URL, or copy "
+            "config/live.example.ini to config/live.ini, or set JMRI_URL_LIVE"
         )
     monkeypatch.setenv("JMRI_URL", url)
 

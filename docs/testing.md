@@ -33,12 +33,21 @@ pytest -m live
 
 ### Configuring it
 
-Copy `config/live.example.ini` to `config/live.ini` (gitignored — it names
-your private network address) and fill in the `[jmri]` section:
+The URL alone needs no extra setup: if you already have `JMRI_URL` exported
+(the same variable used everywhere else in this project — CLI, MCP server),
+the live suite picks it up automatically, in preference order `JMRI_URL_LIVE`
+env var → `config/live.ini`'s `url` → plain `JMRI_URL`. Set `JMRI_URL_LIVE`
+instead only if you want the live suite to point somewhere different from
+your normal `JMRI_URL`.
+
+Write tests need more than a URL — `config/live.ini` is where the safety
+knobs live (there's no equivalent env var for these elsewhere in the
+project). Copy `config/live.example.ini` to `config/live.ini` (gitignored —
+it names your private network address) and fill in the `[jmri]` section:
 
 ```ini
 [jmri]
-url = http://10.0.20.20:12080
+; url is optional here — omit it to fall back to JMRI_URL, see above.
 write_test_system = Zou
 enable_write_tests = true
 min_toggle_interval_seconds = 5
@@ -48,8 +57,9 @@ Every key can also be overridden with an environment variable
 (`JMRI_URL_LIVE`, `JMRI_WRITE_TEST_SYSTEM`, `JMRI_ENABLE_WRITE_TESTS`,
 `JMRI_MIN_TOGGLE_INTERVAL_SECONDS`), which takes priority over the ini file.
 
-If `url` isn't set (no config file, no env var), the whole live suite is
-skipped with an explanatory message — it's never silently run against nothing.
+If no URL can be found anywhere (no `JMRI_URL`, no `JMRI_URL_LIVE`, no ini
+`url`), the whole live suite is skipped with an explanatory message — it's
+never silently run against nothing.
 
 ### Hardware safety
 

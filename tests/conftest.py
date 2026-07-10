@@ -98,6 +98,21 @@ def mock_sensors(sensors_fixture):
 
 
 @pytest.fixture
+def signals_fixture() -> list[dict]:
+    return json.loads((FIXTURES / "signal_masts_response.json").read_text())
+
+
+@pytest.fixture
+def mock_signals(signals_fixture):
+    """Mock GET /json/signalMasts to return the captured JMRI 5.4-shaped fixture."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(200, json=signals_fixture)
+        )
+        yield router
+
+
+@pytest.fixture
 def roster_fixture() -> list[dict]:
     return json.loads((FIXTURES / "roster_response.json").read_text())
 

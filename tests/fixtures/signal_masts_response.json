@@ -1,0 +1,28 @@
+[
+    {
+        "type": "signalMast",
+        "data": {
+            "name": "ZF$dsm:DB-HV-1969:block(31)",
+            "userName": "Entry Signal A",
+            "comment": null,
+            "properties": [],
+            "aspect": "Hp1",
+            "lit": true,
+            "held": false,
+            "state": "Hp1"
+        }
+    },
+    {
+        "type": "signalMast",
+        "data": {
+            "name": "ZF$dsm:DB-HV-1969:block(45)",
+            "userName": null,
+            "comment": null,
+            "properties": [],
+            "aspect": "Hp0",
+            "lit": true,
+            "held": false,
+            "state": "Hp0"
+        }
+    }
+]

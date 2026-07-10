@@ -31,10 +31,13 @@ Usage:
     JMRI_URL=http://localhost:12080 python -m jmri_mcp.cli turnout set "Layout Turnout A" thrown
     JMRI_URL=http://localhost:12080 python -m jmri_mcp.cli sensor list
     JMRI_URL=http://localhost:12080 python -m jmri_mcp.cli sensor status "Montagne B"
+    JMRI_URL=http://localhost:12080 python -m jmri_mcp.cli signal list
+    JMRI_URL=http://localhost:12080 python -m jmri_mcp.cli signal status "Entry Signal A"
+    JMRI_URL=http://localhost:12080 python -m jmri_mcp.cli signal set "Entry Signal A" Hp1
 
-`power`/`status`/`light`/`turnout`/`sensor` talk to jmri_client.py directly
-(one-shot HTTP, no MCP/JSON-RPC involved). `throttle` talks to jmri_ws.py (a
-fresh WebSocket connection for the one command, then closed) — useful for
-quick manual checks against a real layout, same role test_manuel.py used to
-play before it became tests/test_live.py.
+`power`/`status`/`light`/`turnout`/`sensor`/`signal` talk to jmri_client.py
+directly (one-shot HTTP, no MCP/JSON-RPC involved). `throttle` talks to
+jmri_ws.py (a fresh WebSocket connection for the one command, then closed) —
+useful for quick manual checks against a real layout, same role
+test_manuel.py used to play before it became tests/test_live.py.
 """

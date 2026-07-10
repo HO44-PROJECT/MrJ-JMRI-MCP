@@ -91,6 +91,30 @@ def compact_sensor(sensor: dict) -> dict:
     }
 
 
+def compact_signal(signal: dict) -> dict:
+    """Reduce a raw JMRI signal mast dict to the fields worth showing the LLM.
+
+    Args:
+        signal: A signal mast dict as returned by jmri_client.get_signals(),
+            with at least "name" and "aspect", and optionally "userName",
+            "lit", "held".
+
+    Returns:
+        {"name": ..., "aspect": ..., "lit": bool, "held": bool}. "name" is
+        the user-friendly userName if JMRI has one set, else falls back to
+        the raw system name. "aspect" is passed through verbatim (e.g.
+        "Hp0"/"Hp1") - the valid vocabulary is defined by the mast's own
+        signal system and isn't available over JMRI's JSON API, so this
+        project never hardcodes or translates aspect names.
+    """
+    return {
+        "name": signal.get("userName") or signal.get("name"),
+        "aspect": signal.get("aspect"),
+        "lit": bool(signal.get("lit")),
+        "held": bool(signal.get("held")),
+    }
+
+
 def throttle_id(address: int) -> str:
     """Derive a stable JMRI throttle id from a DCC address.
 

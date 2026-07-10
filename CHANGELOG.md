@@ -10,6 +10,47 @@ package version stays `0.1.0` during active milestone development).
 
 ### Added
 
+- Signal masts (#26): `list_signals` / `get_signal` / `set_signal` +
+  `jmri-cli signal list/status/set`, a fifth layout domain alongside light/
+  turnout/sensor. Covers JMRI's `signalMast` objects only, not
+  `signalHead` — confirmed with the maintainer that their DB-1969 masts
+  are driven by a custom ESP32 decoding raw DCC accessory frames off the
+  rail (no `signalHead` objects exist in their JMRI at all), and
+  `signalMast` (named aspects like `Hp0`/`Hp1`/`Hp2`) is the level
+  PanelPro users actually name and interact with anyway. Aspect names are
+  passed through verbatim and never validated locally — JMRI's JSON API
+  has no endpoint listing a mast's valid aspects, so `set_signal` relies
+  on the same re-read-and-confirm honesty contract as `set_power`/
+  `set_turnout`/`set_light` instead of guessing.
+  - `resolve_signal` shares `resolve_turnout`'s tolerant matching
+    (exact name/userName, then an unambiguous `userName` fragment) — note
+    fragment matching only ever looks at `userName`, not the system name,
+    which is more noticeable here since JMRI auto-generates long system
+    names for DCC-driven masts (e.g. `ZF$dsm:DB-HV-1969:block(31)`) that
+    are commonly left without a `userName` set in PanelPro.
+  - Live-verified against the maintainer's real JMRI: `list_signals`/
+    `get_signal` correctly read their one configured mast.
+  - **Fixed**: the first live write test of `set_signal` (one user-
+    authorized POST requesting `Hp0`) completed with no HTTP error but the
+    re-read aspect stayed unchanged — correctly reported as
+    `confirmed: false` rather than a false success, but the underlying
+    cause was a real bug, not external hardware. Root-caused by reading
+    JMRI's own server source (`JsonSignalMastHttpService.doPost()`): the
+    POST handler reads the JSON field `"state"`, not `"aspect"` — this
+    project's client sent `{"name": ..., "aspect": ...}`, so JMRI's
+    `data.path(STATE).isTextual()` check was always false and the entire
+    aspect-setting branch was silently skipped, returning 200 with the
+    mast's unchanged data. Fixed by sending `"state"` instead. Bonus
+    finding from the same source read: JMRI validates the aspect name
+    server-side against the mast's signal system and raises a proper 400
+    `JsonException` for an unknown one (surfaced here as a `JmriError` /
+    tool `"error"`) — so `set_signal` no longer needs to guess whether a
+    non-confirming aspect was invalid or just unresponsive hardware; an
+    invalid name is now a hard error, not a silent non-confirm. Added a
+    regression test asserting the POST body's JSON key, since the
+    original tests mocked the endpoint without checking the payload shape
+    and would not have caught this.
+
 - **Fixed**: `src/xiaozhi_wrapper` is adapted from the MCP pipe example in
   [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) (MIT License) but
   only referenced it in prose, with no copyright notice — MIT requires the

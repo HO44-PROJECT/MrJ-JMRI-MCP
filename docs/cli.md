@@ -496,6 +496,65 @@ $ jmri-cli sensor status "montagne b"
 Montagne B          : INACTIVE
 ```
 
+## `jmri-cli signal list`
+
+Show the current aspect of every signal mast known to JMRI. Covers
+`signalMast` objects only, not `signalHead` — see
+[architecture.md](architecture.md#signal-masts-list_signals--get_signal--set_signal-26)
+for why. No side effects.
+
+```bash
+$ jmri-cli signal list
+Entry Signal A      : Hp1
+```
+
+Aspect names (`Hp0`, `Hp1`, `Hp2`, ...) are whatever vocabulary the mast's
+configured signal system uses (e.g. German `DB-HV-1969`) — passed through
+verbatim, never hardcoded or translated by this project.
+
+## `jmri-cli signal status <name>`
+
+Show one signal mast's aspect. `<name>` matches either JMRI's system name
+(e.g. `"ZF$dsm:DB-HV-1969:block(31)"`) or its user-friendly `userName`,
+case-insensitive, tolerant of an unambiguous fragment of `userName` — but
+**not** a fragment of the system name. JMRI auto-generates long system
+names for DCC-driven masts and, unlike most turnouts, these are commonly
+left without a `userName` set in PanelPro; if so, only the exact full
+system name resolves. Set a `userName` per mast in PanelPro if you want
+short-fragment matching to work. No side effects.
+
+```bash
+$ jmri-cli signal status "ZF\$dsm:DB-HV-1969:block(31)"
+ZF$dsm:DB-HV-1969:block(31): Hp1
+```
+
+## `jmri-cli signal set <name> <aspect>`
+
+Set a signal mast's aspect. **This writes to JMRI and, on a mast driven by
+external hardware (e.g. a DCC accessory decoder or a custom
+microcontroller), changes what the physical signal displays on the real
+layout.** Resolves `<name>` the same tolerant way as `signal status`.
+`<aspect>` is **not validated locally** — JMRI's JSON API does not expose
+the list of valid aspects for a given mast (that vocabulary lives in the
+mast's signal system definition inside JMRI, not over `/json/*`) — but
+JMRI does validate it server-side, and an unknown aspect name comes back
+as a hard error rather than a silent non-confirm.
+
+```bash
+$ jmri-cli signal set "ZF\$dsm:DB-HV-1969:block(31)" Hp0
+```
+
+The aspect is re-read after the command and confirmed the same honest way
+as `power set`/`turnout set` — if a *valid* aspect still doesn't match
+after the command (e.g. unresponsive external hardware), the command
+prints a warning to stderr and exits with code 1. **Fixed**: the first
+live test of this command showed the POST completing with no HTTP error
+but the aspect never actually changing — root-caused to this project
+sending the wrong JSON field (`"aspect"` instead of the `"state"` key
+JMRI's server actually reads), not a hardware issue. See
+[architecture.md](architecture.md#signal-masts-list_signals--get_signal--set_signal-26)
+for the full diagnosis.
+
 ## No CLI for executor mode
 
 The MCP-only `set_executor_mode`/`get_executor_mode` tools (concise,

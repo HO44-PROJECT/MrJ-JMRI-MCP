@@ -216,6 +216,59 @@ async def test_turnout_status_unknown(mock_turnouts, capsys):
     assert "Unknown turnout 'tgv'" in err
 
 
+async def test_signal_list_all(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "list")
+    assert code == 0
+    assert "Entry Signal A" in out and "Hp1" in out
+    assert "ZF$dsm:DB-HV-1969:block(45)" in out and "Hp0" in out
+
+
+async def test_signal_status_one(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "status", "Entry Signal A")
+    assert code == 0
+    assert out.strip() == "Entry Signal A      : Hp1"
+
+
+async def test_signal_status_unknown(mock_signals, capsys):
+    code, _, err = await run(capsys, "signal", "status", "tgv")
+    assert code == 1
+    assert "Unknown signal mast 'tgv'" in err
+
+
+async def test_signal_set_aspect_and_confirms(monkeypatch, capsys):
+    import json
+
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    post_bodies = []
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(200, json=[
+                {"type": "signalMast", "data": {
+                    "name": "ZF$dsm:DB-HV-1969:block(31)", "userName": "Entry Signal A",
+                    "aspect": "Hp0", "lit": True, "held": False,
+                }},
+            ])
+        )
+
+        def post_signal(request):
+            post_bodies.append(json.loads(request.content))
+            return Response(200, json={})
+
+        router.post(f"{MOCK_JMRI_URL}/json/signalMast/ZF$dsm:DB-HV-1969:block(31)").mock(
+            side_effect=post_signal
+        )
+        code, out, _ = await run(capsys, "signal", "set", "Entry Signal A", "Hp0")
+    assert code == 0
+    assert out.strip() == "Entry Signal A      : Hp0"
+    # Regression guard: see matching comment in tests/test_tools.py - JMRI's
+    # POST handler reads "state", not "aspect".
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0"}]
+
+
 async def test_sensor_list_all(mock_sensors, capsys):
     code, out, _ = await run(capsys, "sensor", "list")
     assert code == 0

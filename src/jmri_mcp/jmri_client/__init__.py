@@ -14,6 +14,7 @@ Package layout:
     light.py    Layout light discovery, on/off, resolve_light.
     turnout.py  Turnout discovery, closed/thrown, resolve_turnout.
     sensor.py   Sensor discovery (read-only), resolve_sensor.
+    signal.py   Signal mast discovery, aspect set, resolve_signal.
 
 Every public name below is re-exported here so existing callers can keep
 doing `from jmri_mcp.jmri_client import get_roster` etc. without knowing
@@ -48,6 +49,11 @@ from jmri_mcp.jmri_client.sensor import (
     SENSOR_INACTIVE,
     get_sensors,
     resolve_sensor,
+)
+from jmri_mcp.jmri_client.signal import (
+    get_signals,
+    resolve_signal,
+    set_signal,
 )
 from jmri_mcp.jmri_client.turnout import (
     TURNOUT_CLOSED,
@@ -84,4 +90,7 @@ __all__ = [
     "SENSOR_INACTIVE",
     "get_sensors",
     "resolve_sensor",
+    "get_signals",
+    "set_signal",
+    "resolve_signal",
 ]

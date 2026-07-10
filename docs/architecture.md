@@ -11,14 +11,16 @@ src/jmri_mcp/
 ├── config/             # env vars: JMRI_URL (e.g. http://localhost:12080)
 │   └── __init__.py
 ├── jmri_client/       # async HTTP client for JMRI's JSON API
-│   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor)
+│   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor/signal)
 │   ├── _http.py        #  shared GET/POST plumbing, JmriError, envelope unwrap
 │   ├── power.py        #  version, power-system discovery, power on/off,
 │   │                   #  power_off_all/power_on_all, resolve_system
 │   ├── roster.py        # roster listing, name resolution, function labels
 │   ├── light.py         # layout light discovery, on/off, resolve_light
 │   ├── turnout.py       # turnout discovery, closed/thrown, resolve_turnout
-│   └── sensor.py        # sensor discovery (read-only), resolve_sensor
+│   ├── sensor.py        # sensor discovery (read-only), resolve_sensor
+│   └── signal.py        # signal mast discovery, aspect set, resolve_signal
+│   │                    #   (signalMast only, not signalHead — see file docstring)
 ├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
 │   └── __init__.py     #   incl. emergency_stop_all() (every acquired throttle at once)
 ├── tools/             # MCP tools exposed to the LLM
@@ -34,6 +36,7 @@ src/jmri_mcp/
 │   │                    #   distinct from a locomotive's F0 headlight function)
 │   ├── turnout.py       # list_turnouts, get_turnout, set_turnout
 │   ├── sensor.py        # list_sensors, get_sensor (read-only)
+│   ├── signal.py        # list_signals, get_signal, set_signal (signalMast only)
 │   └── mode.py           # set_executor_mode, get_executor_mode (concise/
 │   │                    #   no-narration response style, no JMRI I/O)
 ├── server/            # jmri-mcp: the MCP stdio server, no MCP client needed to build it
@@ -51,14 +54,15 @@ src/jmri_mcp/
     ├── light.py       #   light list/status/set (jmri_client)
     ├── turnout.py     #   turnout list/status/set (jmri_client)
     ├── sensor.py      #   sensor list/status (jmri_client, read-only)
+    ├── signal.py      #   signal list/status/set (jmri_client, signalMast only)
     └── parser.py      #   build_parser(): wires the above into one CLI
 ```
 
-Six domains — **power**, **roster**, **throttle**, **light**, **turnout**,
-**sensor** — recur across the project and are split the same way everywhere
-they get big enough to warrant it: `jmri_client/` (HTTP), `tools/` (MCP
-surface), and `cli/` (manual CLI) each have their own
-`power.py`/`roster.py`/`throttle.py`/`light.py`/`turnout.py`/`sensor.py`.
+Seven domains — **power**, **roster**, **throttle**, **light**, **turnout**,
+**sensor**, **signal** — recur across the project and are split the same way
+everywhere they get big enough to warrant it: `jmri_client/` (HTTP),
+`tools/` (MCP surface), and `cli/` (manual CLI) each have their own
+`power.py`/`roster.py`/`throttle.py`/`light.py`/`turnout.py`/`sensor.py`/`signal.py`.
 `jmri_ws/__init__.py` stays a single file within its package — it's one
 cohesive unit of tightly-coupled state (a WebSocket connection's
 request/reply/cache logic) with no natural seam to split along.
@@ -94,8 +98,10 @@ M3 (roster) and M4 (layout — `light.py` #17, `turnout.py` #15, `sensor.py`
 [project board](https://github.com/orgs/HO44-PROJECT/projects/3). Four
 "whole-layout" features tracked together under issue #23
 (`emergency_stop_all`, `power_off_all`, `power_on_all`, executor mode — see
-their own sections below) have been implemented on top of that, pending
-user validation.
+their own sections below) have been implemented on top of that. Signal
+masts (`signal.py` #26) were added afterward as a standalone card, once the
+maintainer had a real signalMast configured on their layout to design
+against.
 
 ## Two JMRI clients, two different shapes
 
@@ -267,6 +273,76 @@ already returns full current state synchronously (same as power/roster/
 light) — no listener needed for a stateless list/get tool, so this domain
 follows the simpler `jmri_client/` (one-shot HTTP) pattern rather than
 `jmri_ws/`'s persistent-connection one.
+
+## Signal masts: `list_signals` / `get_signal` / `set_signal` (#26)
+
+`jmri_client/signal.py` is a structural copy of `turnout.py`: JMRI's
+`/json/signalMasts` (list) and `/json/signalMast/<name>` (single get/set).
+Unlike turnout/light/sensor, a mast's state is not a small numeric enum —
+it's an **aspect name** (a free-form string like `"Hp0"`/`"Hp1"`/`"Hp2"`),
+whose valid vocabulary is defined by whichever signal system (e.g.
+`DB-HV-1969`) the mast was configured with in PanelPro. JMRI does not
+expose that vocabulary anywhere in its JSON API (verified live: no
+`/json/signalSystem`, `/json/signalMastAspects`, or per-mast aspect list
+exists), so `set_signal()` does not validate aspect names locally — same
+"accept it, then let re-read confirm or refute" honesty contract as
+`set_power()`/`set_turnout()`/`set_light()`, since a bad guess would be
+worse than an honest "not confirmed." JMRI *does* validate server-side,
+though: reading JMRI's own `JsonSignalMastHttpService.doPost()` source
+confirmed `SignalMast.getValidAspects()` exists internally and an unknown
+aspect name raises a proper 400 `JsonException` — surfaced here as a
+`JmriError`/tool `"error"` rather than a silent non-confirm. It's only the
+*list* of valid aspects that's unreachable over JSON, not validation
+itself.
+
+The POST body's JSON key is `"state"`, not `"aspect"` — an easy trap,
+since `"aspect"` is what every GET response and this project's own field
+names call it. `doPost()` specifically reads `data.path(STATE)`
+(`STATE == "state"`). Sending `"aspect"` is not rejected — JMRI just never
+looks at it, so the whole aspect-setting branch is skipped and a 200 with
+unchanged data comes back. See the `set_signal` fix note below; this was
+caught live, not in review.
+
+**signalHead is deliberately not covered.** JMRI has two signal object
+types: `signalHead` (a single physical lamp, states like RED/YELLOW/GREEN)
+and `signalMast` (the higher-level object built from one or more heads,
+speaking named aspects). Confirmed with the maintainer (2026-07-10): their
+layout has no `signalHead` objects in JMRI at all — their DB-1969 masts are
+physically driven by a custom ESP32 that decodes the raw DCC accessory
+frame JMRI sends for the mast's aspect and does its own aspect→LED/fading
+translation entirely in firmware, so there's no JMRI-side head object to
+expose. `signalMast` is also the level PanelPro users actually name and
+interact with directly, so it's the only one this project's tool surface
+covers; revisit only if a setup with real `signalHead` objects comes up.
+
+`resolve_signal()` uses the same tolerant case-insensitive exact-then-
+fragment match as `resolve_turnout()`/`resolve_light()`, matching either
+the system name or `userName` exactly, then falling back to an unambiguous
+*fragment of `userName` only* (not the system name) — same limitation
+`resolve_turnout()` already has. This is more noticeable for signal masts
+in practice: JMRI auto-generates long system names like
+`ZF$dsm:DB-HV-1969:block(31)` for DCC-driven masts, and unlike turnouts
+these are commonly left without a `userName` set in PanelPro (verified live
+against the maintainer's own mast, which has `userName: null`) — so a
+fragment like `"block 31"` won't resolve; only the exact full system name
+or an explicit `userName` set in PanelPro will. Worth setting a `userName`
+per mast in PanelPro if fragment matching is wanted.
+
+Live-verified against the user's real JMRI: `list_signals`/`get_signal`
+correctly read the one configured mast (`ZF$dsm:DB-HV-1969:block(31)`,
+aspect `Hp1`). The first live write test of `set_signal` (user-authorized,
+one write) requesting `Hp0` completed with no HTTP error, but the re-read
+showed the aspect unchanged at `Hp1` — reported honestly as
+`confirmed: false` rather than a false success, but the underlying cause
+turned out to be a real bug in this project, not the mast/ESP32: the POST
+body sent `{"name": ..., "aspect": ...}`, and JMRI's server-side handler
+only ever reads `"state"` (see above), so the request was silently a
+no-op from JMRI's point of view every time. Fixed by sending `"state"`
+instead; a regression test now asserts the POST body's JSON key so this
+exact bug can't reappear silently. Re-verification against the real
+"bloc31" mast (the maintainer's own `userName`, set after this bug was
+first reported) is pending fresh authorization before this card is
+closed.
 
 ## Throttle tool surface: DCC address as the only key
 

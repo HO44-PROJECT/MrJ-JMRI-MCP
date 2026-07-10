@@ -460,6 +460,79 @@ async def test_set_turnout_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
+async def test_list_signals_registered_and_compact(mock_signals):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "list_signals" in tool_names
+
+    out = await call(mcp, "list_signals")
+    assert out == {
+        "signals": [
+            {"name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False},
+            {"name": "ZF$dsm:DB-HV-1969:block(45)", "aspect": "Hp0", "lit": True, "held": False},
+        ]
+    }
+
+
+async def test_list_signals_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "list_signals")
+    assert "error" in out
+
+
+async def test_get_signal_resolves_by_fragment(mock_signals):
+    mcp = make_server()
+    out = await call(mcp, "get_signal", name="Entry Signal")
+    assert out == {"name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False}
+
+
+async def test_get_signal_unknown_name_returns_error_not_exception(mock_signals):
+    mcp = make_server()
+    out = await call(mcp, "get_signal", name="tgv")
+    assert "error" in out and "tgv" in out["error"]
+
+
+async def test_set_signal_sets_aspect_and_confirms():
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    mcp = make_server()
+    post_bodies = []
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(200, json=[
+                {"type": "signalMast", "data": {
+                    "name": "ZF$dsm:DB-HV-1969:block(31)", "userName": "Entry Signal A",
+                    "aspect": "Hp0", "lit": True, "held": False,
+                }},
+            ])
+        )
+
+        def post_signal(request):
+            post_bodies.append(json.loads(request.content))
+            return Response(200, json={})
+
+        router.post(f"{MOCK_JMRI_URL}/json/signalMast/ZF$dsm:DB-HV-1969:block(31)").mock(
+            side_effect=post_signal
+        )
+        out = await call(mcp, "set_signal", name="Entry Signal A", aspect="Hp0")
+    assert out == {"name": "Entry Signal A", "aspect": "Hp0", "lit": True, "held": False, "confirmed": True}
+    # Regression guard: JMRI's JsonSignalMastHttpService.doPost() reads the
+    # "state" field, not "aspect" - sending the wrong key is silently
+    # ignored server-side (200 response, no error, aspect never changes).
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0"}]
+
+
+async def test_set_signal_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "set_signal", name="Entry Signal A", aspect="Hp0")
+    assert "error" in out
+
+
 async def test_list_sensors_registered_and_compact(mock_sensors):
     mcp = make_server()
     tool_names = {t.name for t in await mcp.list_tools()}

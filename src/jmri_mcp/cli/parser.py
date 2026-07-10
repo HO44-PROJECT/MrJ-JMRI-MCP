@@ -7,7 +7,7 @@ tree (see the package docstring in jmri_mcp/cli/__init__.py).
 
 import argparse
 
-from jmri_mcp.cli import light, power, roster, sensor, throttle, turnout
+from jmri_mcp.cli import light, power, roster, sensor, signal, throttle, turnout
 from jmri_mcp.cli._doc import CLI_DESCRIPTION
 
 
@@ -176,5 +176,24 @@ def build_parser() -> argparse.ArgumentParser:
     sensor_status_cmd = sensor_sub.add_parser("status", help="Show one sensor's state")
     sensor_status_cmd.add_argument("name", help="Sensor system name, userName, or fragment")
     sensor_status_cmd.set_defaults(func=sensor.sensor_status)
+
+    signal_cmd = subparsers.add_parser(
+        "signal", help="Signal mast commands (signalMast only, not signalHead)"
+    )
+    signal_sub = signal_cmd.add_subparsers(dest="signal_command", required=True)
+
+    signal_list_cmd = signal_sub.add_parser("list", help="Show every signal mast's aspect")
+    signal_list_cmd.set_defaults(func=signal.signal_list)
+
+    signal_status_cmd = signal_sub.add_parser("status", help="Show one signal mast's aspect")
+    signal_status_cmd.add_argument("name", help="Signal mast system name, userName, or fragment")
+    signal_status_cmd.set_defaults(func=signal.signal_status)
+
+    signal_set_cmd = signal_sub.add_parser(
+        "set", help="Set a signal mast's aspect (writes to JMRI)"
+    )
+    signal_set_cmd.add_argument("name", help="Signal mast system name, userName, or fragment")
+    signal_set_cmd.add_argument("aspect", help="Aspect name, e.g. Hp0/Hp1/Hp2 (not validated locally)")
+    signal_set_cmd.set_defaults(func=signal.signal_set)
 
     return parser

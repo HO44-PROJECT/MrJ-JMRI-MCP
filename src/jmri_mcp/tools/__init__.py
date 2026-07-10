@@ -24,11 +24,14 @@ Package layout:
                 distinct from a locomotive's F0 headlight function).
     turnout.py  list_turnouts, get_turnout, set_turnout.
     sensor.py   list_sensors, get_sensor (read-only).
+    signal.py   list_signals, get_signal, set_signal (signalMast only,
+                see jmri_client.signal's module docstring for why not
+                signalHead).
     mode.py     set_executor_mode, get_executor_mode (concise/no-narration
                 response style — a behavioral nudge, not a JMRI command).
 """
 
-from jmri_mcp.tools import light, mode, power, roster, sensor, throttle, turnout
+from jmri_mcp.tools import light, mode, power, roster, sensor, signal, throttle, turnout
 
 __all__ = ["register"]
 
@@ -45,4 +48,5 @@ def register(mcp) -> None:
     light.register(mcp)
     turnout.register(mcp)
     sensor.register(mcp)
+    signal.register(mcp)
     mode.register(mcp)

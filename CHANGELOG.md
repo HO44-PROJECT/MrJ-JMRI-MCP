@@ -68,6 +68,15 @@ package version stays `0.1.0` during active milestone development).
   preference. Live-verified against the real JMRI server: `ohara
   (turnouts)`, `zou (test)`, `taya (accessories)`, `raijin (tracks)`.
 
+- **Fixed** (#25): re-POSTing a power state JMRI/DCC++ already reports
+  (e.g. `ON` on a system already `ON`) doesn't no-op — it's a real bug on
+  the user's installation that knocks the system into state `UNKNOWN`,
+  awkward to recover from. `jmri_client.set_power()` now re-reads current
+  state before POSTing (not just after) and skips the POST entirely if it
+  already matches the request. Applies everywhere uniformly since every
+  caller (`set_power` MCP tool, `jmri-cli power set`, and `power_off_all`/
+  `power_on_all`'s shared loop) goes through this one function.
+
 ## [0.1.0] - milestones M1-M4
 
 Initial implementation, built milestone by milestone against a real JMRI 5.4.0

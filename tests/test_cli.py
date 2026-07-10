@@ -27,21 +27,75 @@ async def test_power_status_unknown_system(mock_power, capsys):
     assert "Unknown system 'tgv'" in err
 
 
-async def test_power_stop_all_cuts_every_system(monkeypatch, capsys):
+async def test_power_set_twice_same_state_skips_second_post(monkeypatch, capsys):
+    """Real JMRI bug this guards against: re-POSTing the same power state
+    (e.g. ON twice in a row) knocks the system into UNKNOWN and is hard to
+    recover from. `power set` on a system already in the requested state
+    must never issue a second POST."""
+    import json
+
     import respx
     from httpx import Response
 
     from tests.conftest import MOCK_JMRI_URL
 
     monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    live_state = {"O": 4}  # starts OFF
+    post_calls = []
+
+    def get_power(request):
+        return Response(200, json=[
+            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
+        ])
+
+    def post_power(request):
+        body = json.loads(request.content)
+        post_calls.append(body)
+        live_state["O"] = body["state"]
+        return Response(200, json={})
+
     with respx.mock(assert_all_called=False) as router:
-        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
-            return_value=Response(200, json=[
-                {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": 4, "default": False}},
-                {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": 4, "default": True}},
-            ])
-        )
-        router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=get_power)
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=post_power)
+
+        code1, out1, _ = await run(capsys, "power", "set", "ohara", "on")
+        code2, out2, _ = await run(capsys, "power", "set", "ohara", "on")
+
+    assert code1 == 0 and code2 == 0
+    assert "DCC++ Ohara" in out1 and "ON" in out1
+    assert "DCC++ Ohara" in out2 and "ON" in out2
+    # Only the first call actually changed anything; the repeat must not
+    # have sent a second POST at all.
+    assert len(post_calls) == 1
+
+
+async def test_power_stop_all_cuts_every_system(monkeypatch, capsys):
+    import json
+
+    import respx
+    from httpx import Response
+
+    from tests.conftest import MOCK_JMRI_URL
+
+    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    # systems start ON so set_power's pre-check doesn't skip the POST
+    live_state = {"O": 2, "R": 2}
+
+    def get_power(request):
+        payload = [
+            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
+            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+        ]
+        return Response(200, json=payload)
+
+    def post_power(request):
+        body = json.loads(request.content)
+        live_state[body["prefix"]] = body["state"]
+        return Response(200, json={})
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=get_power)
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=post_power)
         code, out, _ = await run(capsys, "power", "stop-all")
 
     assert code == 0
@@ -50,20 +104,32 @@ async def test_power_stop_all_cuts_every_system(monkeypatch, capsys):
 
 
 async def test_power_start_all_restores_every_system(monkeypatch, capsys):
+    import json
+
     import respx
     from httpx import Response
 
     from tests.conftest import MOCK_JMRI_URL
 
     monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    # systems start OFF so set_power's pre-check doesn't skip the POST
+    live_state = {"O": 4, "R": 4}
+
+    def get_power(request):
+        payload = [
+            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
+            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+        ]
+        return Response(200, json=payload)
+
+    def post_power(request):
+        body = json.loads(request.content)
+        live_state[body["prefix"]] = body["state"]
+        return Response(200, json={})
+
     with respx.mock(assert_all_called=False) as router:
-        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
-            return_value=Response(200, json=[
-                {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": 2, "default": False}},
-                {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": 2, "default": True}},
-            ])
-        )
-        router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=get_power)
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=post_power)
         code, out, _ = await run(capsys, "power", "start-all")
 
     assert code == 0

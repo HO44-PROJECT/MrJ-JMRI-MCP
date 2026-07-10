@@ -73,6 +73,15 @@ DCC++ Zou      : OFF
 WARNING: requested ON but observed state did not confirm after re-read
 ```
 
+Safe to run repeatedly with the same state, including right after another
+`power set`/`stop-all`/`start-all` already set it: current state is
+checked first, and if it already matches the request, nothing is sent to
+JMRI at all. This isn't just an optimization — re-POSTing a state JMRI
+already reports is a real JMRI/DCC++ bug on this installation that knocks
+the system into UNKNOWN instead of no-opping, which is awkward to recover
+from. `ON` on an already-`ON` system, or `OFF` on an already-`OFF`
+system, is always safe.
+
 ## `jmri-cli power stop-all`
 
 Cut power to **every** system JMRI knows about, one after another. **This

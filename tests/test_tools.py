@@ -502,14 +502,27 @@ async def test_power_off_all_confirms_every_system(monkeypatch):
 
     monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
     mcp = make_server()
+    # Stateful fake: systems start ON, flip to OFF once their POST arrives —
+    # so set_power's pre-check sees ON (POST is not skipped) and the
+    # post-POST re-read correctly observes OFF.
+    live_state = {"O": 2, "R": 2}
+
+    def get_power(request):
+        payload = [
+            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
+            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+        ]
+        return Response(200, json=payload)
+
+    def post_power(request):
+        import json as _json
+        body = _json.loads(request.content)
+        live_state[body["prefix"]] = body["state"]
+        return Response(200, json={})
+
     with respx.mock(assert_all_called=False) as router:
-        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
-            return_value=Response(200, json=[
-                {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": 4, "default": False}},
-                {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": 4, "default": True}},
-            ])
-        )
-        router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=get_power)
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=post_power)
         out = await call(mcp, "power_off_all")
 
     assert out == {
@@ -535,14 +548,27 @@ async def test_power_on_all_confirms_every_system(monkeypatch):
 
     monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
     mcp = make_server()
+    # Stateful fake: systems start OFF, flip to ON once their POST arrives —
+    # so set_power's pre-check sees OFF (POST is not skipped) and the
+    # post-POST re-read correctly observes ON.
+    live_state = {"O": 4, "R": 4}
+
+    def get_power(request):
+        payload = [
+            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
+            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+        ]
+        return Response(200, json=payload)
+
+    def post_power(request):
+        import json as _json
+        body = _json.loads(request.content)
+        live_state[body["prefix"]] = body["state"]
+        return Response(200, json={})
+
     with respx.mock(assert_all_called=False) as router:
-        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
-            return_value=Response(200, json=[
-                {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": 2, "default": False}},
-                {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": 2, "default": True}},
-            ])
-        )
-        router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=get_power)
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=post_power)
         out = await call(mcp, "power_on_all")
 
     assert out == {

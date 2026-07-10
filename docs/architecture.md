@@ -307,6 +307,31 @@ range); `lights_on`/`lights_off` are thin wrappers calling
 (not through the MCP dispatcher) since F0 is the near-universal DCC
 headlight convention.
 
+## `set_power`: never re-POST a state JMRI already reports
+
+Real JMRI/DCC++ bug, found by the user on their own installation:
+POSTing a power state to a system that's already in that state (e.g. ON
+twice in a row) doesn't no-op — it knocks the system into state UNKNOWN,
+which is awkward to recover from. This isn't a transient-response quirk
+like the one `_POST_RECHECK_DELAY` already works around (see the
+`set_power` docstring) — it's a distinct failure mode triggered by the
+POST itself being redundant, not by trusting its immediate response.
+
+`jmri_client/power.py`'s `set_power(prefix, turn_on)` now re-reads
+current state via `get_systems()` **before** POSTing, not just after, and
+returns immediately with `confirmed: True` if the current state already
+matches the request — no POST is sent at all in that case. This makes
+"already ON" and "turn ON" indistinguishable from the caller's point of
+view, by design: every caller (the `set_power` MCP tool, `jmri-cli power
+set`, and `_set_power_all` — the shared loop behind `power_off_all`/
+`power_on_all`) goes through this one function, so the guard applies
+everywhere uniformly rather than needing to be duplicated per call site.
+
+The pre-check costs one extra `get_systems()` call per `set_power`
+invocation in the case where a POST does end up being sent (current state
+differs from requested) — accepted deliberately, since avoiding the
+UNKNOWN failure mode matters more than saving one HTTP round-trip.
+
 ## `get_power` / `list_systems`: connection name doubles as system description
 
 JMRI has no dedicated field for "what is this power system for" — the

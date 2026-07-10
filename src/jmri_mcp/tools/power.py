@@ -79,6 +79,13 @@ def register(mcp) -> None:
         if the observed state doesn't match the request, "confirmed" will
         be false and the caller should say so honestly rather than assume
         success.
+
+        Safe to call repeatedly with the same turn_on value, including
+        right after another call already set that state: current state is
+        always checked first, and nothing is sent to JMRI if it already
+        matches the request. This is not just an optimization — re-POSTing
+        a state JMRI already reports is a real JMRI/DCC++ bug that knocks
+        the system into UNKNOWN, which is awkward to recover from.
         """
         try:
             systems = await get_systems()

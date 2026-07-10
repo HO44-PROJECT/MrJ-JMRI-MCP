@@ -56,8 +56,26 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     station and may echo an intermediate state) — this only trusts a
     re-read taken _POST_RECHECK_DELAY seconds after the POST, not the
     POST response itself.
+
+    Re-POSTing the SAME state JMRI/DCC++ already reports is a known JMRI
+    bug, not a safe no-op: it knocks the system into state UNKNOWN, which
+    is awkward to recover from (verified by the user against their real
+    installation). To avoid ever triggering it, this always re-reads
+    current state first and skips the POST entirely if it already matches
+    the request — "already ON" and "turn ON" must be indistinguishable
+    from the caller's point of view, not just an optimization.
     """
     desired = POWER_ON if turn_on else POWER_OFF
+
+    systems = await get_systems()
+    matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
+    if not matches:
+        raise JmriError(f"Unknown system with prefix {prefix!r}")
+    current = matches[0]
+
+    if current.get("state") == desired:
+        return {**current, "confirmed": True}
+
     await _post_json("/json/power", {"state": desired, "prefix": prefix})
     await asyncio.sleep(_POST_RECHECK_DELAY)
 

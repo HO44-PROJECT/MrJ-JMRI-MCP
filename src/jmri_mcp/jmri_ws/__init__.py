@@ -64,12 +64,9 @@ from jmri_mcp.constants.protocol import (
     MSG_TYPE_PONG,
     MSG_TYPE_THROTTLE,
 )
+from jmri_mcp.jmri_errors import JmriError
 
 logger = logging.getLogger("jmri_mcp.ws")
-
-
-class JmriError(Exception):
-    """JMRI is unreachable or returned an unusable response."""
 
 
 def _ws_url() -> str:
@@ -132,7 +129,7 @@ class JmriWsClient:
         if self._ws is not None:
             await self._ws.close()
         self._ws = None
-        self._fail_all_pending(JmriError("Connection closed"))
+        self._fail_all_pending(JmriError("connection_closed"))
 
     async def request(self, msg_type: str, data: dict | None = None) -> Any:
         """Send a JSON message and await its response's data.
@@ -169,12 +166,12 @@ class JmriWsClient:
         except websockets.exceptions.WebSocketException as exc:
             self._pending = None
             self._pending_throttle_id = None
-            raise JmriError(f"WebSocket send failed: {exc}") from exc
+            raise JmriError("ws_send_failed", exc=exc) from exc
 
         try:
             return await asyncio.wait_for(future, timeout=WS_REQUEST_TIMEOUT_SECONDS)
         except asyncio.TimeoutError as exc:
-            raise JmriError(f"Timed out waiting for {msg_type!r} response") from exc
+            raise JmriError("ws_response_timeout", msg_type=msg_type) from exc
         finally:
             if self._pending is future:
                 self._pending = None
@@ -331,7 +328,7 @@ class JmriWsClient:
             )
         except (OSError, websockets.exceptions.WebSocketException, asyncio.TimeoutError) as exc:
             self._ws = None
-            raise JmriError(f"WebSocket connect to {url} failed: {exc}") from exc
+            raise JmriError("ws_connect_failed", url=url, exc=exc) from exc
 
         try:
             hello_raw = await asyncio.wait_for(self._ws.recv(), timeout=WS_CONNECT_TIMEOUT_SECONDS)
@@ -343,7 +340,7 @@ class JmriWsClient:
         except (asyncio.TimeoutError, json.JSONDecodeError, websockets.exceptions.WebSocketException) as exc:
             await self._ws.close()
             self._ws = None
-            raise JmriError(f"WebSocket handshake with {url} failed: {exc}") from exc
+            raise JmriError("ws_handshake_failed", url=url, exc=exc) from exc
 
         self._reader_task = asyncio.create_task(self._read_loop())
         self._keepalive_task = asyncio.create_task(self._keepalive_loop())
@@ -411,7 +408,7 @@ class JmriWsClient:
         self._pending_throttle_id = None
         if future is not None and not future.done():
             if msg_type == MSG_TYPE_ERROR:
-                future.set_exception(JmriError(f"JMRI error: {data}"))
+                future.set_exception(JmriError("ws_jmri_error", data=data))
             else:
                 future.set_result(data)
             return
@@ -449,7 +446,7 @@ class JmriWsClient:
 
     async def _reconnect_loop(self) -> None:
         self._ws = None
-        self._fail_all_pending(JmriError("Connection lost"))
+        self._fail_all_pending(JmriError("connection_lost"))
         delay = WS_RECONNECT_DELAY_SECONDS
         while not self._closing:
             try:

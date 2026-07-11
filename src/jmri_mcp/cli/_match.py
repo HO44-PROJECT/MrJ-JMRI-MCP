@@ -24,7 +24,7 @@ def find_regex(
     try:
         compiled = re.compile(pattern, re.IGNORECASE)
     except re.error as exc:
-        raise JmriError(f"Invalid regex {pattern!r}: {exc}") from None
+        raise JmriError("invalid_regex", pattern=pattern, exc=exc) from None
     return [e for e in entries if compiled.search(label(e))]
 
 

@@ -40,7 +40,7 @@ async def get_turnouts() -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected {endpoints.TURNOUTS} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.TURNOUTS, payload=payload)
     turnouts = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d turnout(s): %s",
                 len(turnouts), [t.get("userName") or t.get("name") for t in turnouts])
@@ -66,7 +66,7 @@ async def set_turnout(name: str, thrown: bool) -> dict[str, Any]:
     turnouts = await get_turnouts()
     matches = [t for t in turnouts if t.get("name") == name]
     if not matches:
-        raise JmriError(f"Turnout {name!r} vanished after POST")
+        raise JmriError("vanished_after_post", kind="turnout", name=name)
     observed = matches[0]
 
     confirmed = observed.get("state") == desired
@@ -88,9 +88,9 @@ def resolve_turnout(query: str, turnouts: list[dict[str, Any]]) -> dict[str, Any
     turnout.
     """
     if not turnouts:
-        raise JmriError("JMRI reports no turnouts")
+        raise JmriError("none_available", kind="turnout")
     if not query or not query.strip():
-        raise JmriError("No turnout name given")
+        raise JmriError("no_query_given", kind="turnout")
 
     q = query.strip().casefold()
     labels = [str(t.get("userName") or t.get("name", "")) for t in turnouts]
@@ -108,6 +108,6 @@ def resolve_turnout(query: str, turnouts: list[dict[str, Any]]) -> dict[str, Any
         return partial[0]
     if len(partial) > 1:
         matches = [str(t.get("userName") or t.get("name")) for t in partial]
-        raise JmriError(f"Ambiguous turnout {query!r}: matches {matches}")
+        raise JmriError("ambiguous_entity", kind="turnout", query=query, matches=matches)
 
-    raise JmriError(f"Unknown turnout {query!r}. Available: {labels}")
+    raise JmriError("unknown_entity", kind="turnout", query=query, available=labels)

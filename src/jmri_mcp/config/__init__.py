@@ -3,6 +3,8 @@
 import os
 from urllib.parse import urlsplit
 
+from jmri_mcp import i18n
+
 DEFAULT_JMRI_URL = "http://localhost:12080"
 
 
@@ -15,8 +17,5 @@ def get_jmri_url() -> str:
     url = os.environ.get("JMRI_URL", DEFAULT_JMRI_URL).strip().rstrip("/")
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.netloc:
-        raise ValueError(
-            f"Invalid JMRI_URL {url!r}: expected http(s)://host[:port], "
-            f"e.g. {DEFAULT_JMRI_URL}"
-        )
+        raise ValueError(i18n.t("errors.invalid_jmri_url", url=url, default=DEFAULT_JMRI_URL))
     return url

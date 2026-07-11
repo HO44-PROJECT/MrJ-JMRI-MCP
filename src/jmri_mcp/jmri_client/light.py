@@ -31,7 +31,7 @@ async def get_lights() -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected {endpoints.LIGHTS} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.LIGHTS, payload=payload)
     lights = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d light(s): %s",
                 len(lights), [lt.get("userName") or lt.get("name") for lt in lights])
@@ -58,7 +58,7 @@ async def set_light(name: str, turn_on: bool) -> dict[str, Any]:
     lights = await get_lights()
     matches = [lt for lt in lights if lt.get("name") == name]
     if not matches:
-        raise JmriError(f"Light {name!r} vanished after POST")
+        raise JmriError("vanished_after_post", kind="light", name=name)
     observed = matches[0]
 
     confirmed = observed.get("state") == desired
@@ -81,9 +81,9 @@ def resolve_light(query: str, lights: list[dict[str, Any]]) -> dict[str, Any]:
     system.
     """
     if not lights:
-        raise JmriError("JMRI reports no lights")
+        raise JmriError("none_available", kind="light")
     if not query or not query.strip():
-        raise JmriError("No light name given")
+        raise JmriError("no_query_given", kind="light")
 
     q = query.strip().casefold()
     labels = [str(lt.get("userName") or lt.get("name", "")) for lt in lights]
@@ -101,6 +101,6 @@ def resolve_light(query: str, lights: list[dict[str, Any]]) -> dict[str, Any]:
         return partial[0]
     if len(partial) > 1:
         matches = [str(lt.get("userName") or lt.get("name")) for lt in partial]
-        raise JmriError(f"Ambiguous light {query!r}: matches {matches}")
+        raise JmriError("ambiguous_entity", kind="light", query=query, matches=matches)
 
-    raise JmriError(f"Unknown light {query!r}. Available: {labels}")
+    raise JmriError("unknown_entity", kind="light", query=query, available=labels)

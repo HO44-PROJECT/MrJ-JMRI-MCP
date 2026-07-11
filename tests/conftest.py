@@ -18,6 +18,22 @@ def jmri_url(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def jmri_mcp_lang(monkeypatch):
+    """Pin JMRI_MCP_LANG=en so the suite doesn't silently assert French output
+    if a developer's shell profile happens to export a different language."""
+    monkeypatch.setenv("JMRI_MCP_LANG", "en")
+
+
+def expect_error(code: str, **kwargs) -> str:
+    """Render an errors.<code> template from en.json, for asserting against
+    JmriError output without re-typing production English as a second,
+    silently-divergent literal in the test."""
+    from jmri_mcp.i18n import lookup
+
+    return lookup("en", f"errors.{code}", **kwargs)
+
+
+@pytest.fixture(autouse=True)
 def reset_ws_client():
     """Reset jmri_ws's process-wide singleton so tests don't leak connection state."""
     import jmri_mcp.jmri_ws as ws_module

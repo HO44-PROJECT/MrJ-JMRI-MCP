@@ -1,0 +1,35 @@
+{
+    "errors": {
+        "unknown_entity": "Unknown {kind} {query!r}. Available: {available}",
+        "ambiguous_entity": "Ambiguous {kind} {query!r}: matches {matches}",
+        "none_available": "JMRI reports no {kind_plural}",
+        "no_query_given": "No {kind} name given",
+        "vanished_after_post": "{Kind} {name!r} vanished after POST",
+        "unexpected_payload": "Unexpected {endpoint} payload: {payload!r}",
+        "no_entry_with_address": "No roster entry with address {address}",
+        "no_entry_with_name": "No roster entry named {name!r}",
+        "unknown_prefix": "Unknown system with prefix {prefix!r}",
+        "prefix_vanished_after_post": "System with prefix {prefix!r} vanished after POST",
+        "http_get_failed": "GET {url} failed: {exc}",
+        "http_post_failed": "POST {url} failed: {exc}",
+        "ws_send_failed": "WebSocket send failed: {exc}",
+        "ws_response_timeout": "Timed out waiting for {msg_type!r} response",
+        "ws_connect_failed": "WebSocket connect to {url} failed: {exc}",
+        "ws_handshake_failed": "WebSocket handshake with {url} failed: {exc}",
+        "ws_jmri_error": "JMRI error: {data}",
+        "connection_closed": "Connection closed",
+        "connection_lost": "Connection lost",
+        "invalid_regex": "Invalid regex {pattern!r}: {exc}",
+        "invalid_direction": "direction must be 'forward' or 'reverse', got {direction!r}",
+        "invalid_function_number": "function must be 0-28, got {function}",
+        "invalid_jmri_url": "Invalid JMRI_URL {url!r}: expected http(s)://host[:port], e.g. {default}"
+    },
+    "kinds": {
+        "signal mast": {"singular": "signal mast", "plural": "signal masts", "Singular": "Signal mast"},
+        "locomotive": {"singular": "locomotive", "plural": "locomotives", "Singular": "Locomotive"},
+        "system": {"singular": "system", "plural": "power systems", "Singular": "System"},
+        "light": {"singular": "light", "plural": "lights", "Singular": "Light"},
+        "turnout": {"singular": "turnout", "plural": "turnouts", "Singular": "Turnout"},
+        "sensor": {"singular": "sensor", "plural": "sensors", "Singular": "Sensor"}
+    }
+}

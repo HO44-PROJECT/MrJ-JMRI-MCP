@@ -1,3 +1,5 @@
+import re
+
 import pytest
 import respx
 from httpx import ConnectError, Response
@@ -16,7 +18,7 @@ from jmri_mcp.jmri_client import (
     resolve_system,
     resolve_turnout,
 )
-from tests.conftest import MOCK_JMRI_URL
+from tests.conftest import MOCK_JMRI_URL, expect_error
 
 
 async def test_get_systems_unwraps_envelope_and_matches_fixture(mock_power, power_fixture):
@@ -416,14 +418,16 @@ def test_resolve_roster_entry_unknown_name_raises():
 
 
 def test_resolve_roster_entry_empty_roster_raises():
-    with pytest.raises(JmriError, match="roster is empty"):
+    expected = expect_error("none_available", kind="locomotive")
+    with pytest.raises(JmriError, match=re.escape(expected)):
         resolve_roster_entry("Autorail", [])
 
 
 def test_resolve_roster_entry_empty_query_raises():
-    with pytest.raises(JmriError, match="No locomotive name or address given"):
+    expected = expect_error("no_query_given", kind="locomotive")
+    with pytest.raises(JmriError, match=re.escape(expected)):
         resolve_roster_entry("", ROSTER)
-    with pytest.raises(JmriError, match="No locomotive name or address given"):
+    with pytest.raises(JmriError, match=re.escape(expected)):
         resolve_roster_entry("   ", ROSTER)
 
 

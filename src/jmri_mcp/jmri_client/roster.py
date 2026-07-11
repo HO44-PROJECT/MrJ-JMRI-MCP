@@ -30,11 +30,11 @@ async def get_roster_function_labels(name: str) -> dict[int, str]:
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected {endpoints.ROSTER} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.ROSTER, payload=payload)
     entries = [_unwrap(entry) for entry in payload]
     match = next((e for e in entries if e.get("name") == name), None)
     if match is None:
-        raise JmriError(f"No roster entry named {name!r}")
+        raise JmriError("no_entry_with_name", name=name)
 
     labels: dict[int, str] = {}
     for fk in match.get("functionKeys", []):
@@ -64,7 +64,7 @@ async def get_roster() -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected {endpoints.ROSTER} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.ROSTER, payload=payload)
     entries = [_unwrap(entry) for entry in payload]
     compact = []
     for e in entries:
@@ -110,16 +110,16 @@ def resolve_roster_entry(
     the same way.
     """
     if not roster:
-        raise JmriError("JMRI roster is empty")
+        raise JmriError("none_available", kind="locomotive")
     if not query or not query.strip():
-        raise JmriError("No locomotive name or address given")
+        raise JmriError("no_query_given", kind="locomotive")
 
     stripped = query.strip()
     if stripped.lstrip("-").isdigit():
         address = int(stripped)
         match = next((e for e in roster if e.get("address") == address), None)
         if match is None:
-            raise JmriError(f"No roster entry with address {address}")
+            raise JmriError("no_entry_with_address", address=address)
         return match
 
     q = _fold(stripped)
@@ -134,6 +134,6 @@ def resolve_roster_entry(
         return partial[0]
     if len(partial) > 1:
         matches = [str(e.get("name")) for e in partial]
-        raise JmriError(f"Ambiguous locomotive {query!r}: matches {matches}")
+        raise JmriError("ambiguous_entity", kind="locomotive", query=query, matches=matches)
 
-    raise JmriError(f"Unknown locomotive {query!r}. Available: {names}")
+    raise JmriError("unknown_entity", kind="locomotive", query=query, available=names)

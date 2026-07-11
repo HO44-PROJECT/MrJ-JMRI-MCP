@@ -16,9 +16,14 @@ src/jmri_mcp/
 │   ├── endpoints.py    #  JMRI REST path templates (e.g. TURNOUT = "/json/turnout/{name}")
 │   ├── client_tuning.py #  HTTP/WS timeouts, reconnect delays, ramp step rate
 │   └── cli.py          #  *_STATE_NAMES dicts, CLI id prefixes/ranges, SORT_INDICATOR
+├── jmri_errors.py      # shared JmriError(code, **kwargs), raised by jmri_client AND jmri_ws
+├── i18n/               # hand-rolled i18n: dotted-key lookup against per-language JSON
+│   ├── __init__.py    #   lookup(lang, key, **kwargs), t(key, **kwargs), active_lang()
+│   ├── en.json          # errors.*/kinds.* message templates (English, default)
+│   └── fr.json          # same keys, French
 ├── jmri_client/       # async HTTP client for JMRI's JSON API
 │   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor/signal)
-│   ├── _http.py        #  shared GET/POST plumbing, JmriError, envelope unwrap
+│   ├── _http.py        #  shared GET/POST plumbing, JmriError re-export, envelope unwrap
 │   ├── power.py        #  version, power-system discovery, power on/off,
 │   │                   #  power_off_all/power_on_all, resolve_system
 │   ├── roster.py        # roster listing, name resolution, function labels
@@ -145,6 +150,47 @@ boilerplate), split along the same layer boundary as the rest of the tree:
 the reported state name via `STATE_NAMES[ON_VALUE if flag else OFF_VALUE]` — reading the
 same dict `_row()` uses to render table rows — rather than a second, independent
 `"ON" if flag else "OFF"`-style string literal that could drift out of sync with it.
+
+## `jmri_errors.py` + `i18n/`: structured errors, hand-rolled translation
+
+No user-facing message is written as a hardcoded string in `jmri_client`/`jmri_ws`
+anymore. Both raise a single shared `JmriError(code, **kwargs)` (`src/jmri_mcp/jmri_errors.py`)
+instead of each defining its own exception class with a baked-in English f-string —
+`jmri_client/_http.py` and `jmri_ws/__init__.py` used to each define an identical local
+`JmriError`, which meant `cli/throttle.py`/`cli/shell.py`/`tools/throttle.py` had to
+import one of them aliased as `JmriWsError` just to catch both; a single shared class
+collapses that back to one `except JmriError`.
+
+`code` is a short machine-readable key (`"unknown_entity"`, `"vanished_after_post"`,
+`"ws_connect_failed"`, ...) resolved at message-render time against
+`src/jmri_mcp/i18n/en.json` / `fr.json` — not gettext or an external i18n library, a
+small dotted-key JSON lookup (`i18n.lookup(lang, "errors.<code>", **kwargs)`) using
+`str.format()` interpolation (chosen over `%`-style because several templates need
+`{query!r}`-style conversion flags). `JmriError.__str__` always renders English
+(`lookup("en", ...)`) regardless of the active language — logging/`str(exc)` call sites
+stay English/developer-facing, per this project's existing English-for-code convention;
+only `cli`/`tools` translate at the catch site via `i18n.t()` (against
+`active_lang()`, driven by the `JMRI_MCP_LANG` env var, default `"en"`).
+
+Domain errors that repeat the same shape across turnout/light/sensor/signal/roster/system
+(`"Unknown X 'query'. Available: ..."`, `"Ambiguous X 'query': matches ..."`, `"JMRI
+reports no Xs"`, ...) share one code each (`unknown_entity`, `ambiguous_entity`,
+`none_available`, `no_query_given`, `vanished_after_post`) parameterized by a `kind=`
+kwarg (e.g. `kind="turnout"`) instead of being restated per domain. Each language's JSON
+carries a `kinds` table mapping a kind to its singular/plural/capitalized forms
+(`{kind}`/`{kind_plural}`/`{Kind}`), resolved by `i18n.lookup()` before the final
+`str.format(**kwargs)` — this is what lets French render "aiguillage"/"aiguillages" for
+`kind="turnout"` instead of a raw English word leaking into a translated sentence.
+
+`i18n.lookup()` never raises: a missing translation falls back language → `"en"` → the
+raw key itself, so a gap in `fr.json` degrades to readable English rather than crashing,
+and a genuinely missing key is visible/greppable in output instead of silently swallowed.
+
+LLM-facing instruction strings (`server/__init__.py`'s server instructions,
+`tools/mode.py`'s executor-mode strings) and every docstring are **deliberately out of
+scope** for i18n — they're consumed by the LLM host, not read directly by a human, and
+`tools/mode.py` specifically depends on intentional bilingual FR/EN trigger vocabulary
+that a translation table would collapse.
 
 ## Two JMRI clients, two different shapes
 

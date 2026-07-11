@@ -56,7 +56,7 @@ async def get_signals() -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected {endpoints.SIGNAL_MASTS} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.SIGNAL_MASTS, payload=payload)
     signals = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d signal mast(s): %s",
                 len(signals), [s.get("userName") or s.get("name") for s in signals])
@@ -89,7 +89,7 @@ async def set_signal(name: str, aspect: str) -> dict[str, Any]:
     signals = await get_signals()
     matches = [s for s in signals if s.get("name") == name]
     if not matches:
-        raise JmriError(f"Signal mast {name!r} vanished after POST")
+        raise JmriError("vanished_after_post", kind="signal mast", name=name)
     observed = matches[0]
 
     confirmed = observed.get("aspect") == aspect
@@ -111,9 +111,9 @@ def resolve_signal(query: str, signals: list[dict[str, Any]]) -> dict[str, Any]:
     single "the" signal.
     """
     if not signals:
-        raise JmriError("JMRI reports no signal masts")
+        raise JmriError("none_available", kind="signal mast")
     if not query or not query.strip():
-        raise JmriError("No signal mast name given")
+        raise JmriError("no_query_given", kind="signal mast")
 
     q = query.strip().casefold()
     labels = [str(s.get("userName") or s.get("name", "")) for s in signals]
@@ -131,6 +131,6 @@ def resolve_signal(query: str, signals: list[dict[str, Any]]) -> dict[str, Any]:
         return partial[0]
     if len(partial) > 1:
         matches = [str(s.get("userName") or s.get("name")) for s in partial]
-        raise JmriError(f"Ambiguous signal mast {query!r}: matches {matches}")
+        raise JmriError("ambiguous_entity", kind="signal mast", query=query, matches=matches)
 
-    raise JmriError(f"Unknown signal mast {query!r}. Available: {labels}")
+    raise JmriError("unknown_entity", kind="signal mast", query=query, available=labels)

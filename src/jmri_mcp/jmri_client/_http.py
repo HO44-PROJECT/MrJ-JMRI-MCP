@@ -11,10 +11,9 @@ import httpx
 from jmri_mcp.config import get_jmri_url
 from jmri_mcp.constants.client_tuning import HTTP_TIMEOUT_SECONDS
 from jmri_mcp.constants.protocol import FIELD_DATA, FIELD_TYPE
+from jmri_mcp.jmri_errors import JmriError
 
-
-class JmriError(Exception):
-    """JMRI is unreachable or returned an unusable response."""
+__all__ = ["JmriError", "_get_json", "_post_json", "_unwrap"]
 
 
 def _unwrap(obj: Any) -> Any:
@@ -32,7 +31,7 @@ async def _get_json(path: str) -> Any:
             resp.raise_for_status()
             return resp.json()
     except httpx.HTTPError as exc:
-        raise JmriError(f"GET {url} failed: {exc}") from exc
+        raise JmriError("http_get_failed", url=url, exc=exc) from exc
 
 
 async def _post_json(path: str, body: dict) -> Any:
@@ -43,4 +42,4 @@ async def _post_json(path: str, body: dict) -> Any:
             resp.raise_for_status()
             return resp.json()
     except httpx.HTTPError as exc:
-        raise JmriError(f"POST {url} failed: {exc}") from exc
+        raise JmriError("http_post_failed", url=url, exc=exc) from exc

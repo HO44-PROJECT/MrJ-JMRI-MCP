@@ -356,10 +356,10 @@ def register(mcp) -> None:
         """
         client = get_ws_client()
         normalized = direction.strip().lower()
-        if normalized not in ("forward", "reverse"):
-            return {"error": f"direction must be 'forward' or 'reverse', got {direction!r}"}
-        forward = normalized == "forward"
         try:
+            if normalized not in ("forward", "reverse"):
+                raise JmriWsError("invalid_direction", direction=direction)
+            forward = normalized == "forward"
             await ensure_acquired(client, address)
             data = await client.set_direction(throttle_id(address), forward)
         except JmriWsError as exc:
@@ -397,10 +397,10 @@ def register(mcp) -> None:
         toggled by a JMRI panel/PanelPro) still reports the correct current
         state instead of hanging.
         """
-        if not (0 <= function <= 28):
-            return {"error": f"function must be 0-28, got {function}"}
         client = get_ws_client()
         try:
+            if not (0 <= function <= 28):
+                raise JmriWsError("invalid_function_number", function=function)
             await ensure_acquired(client, address)
             data = await client.set_function(throttle_id(address), function, state)
         except JmriWsError as exc:

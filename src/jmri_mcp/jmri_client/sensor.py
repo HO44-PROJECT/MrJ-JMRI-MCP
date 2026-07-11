@@ -34,7 +34,7 @@ async def get_sensors() -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected {endpoints.SENSORS} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.SENSORS, payload=payload)
     sensors = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d sensor(s): %s",
                 len(sensors), [s.get("userName") or s.get("name") for s in sensors])
@@ -50,9 +50,9 @@ def resolve_sensor(query: str, sensors: list[dict[str, Any]]) -> dict[str, Any]:
     userName. No default fallback — a sensor must be named.
     """
     if not sensors:
-        raise JmriError("JMRI reports no sensors")
+        raise JmriError("none_available", kind="sensor")
     if not query or not query.strip():
-        raise JmriError("No sensor name given")
+        raise JmriError("no_query_given", kind="sensor")
 
     q = query.strip().casefold()
     labels = [str(s.get("userName") or s.get("name", "")) for s in sensors]
@@ -70,6 +70,6 @@ def resolve_sensor(query: str, sensors: list[dict[str, Any]]) -> dict[str, Any]:
         return partial[0]
     if len(partial) > 1:
         matches = [str(s.get("userName") or s.get("name")) for s in partial]
-        raise JmriError(f"Ambiguous sensor {query!r}: matches {matches}")
+        raise JmriError("ambiguous_entity", kind="sensor", query=query, matches=matches)
 
-    raise JmriError(f"Unknown sensor {query!r}. Available: {labels}")
+    raise JmriError("unknown_entity", kind="sensor", query=query, available=labels)

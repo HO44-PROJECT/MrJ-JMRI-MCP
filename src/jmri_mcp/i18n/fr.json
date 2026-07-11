@@ -1,0 +1,35 @@
+{
+    "errors": {
+        "unknown_entity": "{Kind} inconnu : {query!r}. Disponibles : {available}",
+        "ambiguous_entity": "{Kind} ambigu : {query!r} correspond à {matches}",
+        "none_available": "JMRI ne signale aucun {kind_plural}",
+        "no_query_given": "Aucun nom de {kind} fourni",
+        "vanished_after_post": "{Kind} {name!r} a disparu après la requête POST",
+        "unexpected_payload": "Réponse inattendue de {endpoint} : {payload!r}",
+        "no_entry_with_address": "Aucune entrée du roster avec l'adresse {address}",
+        "no_entry_with_name": "Aucune entrée du roster nommée {name!r}",
+        "unknown_prefix": "Système inconnu avec le préfixe {prefix!r}",
+        "prefix_vanished_after_post": "Le système de préfixe {prefix!r} a disparu après la requête POST",
+        "http_get_failed": "Échec du GET {url} : {exc}",
+        "http_post_failed": "Échec du POST {url} : {exc}",
+        "ws_send_failed": "Échec de l'envoi WebSocket : {exc}",
+        "ws_response_timeout": "Délai dépassé en attendant la réponse à {msg_type!r}",
+        "ws_connect_failed": "Échec de la connexion WebSocket à {url} : {exc}",
+        "ws_handshake_failed": "Échec de la négociation WebSocket avec {url} : {exc}",
+        "ws_jmri_error": "Erreur JMRI : {data}",
+        "connection_closed": "Connexion fermée",
+        "connection_lost": "Connexion perdue",
+        "invalid_regex": "Expression régulière invalide {pattern!r} : {exc}",
+        "invalid_direction": "direction doit être 'forward' ou 'reverse', reçu {direction!r}",
+        "invalid_function_number": "function doit être comprise entre 0 et 28, reçu {function}",
+        "invalid_jmri_url": "JMRI_URL invalide {url!r} : attendu http(s)://host[:port], ex. {default}"
+    },
+    "kinds": {
+        "signal mast": {"singular": "mât de signalisation", "plural": "mâts de signalisation", "Singular": "Mât de signalisation"},
+        "locomotive": {"singular": "locomotive", "plural": "locomotives", "Singular": "Locomotive"},
+        "system": {"singular": "système", "plural": "systèmes d'alimentation", "Singular": "Système"},
+        "light": {"singular": "lumière", "plural": "lumières", "Singular": "Lumière"},
+        "turnout": {"singular": "aiguillage", "plural": "aiguillages", "Singular": "Aiguillage"},
+        "sensor": {"singular": "capteur", "plural": "capteurs", "Singular": "Capteur"}
+    }
+}

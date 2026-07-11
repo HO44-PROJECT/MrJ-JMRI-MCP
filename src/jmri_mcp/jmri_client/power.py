@@ -29,7 +29,7 @@ async def get_version() -> str:
         payload = payload[0] if payload else {}
     data = _unwrap(payload)
     if not isinstance(data, dict) or not data:
-        raise JmriError(f"Unexpected {endpoints.VERSION} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.VERSION, payload=payload)
     return next(iter(data))
 
 
@@ -43,7 +43,7 @@ async def get_systems() -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected {endpoints.POWER} payload: {payload!r}")
+        raise JmriError("unexpected_payload", endpoint=endpoints.POWER, payload=payload)
     systems = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d power system(s): %s",
                 len(systems), [s.get("name") for s in systems])
@@ -71,7 +71,7 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     systems = await get_systems()
     matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
     if not matches:
-        raise JmriError(f"Unknown system with prefix {prefix!r}")
+        raise JmriError("unknown_prefix", prefix=prefix)
     current = matches[0]
 
     if current.get("state") == desired:
@@ -83,7 +83,7 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     systems = await get_systems()
     matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
     if not matches:
-        raise JmriError(f"System with prefix {prefix!r} vanished after POST")
+        raise JmriError("prefix_vanished_after_post", prefix=prefix)
     observed = matches[0]
 
     confirmed = observed.get("state") == desired
@@ -158,7 +158,7 @@ def resolve_system(
     "DCC++ Ohara"). None/empty selects the default system.
     """
     if not systems:
-        raise JmriError("JMRI reported no power systems")
+        raise JmriError("none_available", kind="system")
 
     if query is None or not query.strip():
         default = next((s for s in systems if s.get("default")), systems[0])
@@ -180,6 +180,6 @@ def resolve_system(
         return partial[0]
     if len(partial) > 1:
         matches = [str(s.get("name")) for s in partial]
-        raise JmriError(f"Ambiguous system {query!r}: matches {matches}")
+        raise JmriError("ambiguous_entity", kind="system", query=query, matches=matches)
 
-    raise JmriError(f"Unknown system {query!r}. Available: {names}")
+    raise JmriError("unknown_entity", kind="system", query=query, available=names)

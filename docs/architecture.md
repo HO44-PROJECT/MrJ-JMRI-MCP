@@ -192,6 +192,30 @@ scope** for i18n — they're consumed by the LLM host, not read directly by a hu
 `tools/mode.py` specifically depends on intentional bilingual FR/EN trigger vocabulary
 that a translation table would collapse.
 
+Every `cli/*.py` catch site now goes through `i18n.error(exc)` (`src/jmri_mcp/i18n/__init__.py`)
+instead of `print(f"Error: {exc}", file=sys.stderr)`: it renders the translated
+`errors.<code>` body via `exc.code`/`exc.kwargs` and wraps it in the translated
+`cli.error_prefix` template ("Error: {message}" / "Erreur : {message}"), so the "Error:"
+label itself is translated too, not just the message body. `i18n.error()` only works on
+`JmriError` — catch sites for other exceptions (e.g. `cli/shell.py`'s `except ValueError`
+around `shlex.split()` for malformed shell input) are untouched and keep their plain
+f-string, since a plain exception has no `.code`/`.kwargs` to look up. A handful of catch
+sites don't fit the generic "Error: {message}" shape because they prepend domain-specific
+context (an address, an F-number) before the JMRI error text — these use dedicated
+`cli.*` keys taking a `message=` kwarg instead (`cli.jmri_unreachable`,
+`cli.power_systems_unavailable`, `cli.throttle_error_stopping_address`,
+`cli.throttle_error_address`, `cli.throttle_error_function`,
+`cli.throttle_warning_could_not_acquire`), called directly via `i18n.t(key, message=str(exc), ...)`.
+`tools/*.py` catch sites follow the same split at the MCP-return level: `return {"error":
+i18n.t(f"errors.{exc.code}", **exc.kwargs)}` instead of `return {"error": str(exc)}` —
+tools have no prefix template since the "error" key in the returned dict already carries
+that meaning to the LLM host.
+
+The two independent `JmriError` classes noted above are now fully unified: `cli/throttle.py`,
+`cli/shell.py`, and `tools/throttle.py` no longer alias `jmri_ws`'s class as `JmriWsError`
+(or `jmri_client`'s as `JmriHttpError`) — every catch site imports and matches on the one
+shared `JmriError`.
+
 ## Two JMRI clients, two different shapes
 
 JMRI exposes the same data over two transports, and this project uses both

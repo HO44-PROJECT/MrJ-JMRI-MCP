@@ -10,6 +10,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.jmri_client import JmriError, get_signals, resolve_signal
 from jmri_mcp.jmri_client import set_signal as _set_signal
@@ -38,7 +39,7 @@ async def signal_list(args: argparse.Namespace) -> int:
     try:
         signals = await get_signals()
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not signals:
@@ -64,7 +65,7 @@ async def signal_status(args: argparse.Namespace) -> int:
         signals = await get_signals()
         match = resolve_signal(args.name, signals)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     label, system_id, aspect = _row(match)
@@ -103,7 +104,7 @@ async def _signal_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, signals, _label)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
@@ -160,7 +161,7 @@ async def signal_set(args: argparse.Namespace) -> int:
         match = resolve_signal(args.name, signals)
         result = await _set_signal(match["name"], args.aspect)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     label, system_id, aspect = _row(result)

@@ -11,7 +11,8 @@ shared by the CLI and the LLM-facing MCP surface.
 
 import logging
 
-from jmri_mcp.jmri_ws import JmriError as JmriWsError
+from jmri_mcp import i18n
+from jmri_mcp.jmri_ws import JmriError
 from jmri_mcp.jmri_ws import get_ws_client
 from jmri_mcp.jmri_ws.ramp import execute_speed_change
 from jmri_mcp.tools._common import compact_throttle, direction_name, ensure_acquired, throttle_id
@@ -53,9 +54,9 @@ def register(mcp) -> None:
         client = get_ws_client()
         try:
             data = await client.acquire_throttle(throttle_id(address), address, prefix)
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning("acquire_throttle(%r, %r) failed: %s", address, prefix, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"acquired": True, **compact_throttle(data)}
 
     @mcp.tool()
@@ -74,9 +75,9 @@ def register(mcp) -> None:
         client = get_ws_client()
         try:
             await client.release_throttle(throttle_id(address))
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning("release_throttle(%r) failed: %s", address, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"released": True, "address": address}
 
     @mcp.tool()
@@ -113,9 +114,9 @@ def register(mcp) -> None:
         try:
             await ensure_acquired(client, address)
             data = await client.set_speed(throttle_id(address), speed)
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning("set_speed(%r, %r) failed: %s", address, speed_percent, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"address": address, "speed_percent": data.get("speed", speed) * 100}
 
     @mcp.tool()
@@ -201,12 +202,12 @@ def register(mcp) -> None:
                 rampdown=rampdown_seconds,
                 hold_seconds=hold_seconds,
             )
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning(
                 "set_speed_ramped(%r, %r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
                 address, speed_percent, rampup_seconds, rampdown_seconds, hold_seconds, exc,
             )
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {
             "address": address,
             "speed_percent": (data.get("speed") or 0.0) * 100,
@@ -239,9 +240,9 @@ def register(mcp) -> None:
         try:
             await ensure_acquired(client, address)
             data = await client.set_speed(throttle_id(address), 0.0)
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning("stop(%r) failed: %s", address, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"address": address, "speed_percent": data.get("speed", 0.0) * 100}
 
     @mcp.tool()
@@ -271,9 +272,9 @@ def register(mcp) -> None:
         try:
             await ensure_acquired(client, address)
             data = await client.set_speed(throttle_id(address), -1.0)
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning("emergency_stop(%r) failed: %s", address, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"address": address, "stopped": data.get("speed") == -1.0}
 
     @mcp.tool()
@@ -358,13 +359,13 @@ def register(mcp) -> None:
         normalized = direction.strip().lower()
         try:
             if normalized not in ("forward", "reverse"):
-                raise JmriWsError("invalid_direction", direction=direction)
+                raise JmriError("invalid_direction", direction=direction)
             forward = normalized == "forward"
             await ensure_acquired(client, address)
             data = await client.set_direction(throttle_id(address), forward)
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning("set_direction(%r, %r) failed: %s", address, direction, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"address": address, "direction": direction_name(data.get("forward", forward))}
 
     @mcp.tool()
@@ -400,12 +401,12 @@ def register(mcp) -> None:
         client = get_ws_client()
         try:
             if not (0 <= function <= 28):
-                raise JmriWsError("invalid_function_number", function=function)
+                raise JmriError("invalid_function_number", function=function)
             await ensure_acquired(client, address)
             data = await client.set_function(throttle_id(address), function, state)
-        except JmriWsError as exc:
+        except JmriError as exc:
             logger.warning("set_function(%r, %r, %r) failed: %s", address, function, state, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"address": address, "function": function, "state": data.get(f"F{function}", state)}
 
     @mcp.tool()

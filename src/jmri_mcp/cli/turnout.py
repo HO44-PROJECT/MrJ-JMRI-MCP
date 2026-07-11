@@ -12,6 +12,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.constants.cli import TURNOUT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_turnouts, resolve_turnout
@@ -48,7 +49,7 @@ async def turnout_find(args: argparse.Namespace) -> int:
         turnouts = await get_turnouts()
         turnout = resolve_turnout(args.name, turnouts)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     system_id, label, state, feedback, comment = _row(turnout)
@@ -71,7 +72,7 @@ async def _turnout_find_pattern(args: argparse.Namespace, *, regex: bool) -> int
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, turnouts, _label)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
@@ -121,7 +122,7 @@ async def turnout_list(args: argparse.Namespace) -> int:
     try:
         turnouts = await get_turnouts()
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not turnouts:
@@ -147,7 +148,7 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
         turnouts = await get_turnouts()
         targets = [resolve_turnout(args.name, turnouts)] if args.name else turnouts
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     all_confirmed = True
@@ -163,7 +164,7 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
                 if not any(s is not None for s in sensors):
                     unconfirmed_sensorless = True
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     print(tabulate(rows, headers=["System ID", "Turnout", "State", "Feedback", "Comment"]))

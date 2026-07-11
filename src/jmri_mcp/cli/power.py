@@ -11,6 +11,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.constants.cli import POWER_STATE_NAMES
 from jmri_mcp.jmri_client import (
@@ -47,7 +48,7 @@ async def power_status(args: argparse.Namespace) -> int:
     try:
         systems = await get_systems()
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
     _print_systems_table(systems)
     return 0
@@ -68,7 +69,7 @@ async def power_get(args: argparse.Namespace) -> int:
         systems = await get_systems()
         match = resolve_system(args.system, systems)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
     print(_state_name(match))
     return 0
@@ -89,7 +90,7 @@ async def power_find(args: argparse.Namespace) -> int:
         systems = await get_systems()
         match = resolve_system(args.system, systems)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
     print(
         f"name={match.get('name', '?')} prefix={match.get('prefix', '?')} "
@@ -114,7 +115,7 @@ async def _power_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, systems, _system_label)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
@@ -164,7 +165,7 @@ async def power_default(args: argparse.Namespace) -> int:
         systems = await get_systems()
         match = resolve_system(None, systems)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
     print(match.get("name", "?"))
     return 0
@@ -185,7 +186,7 @@ async def _power_set(args: argparse.Namespace, turn_on: bool) -> int:
         else:
             targets = systems
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     results = []
@@ -197,7 +198,7 @@ async def _power_set(args: argparse.Namespace, turn_on: bool) -> int:
             if not result["confirmed"]:
                 all_confirmed = False
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     _print_systems_table(results)
@@ -255,14 +256,14 @@ async def system_status(args: argparse.Namespace) -> int:
     try:
         version = await get_version()
     except JmriError as exc:
-        print(f"JMRI unreachable: {exc}", file=sys.stderr)
+        print(i18n.t("cli.jmri_unreachable", message=str(exc)), file=sys.stderr)
         return 1
 
     print(f"JMRI reachable, version {version}")
     try:
         systems = await get_systems()
     except JmriError as exc:
-        print(f"Power systems unavailable: {exc}", file=sys.stderr)
+        print(i18n.t("cli.power_systems_unavailable", message=str(exc)), file=sys.stderr)
         return 1
     _print_systems_table(systems)
     return 0

@@ -11,6 +11,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.constants.cli import SENSOR_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_sensors, resolve_sensor
@@ -39,7 +40,7 @@ async def sensor_list(args: argparse.Namespace) -> int:
     try:
         sensors = await get_sensors()
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not sensors:
@@ -65,7 +66,7 @@ async def sensor_status(args: argparse.Namespace) -> int:
         sensors = await get_sensors()
         match = resolve_sensor(args.name, sensors)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     label, system_id, state = _row(match)
@@ -104,7 +105,7 @@ async def _sensor_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, sensors, _label)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:

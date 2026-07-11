@@ -86,3 +86,15 @@ def lookup(lang: str, key: str, **kwargs: Any) -> str:
 def t(key: str, **kwargs: Any) -> str:
     """lookup() against the current active_lang() — the everyday call."""
     return lookup(active_lang(), key, **kwargs)
+
+
+def error(exc: Any) -> str:
+    """Render a JmriError for CLI display: prefix + translated errors.<code> body.
+
+    Takes the exception itself (not just its code) so kwargs travel with it —
+    callers just do `print(i18n.error(exc), file=sys.stderr)` instead of
+    re-extracting .code/.kwargs at every catch site.
+    """
+    lang = active_lang()
+    message = lookup(lang, f"errors.{exc.code}", **exc.kwargs)
+    return t("cli.error_prefix", message=message)

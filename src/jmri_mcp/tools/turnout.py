@@ -19,6 +19,7 @@ hasn't settled or failed to reach the commanded position).
 
 import logging
 
+from jmri_mcp import i18n
 from jmri_mcp.jmri_client import JmriError, get_turnouts, resolve_turnout
 from jmri_mcp.jmri_client import set_turnout as _set_turnout
 from jmri_mcp.tools._common import compact_turnout
@@ -52,7 +53,7 @@ def register(mcp) -> None:
             turnouts = await get_turnouts()
         except JmriError as exc:
             logger.warning("list_turnouts failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"turnouts": [compact_turnout(t) for t in turnouts]}
 
     @mcp.tool()
@@ -79,7 +80,7 @@ def register(mcp) -> None:
             match = resolve_turnout(name, turnouts)
         except JmriError as exc:
             logger.warning("get_turnout(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return compact_turnout(match)
 
     @mcp.tool()
@@ -107,5 +108,5 @@ def register(mcp) -> None:
             result = await _set_turnout(match["name"], thrown)
         except JmriError as exc:
             logger.warning("set_turnout(%r, %r) failed: %s", name, thrown, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {**compact_turnout(result), "confirmed": result["confirmed"]}

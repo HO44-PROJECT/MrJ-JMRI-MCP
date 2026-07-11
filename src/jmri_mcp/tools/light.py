@@ -10,6 +10,7 @@ lights that are part of the layout/scenery, not a specific loco.
 
 import logging
 
+from jmri_mcp import i18n
 from jmri_mcp.jmri_client import JmriError, get_lights, resolve_light
 from jmri_mcp.jmri_client import set_light as _set_light
 from jmri_mcp.tools._common import compact_light
@@ -39,7 +40,7 @@ def register(mcp) -> None:
             lights = await get_lights()
         except JmriError as exc:
             logger.warning("list_lights failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"lights": [compact_light(lt) for lt in lights]}
 
     @mcp.tool()
@@ -60,7 +61,7 @@ def register(mcp) -> None:
             match = resolve_light(name, lights)
         except JmriError as exc:
             logger.warning("get_light(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return compact_light(match)
 
     @mcp.tool()
@@ -88,5 +89,5 @@ def register(mcp) -> None:
             result = await _set_light(match["name"], turn_on)
         except JmriError as exc:
             logger.warning("set_light(%r, %r) failed: %s", name, turn_on, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {**compact_light(result), "confirmed": result["confirmed"]}

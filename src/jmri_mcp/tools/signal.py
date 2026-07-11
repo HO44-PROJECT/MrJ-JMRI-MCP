@@ -11,6 +11,7 @@ DB-HV-1969 mast) is the vocabulary PanelPro users actually see and use.
 
 import logging
 
+from jmri_mcp import i18n
 from jmri_mcp.jmri_client import JmriError, get_signals, resolve_signal
 from jmri_mcp.jmri_client import set_signal as _set_signal
 from jmri_mcp.tools._common import compact_signal
@@ -52,7 +53,7 @@ def register(mcp) -> None:
             signals = await get_signals()
         except JmriError as exc:
             logger.warning("list_signals failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"signals": [compact_signal(s) for s in signals]}
 
     @mcp.tool()
@@ -72,7 +73,7 @@ def register(mcp) -> None:
             match = resolve_signal(name, signals)
         except JmriError as exc:
             logger.warning("get_signal(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return compact_signal(match)
 
     @mcp.tool()
@@ -111,5 +112,5 @@ def register(mcp) -> None:
             result = await _set_signal(match["name"], aspect)
         except JmriError as exc:
             logger.warning("set_signal(%r, %r) failed: %s", name, aspect, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {**compact_signal(result), "confirmed": result["confirmed"]}

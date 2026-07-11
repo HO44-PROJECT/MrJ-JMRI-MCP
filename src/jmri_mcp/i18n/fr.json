@@ -22,7 +22,10 @@
         "invalid_regex": "Expression régulière invalide {pattern!r} : {exc}",
         "invalid_direction": "direction doit être 'forward' ou 'reverse', reçu {direction!r}",
         "invalid_function_number": "function doit être comprise entre 0 et 28, reçu {function}",
-        "invalid_jmri_url": "JMRI_URL invalide {url!r} : attendu http(s)://host[:port], ex. {default}"
+        "invalid_jmri_url": "JMRI_URL invalide {url!r} : attendu http(s)://host[:port], ex. {default}",
+        "invalid_function_number_range": "la fonction doit être comprise entre {min} et {max}, reçu {n}",
+        "no_labeled_functions": "{name} (adresse={address}) n'a aucune fonction étiquetée dans le roster JMRI — précisez un numéro de fonction, ex. `throttle on {address} 0`",
+        "no_labeled_function_match": "Aucune fonction étiquetée ne correspond à {query!r}. Disponibles : {available}"
     },
     "kinds": {
         "signal mast": {
@@ -190,6 +193,7 @@
         "line2": "Fournit aussi les informations du roster et des capteurs."
     },
     "cli": {
+        "error_prefix": "Erreur : {message}",
         "commands_header": "commandes :",
         "help_hint_group": "Lancez `jmri-cli <commande> -h` pour ses sous-commandes, ou",
         "help_hint_shell_group": "Lancez `<commande> -h` pour ses sous-commandes, ou",
@@ -216,6 +220,12 @@
         "throttle_shell_stop_needs_loco": "Erreur : une locomotive est requise pour `stop` dans le shell (ex. `throttle stop 3`) — le cache global du CLI des adresses déjà touchées ne s'applique pas aux locomotives détenues par le shell lui-même.",
         "sniff_acquired_for_observation": "(adresse={address} acquise pour observation)",
         "sniff_could_not_acquire": "Attention : impossible d'acquérir {address} : {exc}",
-        "sniff_listening": "Écoute des messages JMRI, Ctrl-C pour arrêter..."
+        "sniff_listening": "Écoute des messages JMRI, Ctrl-C pour arrêter...",
+        "jmri_unreachable": "JMRI injoignable : {message}",
+        "power_systems_unavailable": "Systèmes d'alimentation indisponibles : {message}",
+        "throttle_error_stopping_address": "Erreur à l'arrêt address={address} : {message}",
+        "throttle_error_address": "Erreur : address={address} : {message}",
+        "throttle_error_function": "Erreur : F{function} : {message}",
+        "throttle_warning_could_not_acquire": "Attention : impossible d'acquérir {address} : {message}"
     }
 }

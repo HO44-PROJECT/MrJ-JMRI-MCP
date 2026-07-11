@@ -8,6 +8,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.jmri_client import (
     JmriError,
@@ -92,7 +93,7 @@ async def roster_list(args: argparse.Namespace) -> int:
     try:
         roster = await get_roster()
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not roster:
@@ -119,7 +120,7 @@ async def _roster_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, roster, _label)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
@@ -174,7 +175,7 @@ async def roster_find(args: argparse.Namespace) -> int:
         roster = await get_roster()
         entry = resolve_roster_entry(args.name, roster)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     road = entry["road"] or "-"
@@ -213,7 +214,7 @@ async def roster_functions(args: argparse.Namespace) -> int:
         entry = resolve_roster_entry(args.name, roster)
         labels = await get_roster_function_labels(entry["name"])
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     print(f"{entry['name']} (address={entry['address']})")

@@ -56,12 +56,13 @@ try:
 except ImportError:
     readline = None
 
+from jmri_mcp import i18n
 from jmri_mcp.cli._common import cli_throttle_id
 from jmri_mcp.cli._doc import GROUP_HELP
 from jmri_mcp.cli.banner import banner
 from jmri_mcp.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_mcp.cli.parser import build_parser
-from jmri_mcp.jmri_ws import JmriError as JmriWsError
+from jmri_mcp.jmri_ws import JmriError
 from jmri_mcp.jmri_ws import JmriWsClient
 from jmri_mcp.jmri_ws.ramp import ramp_speed
 
@@ -154,8 +155,8 @@ async def _confirm_exit(client: JmriWsClient) -> bool:
                 await ramp_speed(
                     client, throttle_id, current, 0.0, SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
                 )
-            except JmriWsError as exc:
-                print(f"Error stopping address={address}: {exc}", file=sys.stderr)
+            except JmriError as exc:
+                print(i18n.t("cli.throttle_error_stopping_address", address=address, message=str(exc)), file=sys.stderr)
     else:
         print("Exiting without stopping — locomotives left in their current state.", file=sys.stderr)
     return True
@@ -233,8 +234,8 @@ async def run_shell() -> None:
             kwargs = {"client": client} if _is_ws_func(args.func) else {}
             try:
                 await args.func(args, **kwargs)
-            except JmriWsError as exc:
-                print(f"Error: {exc}", file=sys.stderr)
+            except JmriError as exc:
+                print(i18n.error(exc), file=sys.stderr)
     finally:
         _save_history()
         await client.close()

@@ -8,6 +8,7 @@ set_sensor tool; nothing in this project should write to one directly.
 
 import logging
 
+from jmri_mcp import i18n
 from jmri_mcp.jmri_client import JmriError, get_sensors, resolve_sensor
 from jmri_mcp.tools._common import compact_sensor
 
@@ -36,7 +37,7 @@ def register(mcp) -> None:
             sensors = await get_sensors()
         except JmriError as exc:
             logger.warning("list_sensors failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"sensors": [compact_sensor(s) for s in sensors]}
 
     @mcp.tool()
@@ -59,5 +60,5 @@ def register(mcp) -> None:
             match = resolve_sensor(name, sensors)
         except JmriError as exc:
             logger.warning("get_sensor(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return compact_sensor(match)

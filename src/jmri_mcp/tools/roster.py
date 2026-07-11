@@ -11,7 +11,7 @@ resolve to the right F-number without any hardcoded name->function mapping.
 
 import logging
 
-from jmri_mcp import jmri_client
+from jmri_mcp import i18n, jmri_client
 from jmri_mcp.jmri_client import JmriError, resolve_roster_entry
 
 logger = logging.getLogger("jmri_mcp.tools")
@@ -47,7 +47,7 @@ def register(mcp) -> None:
             roster = await jmri_client.get_roster()
         except JmriError as exc:
             logger.warning("list_roster failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"roster": roster}
 
     @mcp.tool()
@@ -73,7 +73,7 @@ def register(mcp) -> None:
             entry = resolve_roster_entry(name, roster)
         except JmriError as exc:
             logger.warning("find_locomotive(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return entry
 
     @mcp.tool()
@@ -104,7 +104,7 @@ def register(mcp) -> None:
             labels = await jmri_client.get_roster_function_labels(entry["name"])
         except JmriError as exc:
             logger.warning("get_locomotive_functions(%r) failed: %s", name, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {
             "name": entry["name"],
             "address": entry["address"],

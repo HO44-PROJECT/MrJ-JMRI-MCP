@@ -22,7 +22,10 @@
         "invalid_regex": "Invalid regex {pattern!r}: {exc}",
         "invalid_direction": "direction must be 'forward' or 'reverse', got {direction!r}",
         "invalid_function_number": "function must be 0-28, got {function}",
-        "invalid_jmri_url": "Invalid JMRI_URL {url!r}: expected http(s)://host[:port], e.g. {default}"
+        "invalid_jmri_url": "Invalid JMRI_URL {url!r}: expected http(s)://host[:port], e.g. {default}",
+        "invalid_function_number_range": "function must be {min}-{max}, got {n}",
+        "no_labeled_functions": "{name} (address={address}) has no labeled functions in JMRI's roster — specify a function number, e.g. `throttle on {address} 0`",
+        "no_labeled_function_match": "No labeled function matches {query!r}. Available: {available}"
     },
     "kinds": {
         "signal mast": {
@@ -190,6 +193,7 @@
         "line2": "Also reports roster and sensor info."
     },
     "cli": {
+        "error_prefix": "Error: {message}",
         "commands_header": "commands:",
         "help_hint_group": "Run `jmri-cli <command> -h` for its subcommands, or",
         "help_hint_shell_group": "Run `<command> -h` for its subcommands, or",
@@ -216,6 +220,12 @@
         "throttle_shell_stop_needs_loco": "Error: a locomotive is required for `stop` inside the shell (e.g. `throttle stop 3`) — the CLI-wide cache of every one-shot-touched address doesn't apply to the shell's own held throttles.",
         "sniff_acquired_for_observation": "(acquired address={address} for observation)",
         "sniff_could_not_acquire": "Warning: could not acquire {address}: {exc}",
-        "sniff_listening": "Listening for JMRI messages, Ctrl-C to stop..."
+        "sniff_listening": "Listening for JMRI messages, Ctrl-C to stop...",
+        "jmri_unreachable": "JMRI unreachable: {message}",
+        "power_systems_unavailable": "Power systems unavailable: {message}",
+        "throttle_error_stopping_address": "Error stopping address={address}: {message}",
+        "throttle_error_address": "Error: address={address}: {message}",
+        "throttle_error_function": "Error: F{function}: {message}",
+        "throttle_warning_could_not_acquire": "Warning: could not acquire {address}: {message}"
     }
 }

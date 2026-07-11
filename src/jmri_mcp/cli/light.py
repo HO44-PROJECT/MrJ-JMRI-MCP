@@ -11,6 +11,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.constants.cli import LIGHT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_lights, resolve_light
@@ -41,7 +42,7 @@ async def light_list(args: argparse.Namespace) -> int:
     try:
         lights = await get_lights()
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not lights:
@@ -67,7 +68,7 @@ async def light_find(args: argparse.Namespace) -> int:
         lights = await get_lights()
         light = resolve_light(args.name, lights)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     system_id, label, state = _row(light)
@@ -87,7 +88,7 @@ async def _light_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, lights, _label)
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
@@ -136,7 +137,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
         lights = await get_lights()
         targets = [resolve_light(args.name, lights)] if args.name else lights
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     all_confirmed = True
@@ -148,7 +149,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
             if not result["confirmed"]:
                 all_confirmed = False
     except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     print(tabulate(rows, headers=["System ID", "Light", "State"]))

@@ -40,6 +40,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp import i18n
 from jmri_mcp.cli import state as _state
 from jmri_mcp.cli._common import cli_throttle_id
 from jmri_mcp.cli._match import find_glob, find_regex
@@ -51,9 +52,7 @@ from jmri_mcp.constants.cli import (
     MIN_SPEED_PERCENT,
     SNIFF_THROTTLE_ID_PREFIX,
 )
-from jmri_mcp.jmri_client import JmriError as JmriHttpError
-from jmri_mcp.jmri_client import get_roster, get_roster_function_labels, resolve_roster_entry
-from jmri_mcp.jmri_ws import JmriError as JmriWsError
+from jmri_mcp.jmri_client import JmriError, get_roster, get_roster_function_labels, resolve_roster_entry
 from jmri_mcp.jmri_ws import JmriWsClient
 from jmri_mcp.jmri_ws.ramp import execute_speed_change as _execute_speed_change
 
@@ -78,7 +77,7 @@ async def _resolve_address(loco: str) -> int:
         roster = await get_roster()
         entry = resolve_roster_entry(stripped, roster)
         return entry["address"]
-    except JmriHttpError:
+    except JmriError:
         if stripped.lstrip("-").isdigit():
             return int(stripped)
         raise
@@ -176,8 +175,8 @@ async def throttle_find(args: argparse.Namespace) -> int:
     """
     try:
         address = await _resolve_address(args.loco)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     _, speed, direction, functions = _cache_row(address)
@@ -201,8 +200,8 @@ async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> in
         roster = await get_roster()
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, roster, _roster_label)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
@@ -254,15 +253,15 @@ async def throttle_acquire(args: argparse.Namespace, *, client: JmriWsClient | N
     """
     try:
         address = await _resolve_address(args.loco)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     try:
         async with _client_scope(client) as c:
             data = await c.acquire_throttle(cli_throttle_id(address), address, args.prefix)
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     _state.update_address(address, speed=data.get("speed"), forward=data.get("forward"))
@@ -293,16 +292,16 @@ async def throttle_release(args: argparse.Namespace, *, client: JmriWsClient | N
     """
     try:
         address = await _resolve_address(args.loco)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     try:
         async with _client_scope(client) as c:
             await c.acquire_throttle(cli_throttle_id(address), address)
             await c.release_throttle(cli_throttle_id(address))
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     print(f"address={address} released")
@@ -359,8 +358,8 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
 
     try:
         address = await _resolve_address(args.loco)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     throttle_id = cli_throttle_id(address)
@@ -379,8 +378,8 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
                     target_forward=target_forward, target_fraction=target_fraction,
                     rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
                 )
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     speed = data.get("speed", acquired.get("speed"))
@@ -423,8 +422,8 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
     if args.loco:
         try:
             addresses = [await _resolve_address(args.loco)]
-        except JmriHttpError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
             return 1
     elif client is not None:
         print(
@@ -456,11 +455,11 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
                     speed = data.get("speed", 0.0)
                     _state.update_address(address, speed=speed)
                     print(f"address={address} stopped")
-                except JmriWsError as exc:
-                    print(f"Error: address={address}: {exc}", file=sys.stderr)
+                except JmriError as exc:
+                    print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
                     ok = False
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
     return 0 if ok else 1
 
@@ -482,16 +481,16 @@ async def throttle_estop(args: argparse.Namespace, *, client: JmriWsClient | Non
     """
     try:
         address = await _resolve_address(args.loco)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     try:
         async with _client_scope(client) as c:
             await c.acquire_throttle(cli_throttle_id(address), address)
             await c.set_speed(cli_throttle_id(address), -1.0)
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     _state.update_address(address, speed=-1.0)
@@ -539,8 +538,8 @@ async def throttle_direction(
 
     try:
         address = await _resolve_address(args.loco)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     throttle_id = cli_throttle_id(address)
@@ -558,8 +557,8 @@ async def throttle_direction(
                 target_forward=forward, target_fraction=current_fraction,
                 rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
             )
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     reported = data.get("forward", forward)
@@ -574,24 +573,23 @@ async def _resolve_function_numbers(address: int, function: str | None) -> list[
 
     `function` may be a bare number ("1"), a label fragment matched
     against this loco's roster-set function labels ("phares"), or None
-    (every labeled function for this loco). Raises JmriHttpError if a
+    (every labeled function for this loco). Raises JmriError if a
     label/None lookup finds nothing — see throttle_on/throttle_off for why
     this deliberately does NOT fall back to F0 in that case.
     """
     if function is not None and function.strip().lstrip("-").isdigit():
         n = int(function.strip())
         if not (MIN_FUNCTION_NUMBER <= n <= MAX_FUNCTION_NUMBER):
-            raise JmriHttpError(f"function must be {MIN_FUNCTION_NUMBER}-{MAX_FUNCTION_NUMBER}, got {n}")
+            raise JmriError(
+                "invalid_function_number_range", min=MIN_FUNCTION_NUMBER, max=MAX_FUNCTION_NUMBER, n=n
+            )
         return [n]
 
     roster = await get_roster()
     entry = resolve_roster_entry(str(address), roster)
     labels = await get_roster_function_labels(entry["name"])
     if not labels:
-        raise JmriHttpError(
-            f"{entry['name']} (address={address}) has no labeled functions in JMRI's "
-            f"roster — specify a function number, e.g. `throttle on {address} 0`"
-        )
+        raise JmriError("no_labeled_functions", name=entry["name"], address=address)
 
     if function is None:
         return sorted(labels)
@@ -600,7 +598,7 @@ async def _resolve_function_numbers(address: int, function: str | None) -> list[
     matches = [n for n, label in labels.items() if q in label.casefold()]
     if not matches:
         available = ", ".join(f"F{n}={label}" for n, label in sorted(labels.items()))
-        raise JmriHttpError(f"No labeled function matches {function!r}. Available: {available}")
+        raise JmriError("no_labeled_function_match", query=function, available=available)
     return sorted(matches)
 
 
@@ -611,8 +609,8 @@ async def _throttle_set_functions(
     try:
         address = await _resolve_address(args.loco)
         function_numbers = await _resolve_function_numbers(address, args.function)
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     ok = True
@@ -625,11 +623,11 @@ async def _throttle_set_functions(
                     reported = data.get(f"F{n}", state)
                     _state.update_address(address, functions={n: reported})
                     print(f"address={address} F{n}={'on' if reported else 'off'}")
-                except JmriWsError as exc:
-                    print(f"Error: F{n}: {exc}", file=sys.stderr)
+                except JmriError as exc:
+                    print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
                     ok = False
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
     return 0 if ok else 1
 
@@ -697,8 +695,8 @@ async def throttle_function(args: argparse.Namespace) -> int:
         roster = await get_roster()
         entry = resolve_roster_entry(args.loco, roster)
         labels = await get_roster_function_labels(entry["name"])
-    except JmriHttpError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
 
     print(f"{entry['name']} (address={entry['address']})")
@@ -773,14 +771,14 @@ async def throttle_sniff(args: argparse.Namespace) -> int:
             try:
                 await client.acquire_throttle(f"{SNIFF_THROTTLE_ID_PREFIX}{address}", address)
                 print(f"(acquired address={address} for observation)")
-            except JmriWsError as exc:
-                print(f"Warning: could not acquire {address}: {exc}", file=sys.stderr)
+            except JmriError as exc:
+                print(i18n.t("cli.throttle_warning_could_not_acquire", address=address, message=str(exc)), file=sys.stderr)
 
         print("Listening for JMRI messages, Ctrl-C to stop...", file=sys.stderr)
         while True:
             await asyncio.sleep(IDLE_POLL_SECONDS)
-    except JmriWsError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
         return 1
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass

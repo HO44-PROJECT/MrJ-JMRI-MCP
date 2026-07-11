@@ -6,7 +6,7 @@ Talks to jmri_client.py (one-shot HTTP), same as roster.py.
 
 import logging
 
-from jmri_mcp import jmri_client
+from jmri_mcp import i18n, jmri_client
 from jmri_mcp.jmri_client import JmriError, get_systems, get_version, resolve_system
 from jmri_mcp.jmri_client import power_off_all as _power_off_all
 from jmri_mcp.jmri_client import power_on_all as _power_on_all
@@ -39,7 +39,7 @@ def register(mcp) -> None:
             systems = await get_systems()
         except JmriError as exc:
             logger.warning("list_systems failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"systems": [compact_power(s) for s in systems]}
 
     @mcp.tool()
@@ -62,7 +62,7 @@ def register(mcp) -> None:
             match = resolve_system(system, systems)
         except JmriError as exc:
             logger.warning("get_power(%r) failed: %s", system, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return compact_power(match)
 
     @mcp.tool()
@@ -93,7 +93,7 @@ def register(mcp) -> None:
             result = await jmri_client.set_power(match["prefix"], turn_on)
         except JmriError as exc:
             logger.warning("set_power(%r, %r) failed: %s", system, turn_on, exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {**compact_power(result), "confirmed": result["confirmed"]}
 
     @mcp.tool()
@@ -129,7 +129,7 @@ def register(mcp) -> None:
             results = await _power_off_all()
         except JmriError as exc:
             logger.warning("power_off_all failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in results]}
 
     @mcp.tool()
@@ -158,7 +158,7 @@ def register(mcp) -> None:
             results = await _power_on_all()
         except JmriError as exc:
             logger.warning("power_on_all failed: %s", exc)
-            return {"error": str(exc)}
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {"systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in results]}
 
     @mcp.tool()
@@ -174,13 +174,13 @@ def register(mcp) -> None:
             status["version"] = await get_version()
             status["reachable"] = True
         except JmriError as exc:
-            status["error"] = str(exc)
+            status["error"] = i18n.t(f"errors.{exc.code}", **exc.kwargs)
             return status
 
         try:
             systems = await get_systems()
             status["systems"] = [compact_power(s) for s in systems]
         except JmriError as exc:
-            status["systems_error"] = str(exc)
+            status["systems_error"] = i18n.t(f"errors.{exc.code}", **exc.kwargs)
 
         return status

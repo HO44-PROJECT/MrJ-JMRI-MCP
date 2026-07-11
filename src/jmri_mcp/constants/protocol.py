@@ -1,0 +1,40 @@
+"""JMRI JSON field names and WebSocket message-type strings.
+
+Shared by jmri_client (HTTP) and jmri_ws (WebSocket), which speak the same
+JMRI JSON object shapes over two different transports.
+"""
+
+FIELD_NAME = "name"
+FIELD_USER_NAME = "userName"
+FIELD_STATE = "state"
+FIELD_COMMENT = "comment"
+FIELD_SENSOR = "sensor"
+FIELD_PREFIX = "prefix"
+FIELD_DEFAULT = "default"
+FIELD_ASPECT = "aspect"
+FIELD_LIT = "lit"
+FIELD_HELD = "held"
+FIELD_ADDRESS = "address"
+FIELD_ROAD = "road"
+FIELD_NUMBER = "number"
+FIELD_MFG = "mfg"
+FIELD_MODEL = "model"
+FIELD_OWNER = "owner"
+FIELD_DATE_MODIFIED = "dateModified"
+FIELD_ROSTER_GROUPS = "rosterGroups"
+FIELD_FUNCTION_KEYS = "functionKeys"
+FIELD_LABEL = "label"
+FIELD_TYPE = "type"
+FIELD_DATA = "data"
+
+FIELD_THROTTLE = "throttle"
+FIELD_SPEED = "speed"
+FIELD_FORWARD = "forward"
+FIELD_RELEASE = "release"
+FIELD_HEARTBEAT = "heartbeat"
+
+MSG_TYPE_THROTTLE = "throttle"
+MSG_TYPE_PING = "ping"
+MSG_TYPE_PONG = "pong"
+MSG_TYPE_ERROR = "error"
+MSG_TYPE_HELLO = "hello"

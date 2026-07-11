@@ -12,9 +12,10 @@ import sys
 from tabulate import tabulate
 
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.cli.constants import LIGHT_STATE_NAMES
+from jmri_mcp.constants.cli import LIGHT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_lights, resolve_light
 from jmri_mcp.jmri_client import set_light as _set_light
+from jmri_mcp.jmri_client.light import LIGHT_ON, LIGHT_OFF
 
 
 def _row(light: dict) -> list:
@@ -130,7 +131,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
     No `args.name` means every light; a fuzzy `args.name` means just that
     one, matching power/turnout's "verb + optional target, default = all".
     """
-    state_name = "ON" if turn_on else "OFF"
+    state_name = LIGHT_STATE_NAMES[LIGHT_ON if turn_on else LIGHT_OFF]
     try:
         lights = await get_lights()
         targets = [resolve_light(args.name, lights)] if args.name else lights

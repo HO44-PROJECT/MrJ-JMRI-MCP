@@ -10,7 +10,7 @@ def _power_payload(prefix: str, state: int, name: str = "DCC++ Ohara", default=F
 
 
 async def test_set_power_confirms_on(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     with respx.mock() as router:
         router.post(f"{MOCK_JMRI_URL}/json/power").mock(
             return_value=Response(200, json=_power_payload("O", 0))  # transient, per CLAUDE.md
@@ -29,7 +29,7 @@ async def test_set_power_confirms_on(monkeypatch):
 
 
 async def test_set_power_not_confirmed_reports_honestly(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     with respx.mock() as router:
         router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
         # pre-check sees OFF, re-read after POST still shows OFF (e.g. unreachable system)
@@ -43,7 +43,7 @@ async def test_set_power_not_confirmed_reports_honestly(monkeypatch):
 
 
 async def test_set_power_posts_documented_body_shape(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     with respx.mock() as router:
         post_route = router.post(f"{MOCK_JMRI_URL}/json/power").mock(
             return_value=Response(200, json={})
@@ -64,7 +64,7 @@ async def test_set_power_skips_post_when_already_desired_state(monkeypatch):
     """The JMRI bug this guards against: re-POSTing the same state can knock
     the system into UNKNOWN. Confirming ON on an already-ON system must
     never send a POST at all."""
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     with respx.mock(assert_all_called=False) as router:
         post_route = router.post(f"{MOCK_JMRI_URL}/json/power").mock(
             return_value=Response(200, json={})

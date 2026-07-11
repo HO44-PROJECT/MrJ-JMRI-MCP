@@ -43,7 +43,7 @@ from tabulate import tabulate
 from jmri_mcp.cli import state as _state
 from jmri_mcp.cli._common import cli_throttle_id
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.cli.constants import (
+from jmri_mcp.constants.cli import (
     IDLE_POLL_SECONDS,
     MAX_FUNCTION_NUMBER,
     MAX_SPEED_PERCENT,

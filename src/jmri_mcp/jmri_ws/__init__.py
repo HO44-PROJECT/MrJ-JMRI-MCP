@@ -41,14 +41,31 @@ from typing import Any, Awaitable, Callable
 import websockets
 
 from jmri_mcp.config import get_jmri_url
+from jmri_mcp.constants.client_tuning import (
+    WS_CONNECT_TIMEOUT_SECONDS,
+    WS_DEFAULT_HEARTBEAT_MS,
+    WS_MAX_RECONNECT_DELAY_SECONDS,
+    WS_RECONNECT_DELAY_SECONDS,
+    WS_REQUEST_TIMEOUT_SECONDS,
+)
+from jmri_mcp.constants.protocol import (
+    FIELD_ADDRESS,
+    FIELD_DATA,
+    FIELD_FORWARD,
+    FIELD_HEARTBEAT,
+    FIELD_PREFIX,
+    FIELD_RELEASE,
+    FIELD_SPEED,
+    FIELD_THROTTLE,
+    FIELD_TYPE,
+    MSG_TYPE_ERROR,
+    MSG_TYPE_HELLO,
+    MSG_TYPE_PING,
+    MSG_TYPE_PONG,
+    MSG_TYPE_THROTTLE,
+)
 
 logger = logging.getLogger("jmri_mcp.ws")
-
-_CONNECT_TIMEOUT = 5.0
-_REQUEST_TIMEOUT = 5.0
-_RECONNECT_DELAY = 2.0
-_MAX_RECONNECT_DELAY = 30.0
-_DEFAULT_HEARTBEAT_MS = 10_000
 
 
 class JmriError(Exception):
@@ -95,7 +112,7 @@ class JmriWsClient:
         # apart from an unsolicited push about a *different* throttle.
         self._pending_throttle_id: str | None = None
         self._throttles: dict[str, dict[str, Any]] = {}
-        self._heartbeat_ms = _DEFAULT_HEARTBEAT_MS
+        self._heartbeat_ms = WS_DEFAULT_HEARTBEAT_MS
         self._closing = False
 
     async def connect(self) -> None:
@@ -141,9 +158,11 @@ class JmriWsClient:
         # For throttle messages, remember which throttle id we're expecting
         # a reply for, so dispatch can tell a real reply apart from an
         # unsolicited push about a different throttle on the same socket.
-        self._pending_throttle_id = (data or {}).get("throttle") if msg_type == "throttle" else None
+        self._pending_throttle_id = (
+            (data or {}).get(FIELD_THROTTLE) if msg_type == MSG_TYPE_THROTTLE else None
+        )
 
-        payload = {"type": msg_type, "data": data or {}}
+        payload = {FIELD_TYPE: msg_type, FIELD_DATA: data or {}}
         try:
             assert self._ws is not None
             await self._ws.send(json.dumps(payload))
@@ -153,7 +172,7 @@ class JmriWsClient:
             raise JmriError(f"WebSocket send failed: {exc}") from exc
 
         try:
-            return await asyncio.wait_for(future, timeout=_REQUEST_TIMEOUT)
+            return await asyncio.wait_for(future, timeout=WS_REQUEST_TIMEOUT_SECONDS)
         except asyncio.TimeoutError as exc:
             raise JmriError(f"Timed out waiting for {msg_type!r} response") from exc
         finally:
@@ -184,22 +203,28 @@ class JmriWsClient:
         """
         await self.connect()
         cached = self._throttles.get(throttle_id)
-        if cached is not None and cached.get("address") == address and cached.get("prefix") == prefix:
+        if (
+            cached is not None
+            and cached.get(FIELD_ADDRESS) == address
+            and cached.get(FIELD_PREFIX) == prefix
+        ):
             return dict(cached)
-        self._throttles[throttle_id] = {"address": address, "prefix": prefix, "speed": None}
-        data_out: dict[str, Any] = {"throttle": throttle_id, "address": address}
+        self._throttles[throttle_id] = {FIELD_ADDRESS: address, FIELD_PREFIX: prefix, FIELD_SPEED: None}
+        data_out: dict[str, Any] = {FIELD_THROTTLE: throttle_id, FIELD_ADDRESS: address}
         if prefix:
-            data_out["prefix"] = prefix
+            data_out[FIELD_PREFIX] = prefix
         try:
             async with self._request_lock:
-                data = await self._send_and_wait("throttle", data_out)
+                data = await self._send_and_wait(MSG_TYPE_THROTTLE, data_out)
         except JmriError:
             self._throttles.pop(throttle_id, None)
             raise
         return data
 
     async def release_throttle(self, throttle_id: str) -> dict[str, Any]:
-        data = await self.request("throttle", {"throttle": throttle_id, "release": True})
+        data = await self.request(
+            MSG_TYPE_THROTTLE, {FIELD_THROTTLE: throttle_id, FIELD_RELEASE: True}
+        )
         self._throttles.pop(throttle_id, None)
         return data
 
@@ -216,9 +241,9 @@ class JmriWsClient:
         as well as from our own replies — see module docstring.
         """
         info = self._throttles.get(throttle_id)
-        if info is not None and info.get("speed") == speed:
-            return {"throttle": throttle_id, "speed": speed}
-        return await self.request("throttle", {"throttle": throttle_id, "speed": speed})
+        if info is not None and info.get(FIELD_SPEED) == speed:
+            return {FIELD_THROTTLE: throttle_id, FIELD_SPEED: speed}
+        return await self.request(MSG_TYPE_THROTTLE, {FIELD_THROTTLE: throttle_id, FIELD_SPEED: speed})
 
     async def set_direction(self, throttle_id: str, forward: bool) -> dict[str, Any]:
         """Set direction on an already-acquired throttle. Same no-op/cache logic as set_speed.
@@ -229,9 +254,11 @@ class JmriWsClient:
         the same live-synced per-throttle cache before sending.
         """
         info = self._throttles.get(throttle_id)
-        if info is not None and info.get("forward") == forward:
-            return {"throttle": throttle_id, "forward": forward}
-        return await self.request("throttle", {"throttle": throttle_id, "forward": forward})
+        if info is not None and info.get(FIELD_FORWARD) == forward:
+            return {FIELD_THROTTLE: throttle_id, FIELD_FORWARD: forward}
+        return await self.request(
+            MSG_TYPE_THROTTLE, {FIELD_THROTTLE: throttle_id, FIELD_FORWARD: forward}
+        )
 
     async def emergency_stop_all(self) -> dict[str, list[str]]:
         """Emergency-stop every locomotive this connection currently holds a throttle for.
@@ -276,8 +303,10 @@ class JmriWsClient:
         """
         info = self._throttles.get(throttle_id)
         if info is not None and info.get("functions", {}).get(function) == state:
-            return {"throttle": throttle_id, f"F{function}": state}
-        return await self.request("throttle", {"throttle": throttle_id, f"F{function}": state})
+            return {FIELD_THROTTLE: throttle_id, f"F{function}": state}
+        return await self.request(
+            MSG_TYPE_THROTTLE, {FIELD_THROTTLE: throttle_id, f"F{function}": state}
+        )
 
     def throttle_state(self, throttle_id: str) -> dict[str, Any] | None:
         """Read-only snapshot of the live-synced cache for one throttle id.
@@ -298,16 +327,16 @@ class JmriWsClient:
         url = _ws_url()
         try:
             self._ws = await asyncio.wait_for(
-                websockets.connect(url), timeout=_CONNECT_TIMEOUT
+                websockets.connect(url), timeout=WS_CONNECT_TIMEOUT_SECONDS
             )
         except (OSError, websockets.exceptions.WebSocketException, asyncio.TimeoutError) as exc:
             self._ws = None
             raise JmriError(f"WebSocket connect to {url} failed: {exc}") from exc
 
         try:
-            hello_raw = await asyncio.wait_for(self._ws.recv(), timeout=_CONNECT_TIMEOUT)
+            hello_raw = await asyncio.wait_for(self._ws.recv(), timeout=WS_CONNECT_TIMEOUT_SECONDS)
             hello = json.loads(hello_raw)
-            self._heartbeat_ms = hello.get("data", {}).get("heartbeat", _DEFAULT_HEARTBEAT_MS)
+            self._heartbeat_ms = hello.get(FIELD_DATA, {}).get(FIELD_HEARTBEAT, WS_DEFAULT_HEARTBEAT_MS)
             logger.info(
                 "Connected to JMRI WebSocket at %s (heartbeat=%dms)", url, self._heartbeat_ms
             )
@@ -324,14 +353,14 @@ class JmriWsClient:
     async def _reacquire_throttles(self) -> None:
         for throttle_id, info in list(self._throttles.items()):
             try:
-                data_out = {"throttle": throttle_id, "address": info["address"]}
-                if info.get("prefix"):
-                    data_out["prefix"] = info["prefix"]
+                data_out = {FIELD_THROTTLE: throttle_id, FIELD_ADDRESS: info[FIELD_ADDRESS]}
+                if info.get(FIELD_PREFIX):
+                    data_out[FIELD_PREFIX] = info[FIELD_PREFIX]
                 async with self._request_lock:
                     # _dispatch updates _throttles[throttle_id] from the
                     # reply itself (a fresh acquire resets JMRI's speed to
                     # 0, so this also resyncs our cache to match).
-                    await self._send_and_wait("throttle", data_out)
+                    await self._send_and_wait(MSG_TYPE_THROTTLE, data_out)
             except JmriError as exc:
                 logger.warning("Failed to re-acquire throttle %r after reconnect: %s", throttle_id, exc)
 
@@ -353,14 +382,14 @@ class JmriWsClient:
             logger.warning("Ignoring non-JSON WebSocket message: %r", raw)
             return
 
-        msg_type = msg.get("type")
-        data = msg.get("data")
+        msg_type = msg.get(FIELD_TYPE)
+        data = msg.get(FIELD_DATA)
         if self._on_message is not None:
             await self._on_message(msg_type, data)
-        if msg_type == "pong":
+        if msg_type == MSG_TYPE_PONG:
             return
 
-        if msg_type == "throttle" and isinstance(data, dict):
+        if msg_type == MSG_TYPE_THROTTLE and isinstance(data, dict):
             self._update_throttle_cache(data)
 
         # A throttle message is only "our" reply if it names the throttle id
@@ -368,10 +397,10 @@ class JmriWsClient:
         # different throttle (e.g. another client's loco) sharing this
         # socket, and the real reply is still to come.
         is_throttle_push = (
-            msg_type == "throttle"
+            msg_type == MSG_TYPE_THROTTLE
             and self._pending_throttle_id is not None
             and isinstance(data, dict)
-            and data.get("throttle") != self._pending_throttle_id
+            and data.get(FIELD_THROTTLE) != self._pending_throttle_id
         )
         if is_throttle_push:
             if self._on_event is not None:
@@ -381,7 +410,7 @@ class JmriWsClient:
         future, self._pending = self._pending, None
         self._pending_throttle_id = None
         if future is not None and not future.done():
-            if msg_type == "error":
+            if msg_type == MSG_TYPE_ERROR:
                 future.set_exception(JmriError(f"JMRI error: {data}"))
             else:
                 future.set_result(data)
@@ -391,14 +420,14 @@ class JmriWsClient:
             await self._on_event(msg_type, data)
 
     def _update_throttle_cache(self, data: dict[str, Any]) -> None:
-        throttle_id = data.get("throttle")
+        throttle_id = data.get(FIELD_THROTTLE)
         info = self._throttles.get(throttle_id) if throttle_id else None
         if info is None:
             return
-        if "speed" in data:
-            info["speed"] = data["speed"]
-        if "forward" in data:
-            info["forward"] = data["forward"]
+        if FIELD_SPEED in data:
+            info[FIELD_SPEED] = data[FIELD_SPEED]
+        if FIELD_FORWARD in data:
+            info[FIELD_FORWARD] = data[FIELD_FORWARD]
         functions = info.setdefault("functions", {})
         for key, value in data.items():
             if key and key[0] == "F" and key[1:].isdigit():
@@ -412,7 +441,7 @@ class JmriWsClient:
                 if self._ws is None:
                     return
                 try:
-                    await self._ws.send(json.dumps({"type": "ping"}))
+                    await self._ws.send(json.dumps({FIELD_TYPE: MSG_TYPE_PING}))
                 except websockets.exceptions.WebSocketException:
                     return
         except asyncio.CancelledError:
@@ -421,7 +450,7 @@ class JmriWsClient:
     async def _reconnect_loop(self) -> None:
         self._ws = None
         self._fail_all_pending(JmriError("Connection lost"))
-        delay = _RECONNECT_DELAY
+        delay = WS_RECONNECT_DELAY_SECONDS
         while not self._closing:
             try:
                 async with self._connect_lock:
@@ -431,7 +460,7 @@ class JmriWsClient:
             except JmriError as exc:
                 logger.warning("Reconnect failed, retrying in %.0fs: %s", delay, exc)
                 await asyncio.sleep(delay)
-                delay = min(delay * 2, _MAX_RECONNECT_DELAY)
+                delay = min(delay * 2, WS_MAX_RECONNECT_DELAY_SECONDS)
 
     def _fail_all_pending(self, exc: Exception) -> None:
         future, self._pending = self._pending, None

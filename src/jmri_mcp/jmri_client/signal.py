@@ -36,6 +36,7 @@ after a POST with an "aspect" key was silently accepted but never applied).
 import logging
 from typing import Any
 
+from jmri_mcp.constants import endpoints
 from jmri_mcp.jmri_client._http import JmriError, _get_json, _post_json, _unwrap
 
 logger = logging.getLogger("jmri_mcp.client")
@@ -51,11 +52,11 @@ async def get_signals() -> list[dict[str, Any]]:
     mast is currently illuminated), held (bool, whether the mast is held at
     its current aspect regardless of interlocking/logic).
     """
-    payload = await _get_json("/json/signalMasts")
+    payload = await _get_json(endpoints.SIGNAL_MASTS)
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected /json/signalMasts payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.SIGNAL_MASTS} payload: {payload!r}")
     signals = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d signal mast(s): %s",
                 len(signals), [s.get("userName") or s.get("name") for s in signals])
@@ -83,7 +84,7 @@ async def set_signal(name: str, aspect: str) -> dict[str, Any]:
     still fail to reach a *valid* requested aspect even though the POST
     itself succeeded.
     """
-    await _post_json(f"/json/signalMast/{name}", {"name": name, "state": aspect})
+    await _post_json(endpoints.SIGNAL_MAST.format(name=name), {"name": name, "state": aspect})
 
     signals = await get_signals()
     matches = [s for s in signals if s.get("name") == name]

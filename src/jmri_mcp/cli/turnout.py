@@ -13,9 +13,10 @@ import sys
 from tabulate import tabulate
 
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.cli.constants import TURNOUT_STATE_NAMES
+from jmri_mcp.constants.cli import TURNOUT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_turnouts, resolve_turnout
 from jmri_mcp.jmri_client import set_turnout as _set_turnout
+from jmri_mcp.jmri_client.turnout import TURNOUT_CLOSED, TURNOUT_THROWN
 
 
 def _row(turnout: dict) -> list:
@@ -141,7 +142,7 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
     ("IT100", shown in `turnout list`'s "System ID" column) — useful for
     turnouts that were never given a friendly userName in JMRI.
     """
-    state_name = "THROWN" if thrown else "CLOSED"
+    state_name = TURNOUT_STATE_NAMES[TURNOUT_THROWN if thrown else TURNOUT_CLOSED]
     try:
         turnouts = await get_turnouts()
         targets = [resolve_turnout(args.name, turnouts)] if args.name else turnouts

@@ -12,7 +12,7 @@ import sys
 from tabulate import tabulate
 
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.cli.constants import SENSOR_STATE_NAMES
+from jmri_mcp.constants.cli import SENSOR_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_sensors, resolve_sensor
 
 

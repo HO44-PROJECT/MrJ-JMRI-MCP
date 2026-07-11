@@ -10,9 +10,9 @@ tools depend on it — this is the lowest common module for the two.
 import asyncio
 from typing import Any, Awaitable, Callable
 
+from jmri_mcp.constants.client_tuning import RAMP_STEPS_PER_SECOND
+from jmri_mcp.constants.protocol import FIELD_FORWARD, FIELD_SPEED
 from jmri_mcp.jmri_ws import JmriWsClient
-
-RAMP_STEPS_PER_SECOND = 4.0
 
 
 async def ramp_speed(
@@ -85,8 +85,8 @@ async def execute_speed_change(
     source of truth for the caller's reported result.
     """
     info = client.throttle_state(throttle_id) or {}
-    current_fraction = info.get("speed") or 0.0
-    current_forward = info.get("forward", True)
+    current_fraction = info.get(FIELD_SPEED) or 0.0
+    current_forward = info.get(FIELD_FORWARD, True)
 
     needs_flip = target_forward is not None and target_forward != current_forward
 

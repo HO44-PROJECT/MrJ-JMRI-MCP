@@ -8,11 +8,12 @@ import asyncio
 import logging
 from typing import Any
 
+from jmri_mcp.constants import endpoints
+from jmri_mcp.constants.client_tuning import POWER_POST_RECHECK_DELAY_SECONDS
 from jmri_mcp.jmri_client._http import JmriError, _get_json, _post_json, _unwrap
 
 logger = logging.getLogger("jmri_mcp.client")
 
-_POST_RECHECK_DELAY = 1.0
 POWER_ON = 2
 POWER_OFF = 4
 
@@ -23,12 +24,12 @@ async def get_version() -> str:
     /json/version is unusual: the version is the *key* of the data object
     (e.g. {"5.4.0": "v5"}), not a value under a fixed field name.
     """
-    payload = await _get_json("/json/version")
+    payload = await _get_json(endpoints.VERSION)
     if isinstance(payload, list):
         payload = payload[0] if payload else {}
     data = _unwrap(payload)
     if not isinstance(data, dict) or not data:
-        raise JmriError(f"Unexpected /json/version payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.VERSION} payload: {payload!r}")
     return next(iter(data))
 
 
@@ -38,11 +39,11 @@ async def get_systems() -> list[dict[str, Any]]:
     Each entry has at least: name, prefix, state (2=ON, 4=OFF, 0=UNKNOWN,
     8=IDLE) and default (bool).
     """
-    payload = await _get_json("/json/power")
+    payload = await _get_json(endpoints.POWER)
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected /json/power payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.POWER} payload: {payload!r}")
     systems = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d power system(s): %s",
                 len(systems), [s.get("name") for s in systems])
@@ -54,8 +55,8 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
 
     The POST response is transient (JMRI/DCC++ re-queries the command
     station and may echo an intermediate state) — this only trusts a
-    re-read taken _POST_RECHECK_DELAY seconds after the POST, not the
-    POST response itself.
+    re-read taken POWER_POST_RECHECK_DELAY_SECONDS seconds after the POST,
+    not the POST response itself.
 
     Re-POSTing the SAME state JMRI/DCC++ already reports is a known JMRI
     bug, not a safe no-op: it knocks the system into state UNKNOWN, which
@@ -76,8 +77,8 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     if current.get("state") == desired:
         return {**current, "confirmed": True}
 
-    await _post_json("/json/power", {"state": desired, "prefix": prefix})
-    await asyncio.sleep(_POST_RECHECK_DELAY)
+    await _post_json(endpoints.POWER, {"state": desired, "prefix": prefix})
+    await asyncio.sleep(POWER_POST_RECHECK_DELAY_SECONDS)
 
     systems = await get_systems()
     matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
@@ -99,7 +100,7 @@ async def _set_power_all(turn_on: bool) -> list[dict[str, Any]]:
 
     Discovers every system via get_systems() and calls
     set_power(prefix, turn_on) on each in turn, sequentially not
-    concurrently: set_power's own _POST_RECHECK_DELAY re-read already
+    concurrently: set_power's own POWER_POST_RECHECK_DELAY_SECONDS re-read already
     serializes each system's own round-trip, and sequential calls avoid
     hammering JMRI/DCC++ with simultaneous POSTs to different command
     stations.

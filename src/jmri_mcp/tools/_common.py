@@ -6,10 +6,13 @@ behavior, and get_power/set_power/system_status all need the same power
 compaction.
 """
 
-POWER_STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
-LIGHT_STATE_NAMES = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "INCONSISTENT"}
-TURNOUT_STATE_NAMES = {2: "CLOSED", 4: "THROWN", 0: "UNKNOWN", 8: "INCONSISTENT"}
-SENSOR_STATE_NAMES = {2: "ACTIVE", 4: "INACTIVE", 0: "UNKNOWN", 8: "INCONSISTENT"}
+from jmri_mcp.constants.cli import (
+    LIGHT_STATE_NAMES,
+    POWER_STATE_NAMES,
+    SENSOR_STATE_NAMES,
+    TURNOUT_STATE_NAMES,
+)
+from jmri_mcp.constants.protocol import FIELD_ADDRESS, FIELD_FORWARD, FIELD_SPEED
 
 
 def compact_power(system: dict) -> dict:
@@ -172,9 +175,9 @@ def compact_throttle(data: dict) -> dict:
         {"address": ..., "speed": ..., "direction": "forward"/"reverse"/None}.
     """
     return {
-        "address": data.get("address"),
-        "speed": data.get("speed"),
-        "direction": direction_name(data.get("forward")),
+        "address": data.get(FIELD_ADDRESS),
+        "speed": data.get(FIELD_SPEED),
+        "direction": direction_name(data.get(FIELD_FORWARD)),
     }
 
 

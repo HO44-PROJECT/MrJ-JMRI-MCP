@@ -1,6 +1,6 @@
 """Small helpers shared across jmri-cli's command modules."""
 
-from jmri_mcp.cli.constants import CLI_THROTTLE_ID_PREFIX
+from jmri_mcp.constants.cli import CLI_THROTTLE_ID_PREFIX
 
 
 def cli_throttle_id(address: int) -> str:

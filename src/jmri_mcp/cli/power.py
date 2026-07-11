@@ -12,7 +12,7 @@ import sys
 from tabulate import tabulate
 
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.cli.constants import POWER_STATE_NAMES
+from jmri_mcp.constants.cli import POWER_STATE_NAMES
 from jmri_mcp.jmri_client import (
     JmriError,
     get_systems,
@@ -20,6 +20,7 @@ from jmri_mcp.jmri_client import (
     resolve_system,
     set_power,
 )
+from jmri_mcp.jmri_client.power import POWER_ON, POWER_OFF
 
 
 def _state_name(system: dict) -> str:
@@ -176,7 +177,7 @@ async def _power_set(args: argparse.Namespace, turn_on: bool) -> int:
     that one. Sequential like _set_power_all, so results print in a stable
     order and JMRI/DCC++ isn't hit with simultaneous POSTs.
     """
-    state_name = "ON" if turn_on else "OFF"
+    state_name = POWER_STATE_NAMES[POWER_ON if turn_on else POWER_OFF]
     try:
         systems = await get_systems()
         if args.system:

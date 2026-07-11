@@ -1,0 +1,12 @@
+"""JMRI REST path templates (jmri_client's one-shot HTTP endpoints)."""
+
+VERSION = "/json/version"
+POWER = "/json/power"
+ROSTER = "/json/roster"
+LIGHTS = "/json/lights"
+LIGHT = "/json/light/{name}"
+TURNOUTS = "/json/turnouts"
+TURNOUT = "/json/turnout/{name}"
+SENSORS = "/json/sensors"
+SIGNAL_MASTS = "/json/signalMasts"
+SIGNAL_MAST = "/json/signalMast/{name}"

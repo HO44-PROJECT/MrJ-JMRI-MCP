@@ -629,7 +629,7 @@ async def test_power_off_all_confirms_every_system(monkeypatch):
 
     from tests.conftest import MOCK_JMRI_URL
 
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     mcp = make_server()
     # Stateful fake: systems start ON, flip to OFF once their POST arrives —
     # so set_power's pre-check sees ON (POST is not skipped) and the
@@ -675,7 +675,7 @@ async def test_power_on_all_confirms_every_system(monkeypatch):
 
     from tests.conftest import MOCK_JMRI_URL
 
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     mcp = make_server()
     # Stateful fake: systems start OFF, flip to ON once their POST arrives —
     # so set_power's pre-check sees OFF (POST is not skipped) and the

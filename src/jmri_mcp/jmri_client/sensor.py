@@ -11,6 +11,7 @@ reading it (contrast with turnout.py/light.py, which do write).
 import logging
 from typing import Any
 
+from jmri_mcp.constants import endpoints
 from jmri_mcp.jmri_client._http import JmriError, _get_json, _unwrap
 
 logger = logging.getLogger("jmri_mcp.client")
@@ -29,11 +30,11 @@ async def get_sensors() -> list[dict[str, Any]]:
     (e.g. turnout motor feedback, which shows up here too — see the
     "sensor" field nested in get_turnouts() entries).
     """
-    payload = await _get_json("/json/sensors")
+    payload = await _get_json(endpoints.SENSORS)
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected /json/sensors payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.SENSORS} payload: {payload!r}")
     sensors = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d sensor(s): %s",
                 len(sensors), [s.get("userName") or s.get("name") for s in sensors])

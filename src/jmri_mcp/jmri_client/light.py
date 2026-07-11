@@ -11,6 +11,7 @@ DCC address.
 import logging
 from typing import Any
 
+from jmri_mcp.constants import endpoints
 from jmri_mcp.jmri_client._http import JmriError, _get_json, _post_json, _unwrap
 
 logger = logging.getLogger("jmri_mcp.client")
@@ -26,11 +27,11 @@ async def get_lights() -> list[dict[str, Any]]:
     (may be None if never set in JMRI), state (2=ON, 4=OFF; JMRI can also
     report 0=UNKNOWN or 8=INCONSISTENT for a light with feedback wired up).
     """
-    payload = await _get_json("/json/lights")
+    payload = await _get_json(endpoints.LIGHTS)
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected /json/lights payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.LIGHTS} payload: {payload!r}")
     lights = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d light(s): %s",
                 len(lights), [lt.get("userName") or lt.get("name") for lt in lights])
@@ -52,7 +53,7 @@ async def set_light(name: str, turn_on: bool) -> dict[str, Any]:
     can settle to a different state than requested.
     """
     desired = LIGHT_ON if turn_on else LIGHT_OFF
-    await _post_json(f"/json/light/{name}", {"name": name, "state": desired})
+    await _post_json(endpoints.LIGHT.format(name=name), {"name": name, "state": desired})
 
     lights = await get_lights()
     matches = [lt for lt in lights if lt.get("name") == name]

@@ -29,7 +29,7 @@ async def test_request_raises_jmri_error_on_error_reply(fake_jmri):
 
 async def test_request_times_out_with_no_reply(fake_jmri, monkeypatch):
     import jmri_mcp.jmri_ws as ws_module
-    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+    monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
     client = JmriWsClient()
     with pytest.raises(JmriError, match="Timed out"):
         await client.request("silent", {})
@@ -150,7 +150,7 @@ async def test_set_speed_noop_skips_request_without_hanging(fake_jmri, monkeypat
     # matches the current speed. Drop the request timeout so the test
     # would fail fast (instead of hanging ~5s) if set_speed still sent it.
     import jmri_mcp.jmri_ws as ws_module
-    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+    monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()
     await client.acquire_throttle("t1", 3)  # starts at speed 0.0
@@ -189,7 +189,7 @@ async def test_set_direction_on_acquired_throttle(fake_jmri):
 
 async def test_set_direction_noop_skips_request_without_hanging(fake_jmri, monkeypatch):
     import jmri_mcp.jmri_ws as ws_module
-    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+    monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()
     await client.acquire_throttle("t1", 3)  # starts forward=True
@@ -226,7 +226,7 @@ async def test_set_function_on_acquired_throttle(fake_jmri):
 
 async def test_set_function_noop_skips_request_without_hanging(fake_jmri, monkeypatch):
     import jmri_mcp.jmri_ws as ws_module
-    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+    monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()
     await client.acquire_throttle("t1", 3)
@@ -277,7 +277,7 @@ async def test_emergency_stop_all_with_no_throttles_is_a_noop(fake_jmri):
 
 async def test_emergency_stop_all_skips_already_stopped_without_hanging(fake_jmri, monkeypatch):
     import jmri_mcp.jmri_ws as ws_module
-    monkeypatch.setattr(ws_module, "_REQUEST_TIMEOUT", 0.3)
+    monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()
     await client.acquire_throttle("t1", 3)

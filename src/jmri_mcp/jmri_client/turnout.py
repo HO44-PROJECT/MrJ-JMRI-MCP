@@ -8,6 +8,7 @@ jmri_mcp.jmri_client._http for the shared GET/POST plumbing).
 import logging
 from typing import Any
 
+from jmri_mcp.constants import endpoints
 from jmri_mcp.jmri_client._http import JmriError, _get_json, _post_json, _unwrap
 
 logger = logging.getLogger("jmri_mcp.client")
@@ -35,11 +36,11 @@ async def get_turnouts() -> list[dict[str, Any]]:
     has_feedback_sensor field, derived from this same "sensor" array, for
     how downstream callers should interpret this.
     """
-    payload = await _get_json("/json/turnouts")
+    payload = await _get_json(endpoints.TURNOUTS)
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected /json/turnouts payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.TURNOUTS} payload: {payload!r}")
     turnouts = [_unwrap(entry) for entry in payload]
     logger.info("Discovered %d turnout(s): %s",
                 len(turnouts), [t.get("userName") or t.get("name") for t in turnouts])
@@ -60,7 +61,7 @@ async def set_turnout(name: str, thrown: bool) -> dict[str, Any]:
     requested position.
     """
     desired = TURNOUT_THROWN if thrown else TURNOUT_CLOSED
-    await _post_json(f"/json/turnout/{name}", {"name": name, "state": desired})
+    await _post_json(endpoints.TURNOUT.format(name=name), {"name": name, "state": desired})
 
     turnouts = await get_turnouts()
     matches = [t for t in turnouts if t.get("name") == name]

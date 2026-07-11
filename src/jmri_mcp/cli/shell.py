@@ -59,7 +59,7 @@ except ImportError:
 from jmri_mcp.cli._common import cli_throttle_id
 from jmri_mcp.cli._doc import GROUP_HELP
 from jmri_mcp.cli.banner import banner
-from jmri_mcp.cli.constants import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
+from jmri_mcp.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_mcp.cli.parser import build_parser
 from jmri_mcp.jmri_ws import JmriError as JmriWsError
 from jmri_mcp.jmri_ws import JmriWsClient

@@ -38,7 +38,7 @@ def _make_router(initial_states: dict[str, int]):
 
 
 async def test_power_off_all_confirms_every_system(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     get_side_effect, post_side_effect = _make_router({"O": POWER_ON, "Z": POWER_ON, "R": POWER_ON})
 
     with respx.mock() as router:
@@ -54,7 +54,7 @@ async def test_power_off_all_confirms_every_system(monkeypatch):
 
 
 async def test_power_off_all_reports_unconfirmed_system_honestly(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     live_state = {"O": POWER_ON, "Z": POWER_ON}
 
     def get_side_effect(request):
@@ -79,7 +79,7 @@ async def test_power_off_all_reports_unconfirmed_system_honestly(monkeypatch):
 
 
 async def test_power_off_all_with_single_system(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     get_side_effect, post_side_effect = _make_router({"R": POWER_ON})
 
     with respx.mock() as router:
@@ -94,7 +94,7 @@ async def test_power_off_all_with_single_system(monkeypatch):
 
 
 async def test_power_on_all_confirms_every_system(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     get_side_effect, post_side_effect = _make_router({"O": POWER_OFF, "Z": POWER_OFF, "R": POWER_OFF})
 
     with respx.mock() as router:
@@ -110,7 +110,7 @@ async def test_power_on_all_confirms_every_system(monkeypatch):
 
 
 async def test_power_on_all_reports_unconfirmed_system_honestly(monkeypatch):
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     live_state = {"O": POWER_OFF, "Z": POWER_OFF}
 
     def get_side_effect(request):
@@ -138,7 +138,7 @@ async def test_power_off_all_skips_post_for_already_off_system(monkeypatch):
     """The JMRI bug this guards against: re-POSTing the same state can knock
     the system into UNKNOWN. power_off_all must never POST to a system
     that's already OFF."""
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     live_state = {"O": POWER_OFF, "Z": POWER_ON}
     post_calls = []
 

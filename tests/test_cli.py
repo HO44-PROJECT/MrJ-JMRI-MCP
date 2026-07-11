@@ -53,7 +53,7 @@ async def test_power_set_twice_same_state_skips_second_post(monkeypatch, capsys)
 
     from tests.conftest import MOCK_JMRI_URL
 
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     live_state = {"O": 4}  # starts OFF
     post_calls = []
 
@@ -91,7 +91,7 @@ async def test_power_off_cuts_every_system(monkeypatch, capsys):
 
     from tests.conftest import MOCK_JMRI_URL
 
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     # systems start ON so set_power's pre-check doesn't skip the POST
     live_state = {"O": 2, "R": 2}
 
@@ -125,7 +125,7 @@ async def test_power_on_restores_every_system(monkeypatch, capsys):
 
     from tests.conftest import MOCK_JMRI_URL
 
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     # systems start OFF so set_power's pre-check doesn't skip the POST
     live_state = {"O": 4, "R": 4}
 
@@ -160,7 +160,7 @@ async def test_power_on_one_system_only(monkeypatch, capsys):
 
     from tests.conftest import MOCK_JMRI_URL
 
-    monkeypatch.setattr("jmri_mcp.jmri_client.power._POST_RECHECK_DELAY", 0)
+    monkeypatch.setattr("jmri_mcp.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
     live_state = {"O": 4, "R": 4}
 
     def get_power(request):

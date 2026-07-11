@@ -10,6 +10,12 @@ src/xiaozhi_wrapper/    # generic stdio<->WebSocket bridge for xiaozhi/Kira (no 
 src/jmri_mcp/
 ├── config/             # env vars: JMRI_URL (e.g. http://localhost:12080)
 │   └── __init__.py
+├── constants/          # dedicated modules for every literal used more than once
+│   ├── __init__.py    #   re-exports protocol/endpoints/client_tuning/cli
+│   ├── protocol.py     #  JMRI JSON field names + WS message-type strings
+│   ├── endpoints.py    #  JMRI REST path templates (e.g. TURNOUT = "/json/turnout/{name}")
+│   ├── client_tuning.py #  HTTP/WS timeouts, reconnect delays, ramp step rate
+│   └── cli.py          #  *_STATE_NAMES dicts, CLI id prefixes/ranges, SORT_INDICATOR
 ├── jmri_client/       # async HTTP client for JMRI's JSON API
 │   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor/signal)
 │   ├── _http.py        #  shared GET/POST plumbing, JmriError, envelope unwrap
@@ -50,7 +56,6 @@ src/jmri_mcp/
     │                  #     banner.py's welcome banner, everything else runs clean
     ├── __main__.py    #   enables `python -m jmri_mcp.cli`
     ├── banner.py      #   the welcome banner (name, version, repo link, command list)
-    ├── constants.py   #   shared constants (state names, id prefixes, ranges)
     ├── _common.py     #   cross-module helpers (cli_throttle_id)
     ├── _doc.py        #   GROUP_HELP: short one-liner per top-level command group
     ├── _match.py      #   find_regex/find_glob: shared matching for findr/findg leaves
@@ -112,6 +117,34 @@ their own sections below) have been implemented on top of that. Signal
 masts (`signal.py` #26) were added afterward as a standalone card, once the
 maintainer had a real signalMast configured on their layout to design
 against.
+
+## `constants/`: every repeated literal in one place, organized by layer
+
+Any magic string or number used more than once lives in `src/jmri_mcp/constants/`,
+never re-typed at each call site. Four dedicated **modules** (not `class X:` bodies —
+module-qualified access like `endpoints.TURNOUT` gives the same namespacing with less
+boilerplate), split along the same layer boundary as the rest of the tree:
+
+- **`protocol.py`** — JMRI JSON field-name keys (`FIELD_STATE`, `FIELD_THROTTLE`,
+  `FIELD_SPEED`, `FIELD_FORWARD`, ...) and WebSocket message-type strings
+  (`MSG_TYPE_THROTTLE`, `MSG_TYPE_PING`, `MSG_TYPE_PONG`, `MSG_TYPE_ERROR`). Shared by
+  `jmri_client` (HTTP) and `jmri_ws` (WebSocket), which speak the same JMRI JSON object
+  shapes over two different transports.
+- **`endpoints.py`** — JMRI REST path templates, e.g. `TURNOUT = "/json/turnout/{name}"`;
+  call sites do `endpoints.TURNOUT.format(name=name)` instead of an inline f-string.
+- **`client_tuning.py`** — HTTP/WS timeouts, the POST-recheck delay, WS reconnect
+  backoff bounds, the default heartbeat, and `RAMP_STEPS_PER_SECOND` (imported by
+  `jmri_ws/ramp.py`, not defined there).
+- **`cli.py`** — the `POWER_STATE_NAMES`/`LIGHT_STATE_NAMES`/`TURNOUT_STATE_NAMES`/
+  `SENSOR_STATE_NAMES` dicts (the single source both `tools/_common.py` and every
+  `cli/*.py` module import, rather than each redefining them), CLI throttle-id prefixes,
+  function/speed ranges, and `SORT_INDICATOR` (` ▼`, appended to a sorted column's header
+  at the print call site — never baked into the header string itself).
+
+`cli/light.py`, `cli/power.py`, and `cli/turnout.py`'s `_*_set()` helpers reconstruct
+the reported state name via `STATE_NAMES[ON_VALUE if flag else OFF_VALUE]` — reading the
+same dict `_row()` uses to render table rows — rather than a second, independent
+`"ON" if flag else "OFF"`-style string literal that could drift out of sync with it.
 
 ## Two JMRI clients, two different shapes
 

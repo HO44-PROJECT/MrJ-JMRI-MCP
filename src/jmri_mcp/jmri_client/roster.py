@@ -8,6 +8,7 @@ import logging
 import unicodedata
 from typing import Any
 
+from jmri_mcp.constants import endpoints
 from jmri_mcp.jmri_client._http import JmriError, _get_json, _unwrap
 
 logger = logging.getLogger("jmri_mcp.client")
@@ -25,11 +26,11 @@ async def get_roster_function_labels(name: str) -> dict[int, str]:
     get_roster()/resolve_roster_entry(), not fuzzy here — callers should
     already have resolved the exact name before calling this).
     """
-    payload = await _get_json("/json/roster")
+    payload = await _get_json(endpoints.ROSTER)
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected /json/roster payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.ROSTER} payload: {payload!r}")
     entries = [_unwrap(entry) for entry in payload]
     match = next((e for e in entries if e.get("name") == name), None)
     if match is None:
@@ -59,11 +60,11 @@ async def get_roster() -> list[dict[str, Any]]:
     the user's JMRI 5.4.0 — most entries have an empty list, one had
     ["test"]), not "group" as its PanelPro UI name might suggest.
     """
-    payload = await _get_json("/json/roster")
+    payload = await _get_json(endpoints.ROSTER)
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
-        raise JmriError(f"Unexpected /json/roster payload: {payload!r}")
+        raise JmriError(f"Unexpected {endpoints.ROSTER} payload: {payload!r}")
     entries = [_unwrap(entry) for entry in payload]
     compact = []
     for e in entries:

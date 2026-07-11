@@ -86,21 +86,32 @@ def _fold(text: str) -> str:
 def resolve_roster_entry(
     query: str, roster: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Match a user-supplied locomotive name against the roster (see get_roster).
+    """Match a user-supplied locomotive name or DCC address against the roster.
 
     Tolerant like resolve_system: case/accent-insensitive ("autorail",
     "AUTORAIL", "boite a sel" all match), exact name first, then substring
-    fragment if that's unambiguous. Unlike resolve_system there's no
-    "default" to fall back to on an empty query — a locomotive must be
-    named. Raises JmriError (not found / ambiguous), same as resolve_system,
-    so callers can handle both the same way.
+    fragment if that's unambiguous. A purely numeric query (e.g. "4") is
+    matched against `address` instead of `name` — DCC addresses are unique
+    in a roster, so this is always a single exact match or not found, never
+    ambiguous. Unlike resolve_system there's no "default" to fall back to on
+    an empty query — a locomotive must be named. Raises JmriError (not
+    found / ambiguous), same as resolve_system, so callers can handle both
+    the same way.
     """
     if not roster:
         raise JmriError("JMRI roster is empty")
     if not query or not query.strip():
-        raise JmriError("No locomotive name given")
+        raise JmriError("No locomotive name or address given")
 
-    q = _fold(query.strip())
+    stripped = query.strip()
+    if stripped.lstrip("-").isdigit():
+        address = int(stripped)
+        match = next((e for e in roster if e.get("address") == address), None)
+        if match is None:
+            raise JmriError(f"No roster entry with address {address}")
+        return match
+
+    q = _fold(stripped)
     names = [str(e.get("name", "")) for e in roster]
 
     exact = [e for e in roster if _fold(str(e.get("name", ""))) == q]

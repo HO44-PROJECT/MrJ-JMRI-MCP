@@ -43,19 +43,23 @@ src/jmri_mcp/
 │   ├── __init__.py    #   main(); FastMCP wiring; logging → stderr only
 │   └── __main__.py    #   enables `python -m jmri_mcp.server`
 └── cli/               # jmri-cli: manual command-line tool, no MCP client needed
-    ├── __init__.py    #   main(); package docstring has full usage examples
+    ├── __init__.py    #   main(); bare/-h/--help all show banner.py's welcome banner
     ├── __main__.py    #   enables `python -m jmri_mcp.cli`
+    ├── banner.py      #   the welcome banner (name, version, repo link, command list)
     ├── constants.py   #   shared constants (state names, id prefixes, ranges)
     ├── _common.py     #   cross-module helpers (cli_throttle_id)
-    ├── _doc.py        #   top-level --help description text
-    ├── power.py       #   power status/set/stop-all, status (jmri_client)
-    ├── roster.py      #   roster / roster find / roster functions (jmri_client)
-    ├── throttle.py    #   throttle acquire/release/speed/.../stop-all/sniff (jmri_ws)
-    ├── light.py       #   light list/status/set (jmri_client)
-    ├── turnout.py     #   turnout list/status/set (jmri_client)
-    ├── sensor.py      #   sensor list/status (jmri_client, read-only)
-    ├── signal.py      #   signal list/status/set (jmri_client, signalMast only)
-    └── parser.py      #   build_parser(): wires the above into one CLI
+    ├── _doc.py        #   GROUP_HELP: short one-liner per top-level command group
+    ├── state.py       #   local throttle-state cache (~/.jmri-cli/throttle_state.json)
+    ├── power.py       #   power [status|on|off|get|default], status (jmri_client)
+    ├── roster.py      #   roster [list|find|functions] (jmri_client)
+    ├── throttle.py    #   throttle [list|acquire|release|speed|stop|estop|
+    │                  #     forward|reverse|on|off|sniff] (jmri_ws + state.py)
+    ├── light.py       #   light [list|on|off] (jmri_client)
+    ├── turnout.py     #   turnout [list|closed|thrown] (jmri_client)
+    ├── sensor.py      #   sensor [list|status] (jmri_client, read-only)
+    ├── signal.py      #   signal [list|status|set] (jmri_client, signalMast only)
+    └── parser.py      #   build_parser(): wires the above into one CLI, incl. the
+                        #     bare-group-default and verb-elevation patterns (see docs/cli.md)
 ```
 
 Seven domains — **power**, **roster**, **throttle**, **light**, **turnout**,
@@ -339,10 +343,226 @@ body sent `{"name": ..., "aspect": ...}`, and JMRI's server-side handler
 only ever reads `"state"` (see above), so the request was silently a
 no-op from JMRI's point of view every time. Fixed by sending `"state"`
 instead; a regression test now asserts the POST body's JSON key so this
-exact bug can't reappear silently. Re-verification against the real
+exact bug can't reappear silently. Re-verified live against the real
 "bloc31" mast (the maintainer's own `userName`, set after this bug was
-first reported) is pending fresh authorization before this card is
-closed.
+first reported) — requesting `Hp0` now confirms correctly.
+
+## CLI UX: banner, per-leaf examples, and the bare-group/verb-elevation pattern
+
+`jmri-cli`'s command surface went through two redesigns driven directly by
+maintainer feedback on the real terminal output, not speculative design:
+
+**Welcome banner + per-leaf epilogs** (`cli/banner.py`, `cli/__init__.py`,
+`cli/_doc.py`'s `GROUP_HELP`). Bare `jmri-cli`, `jmri-cli -h`, and
+`jmri-cli --help` all print a byte-identical, non-technical welcome banner
+(name, version via `importlib.metadata`, repo link, one-line purpose,
+command list) instead of argparse's default technical help — no
+implementation detail (`JMRI_URL`, "no MCP client" framing) belongs there.
+Each top-level group gets a short, inviting one-liner in `GROUP_HELP`
+instead of a dry description. There used to be a separate `jmri-cli
+examples` subcommand collecting every runnable example in one place; it was
+removed in favor of putting each leaf subcommand's own example directly in
+its `-h` epilog (`parser.py`'s `_leaf()` helper sets `epilog=f"example:\n
+{example}"` with `RawDescriptionHelpFormatter` so it's never auto-rewrapped)
+— `jmri-cli <group> <leaf> -h` is now self-sufficient, and
+`tests/test_cli.py::test_every_leaf_subcommand_epilog_example_is_parseable`
+re-parses every printed example against the real parser, so a
+renamed/removed subcommand that isn't updated here fails the test suite
+instead of silently going stale.
+
+**Bare-group-default + verb-elevation** (`parser.py`'s `_group()` helper).
+A `jmri-cli roster` terminal transcript the maintainer pasted (missing
+header, unaligned columns) triggered a broader pass: every list-style
+command now renders through `tabulate` with explicit headers, and every
+command group was audited for two consistency rules stated explicitly by
+the maintainer ("qu'en déduis-tu en terme de bonne pratique et de
+cohérence?"):
+
+- **Bare group = smart default**, not an argparse "required" error.
+  `subparsers.add_subparsers(dest=..., required=False)` plus
+  `group_cmd.set_defaults(func=default_func)` lets `jmri-cli power` run
+  `power_status` directly. Applied to every group: `power`→`status`,
+  `roster`→`list`, `throttle`→`list`, `light`/`turnout`/`sensor`/`signal`→
+  their own `list`.
+- **Verb elevation**: a leaf whose own argument was really a fixed choice
+  of state values (`power set <system> <on|off>`, `throttle direction
+  <addr> <forward|reverse>`, `throttle lights-on`/`lights-off`) is
+  rewritten so the state value becomes the subcommand name itself, and the
+  target becomes an *optional* fuzzy positional defaulting to "every
+  member of the group" — `power on [system]`, `power off [system]`
+  (replacing `power set`/`stop-all`/`start-all` entirely, not aliasing
+  them), `throttle forward <loco>`/`throttle reverse <loco>` (no more
+  shared `direction` leaf), `throttle on <loco> [function]`/`throttle off
+  <loco> [function]` (replacing the F0-assuming `lights-on`/`lights-off`
+  — no function number is ever a protocol guarantee for "lights", see
+  `throttle.py`'s `_resolve_function_numbers`), `light on
+  [name]`/`light off [name]`, `turnout closed [name]`/`turnout thrown
+  [name]` (both replacing their old `status`/`set <name> <state>` shape).
+  `throttle forward`/`reverse` are wired via `functools.partial(
+  throttle.throttle_direction, forward=True/False)` in `parser.py` so both
+  leaves share one implementation while still being independent
+  subcommands, not a shared one with a choice argument.
+
+`throttle`'s bare-default and `speed <loco>` (value omitted = read) needed
+one more piece to actually work: a CLI invocation is a fresh
+acquire-act-close WebSocket connection every time (see below), so there is
+no live JMRI state left to query back between two separate `jmri-cli
+throttle` calls. `cli/state.py` is a small local JSON cache
+(`~/.jmri-cli/throttle_state.json`, keyed by DCC address) that every
+throttle-touching command writes to and that `throttle list`/`speed`
+(no value)/`stop` (no address) read from — a convenience cache the CLI
+keeps for itself, not a live source of truth (see `docs/cli.md` for the
+staleness caveat). `throttle on`/`off` with no function number resolves
+against the loco's roster-set function labels
+(`get_roster_function_labels`, from M3) and raises an explicit error
+rather than falling back to F0 if the loco has none labeled — a
+deliberate maintainer decision (over a silent F0 default), consistent with
+the project's existing stance that F-number meaning is decoder/roster-
+specific, never a protocol guarantee.
+
+## CLI UX: interactive shell, ramping, and the `client=` kwarg pattern
+
+**Why one-shot mode can never reliably hold a nonzero speed.** Every
+`jmri-cli throttle` invocation opened a fresh `JmriWsClient`, acted, then
+closed it in a `finally` block — and JMRI releases a throttle the instant
+its owning connection closes (verified live via Proxyman capture). A
+temporary `HOLD_SECONDS_AFTER_SPEED` sleep constant only delayed the release,
+it never fixed it (raising it from 1.0 to 10.0 just made the loco stop 9
+seconds later instead of 1). The actual fix needed a genuine second
+connection *mode* — a persistent one — rather than another tweak to the
+one-shot lifecycle, since a fresh-connection-per-command design fundamentally
+cannot hold state between commands, only within one.
+
+**Two connection modes, one implementation.** Every WS-based
+`throttle_*` function in `throttle.py` (`throttle_acquire`, `_release`,
+`_speed`, `_stop`, `_estop`, `_direction`, `_on`, `_off`) takes an optional
+`*, client: JmriWsClient | None = None` and routes its JMRI calls through
+`_client_scope(client)`:
+
+```python
+@contextlib.asynccontextmanager
+async def _client_scope(client: JmriWsClient | None):
+    if client is not None:
+        yield client          # shell mode - caller owns the lifecycle
+        return
+    owned = JmriWsClient()    # one-shot mode - this call owns it
+    try:
+        yield owned
+    finally:
+        await owned.close()
+```
+
+`client=None` (the default, used by one-shot CLI invocations) opens a fresh
+connection, acts, and closes it exactly as before. `client=<JmriWsClient>`
+(passed by `shell.py`) reuses a connection that outlives any single command
+— the *only* code difference between "acquire and release a throttle
+immediately" and "keep a locomotive moving indefinitely" is which of these
+two branches runs, not a separate code path. `throttle_list` (reads
+`state.py`'s local cache only) and `throttle_sniff` (explicitly one-shot-only,
+see below) don't take a `client` kwarg — neither has a reason to share a
+connection.
+
+**`shell.py`: bare `jmri-cli` launches it, not a subcommand.** `cli/__init__.py`'s
+`main()` special-cases `len(sys.argv) == 1` to call `shell.run_shell()`
+directly, before `build_parser()` is even invoked — deliberately *not* a
+`jmri-cli shell` subcommand, so the shell is the natural "just run it" path
+rather than something to discover. `jmri-cli -h`/`--help` is checked
+immediately after and still prints today's banner, unchanged. `run_shell()`
+owns one long-lived `JmriWsClient` for the session; each typed line is
+`shlex.split()`, parsed with the *same* `build_parser()` tree as one-shot
+mode (zero duplication of the argparse tree or dispatch logic), and
+dispatched via `args.func(args, **kwargs)` where
+`kwargs = {"client": client} if _is_ws_func(args.func) else {}`.
+`_is_ws_func` checks `"client" in inspect.signature(func).parameters` —
+this works unmodified against the `functools.partial(throttle_direction,
+forward=...)` objects used for `forward`/`reverse`, since `inspect.signature`
+already understands partials natively. A per-line `parser.parse_args()`
+is wrapped in `try/except SystemExit: continue`, since argparse calls
+`sys.exit()` on a bad line or `-h` — one-shot mode wants that same
+`SystemExit` to reach the OS exit code, the shell must swallow it and keep
+the session alive instead. `throttle sniff` is special-cased and rejected
+before parsing (needs its own connection and its own indefinite Ctrl-C loop,
+which would otherwise block the shell's own `input()` loop) with a message
+redirecting to a second terminal.
+
+Reading the prompt uses `asyncio.to_thread(input, "jmri-cli> ")` rather than
+a blocking call directly on the event loop — the client's background
+reader/keepalive tasks (see `JmriWsClient` design above) need the loop free
+while waiting on stdin.
+
+**Exit-confirmation** (`_confirm_exit`) is built on two new read-only
+`JmriWsClient` accessors added specifically for this:
+
+```python
+def throttle_state(self, throttle_id: str) -> dict[str, Any] | None: ...
+def all_throttle_states(self) -> dict[str, dict[str, Any]]: ...
+```
+
+Both return copies of the live-synced per-throttle cache described in
+`JmriWsClient` design above (never the private dict itself), so `shell.py`
+never reaches into `_throttles` directly. `_moving_addresses()` filters
+`all_throttle_states()` to nonzero speed; if any are moving, Ctrl-D, typed
+`exit`/`quit`, and Ctrl-C at the prompt all funnel into the same prompt-then-
+ramp-down flow, using a fixed `SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS = 3.0`
+constant for every address (deliberately no per-address memory of past
+`--rampdown` values — kept simple). Declining leaves every locomotive in its
+current state with an explicit stderr warning; JMRI does not stop a loco
+just because its throttle's owning connection closes.
+
+**Ramping** (`_ramp_speed`, `_execute_speed_change`, both in `throttle.py`).
+`_ramp_speed` is the shared linear-ramp primitive: `seconds <= 0` or
+`from_fraction == to_fraction` degenerates to a single final `set_speed()`
+call, so every caller can unconditionally call it rather than branching on
+"was a ramp actually requested." Steps are `max(1, int(seconds *
+RAMP_STEPS_PER_SECOND))` (4 steps/second, `constants.py`), always finishing
+with one exact final `set_speed(to_fraction)` so float accumulation never
+leaves the throttle short of target. Its `sleep` parameter is resolved
+*inside* the function body (`sleep = sleep or asyncio.sleep`), not as a bound
+default — a bound default captures the function object at import time, which
+would make `monkeypatch.setattr("...throttle.asyncio.sleep", fake_sleep)`
+silently ineffective; resolving fresh inside the body is what makes that
+monkeypatch actually take effect, scoped to `throttle.py` only.
+
+`_execute_speed_change` is the shared orchestrator behind `speed`,
+`forward`/`reverse` (via the `target_forward`/`target_fraction` split, see
+below): ramp-down (if direction is flipping, or `--rampdown` is given) →
+optional direction flip via `client.set_direction()` → ramp-up to target (if
+`--rampup` given) → hold for `--hold` → for one-shot mode only, a final
+ramp-to-0 once a bounded hold ends. It re-reads `client.throttle_state()`
+once at the end for its return value rather than threading state through
+every internal step. The hold is the one place in the whole design with
+explicit interrupt handling:
+
+```python
+if hold_seconds:
+    try:
+        await asyncio.sleep(hold_seconds)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        await _ramp_speed(client, throttle_id, target_fraction, 0.0, rampdown or 0.0)
+        raise
+```
+
+Ctrl-C during a bounded one-shot hold ramps back to 0 (or jumps, with no
+`--rampdown`) before the interrupt propagates, rather than leaving the loco
+coasting at whatever speed it had at the moment of interruption. This is
+deliberately the *only* interrupt-handling code in the design — the shell has
+its own separate Ctrl-C handling at the prompt (above), and every other
+`asyncio.sleep` call is allowed to raise and propagate normally.
+
+**`speed_percent` vs. `*_fraction` naming split.** `speed_percent` (CLI-
+facing, `args.speed_percent`, may be negative) is never passed directly to
+`JmriWsClient`; only a resolved `*_fraction` value (always `0.0`-`1.0`, or
+literally `-1.0` inside `throttle_estop` only) reaches `client.set_speed()`.
+This is what keeps `throttle speed 3 -40` (CLI-only shorthand for "reverse at
+40%", resolved entirely client-side into `target_forward=False,
+target_fraction=0.4`) from ever colliding with JMRI's real emergency-stop
+wire sentinel `speed=-1.0` — the two never share a code path, and the naming
+convention makes an accidental mix-up visible at every call site rather than
+relying on a comment. `throttle_direction` (the shared body behind `forward`/
+`reverse`) reads `current_fraction` from the acquire reply and re-targets it
+as-is (`target_fraction=current_fraction`) with only `target_forward`
+changed — a pure direction flip ramps back to the speed the loco was already
+at, never to a fixed value.
 
 ## Throttle tool surface: DCC address as the only key
 
@@ -399,7 +619,7 @@ returns immediately with `confirmed: True` if the current state already
 matches the request — no POST is sent at all in that case. This makes
 "already ON" and "turn ON" indistinguishable from the caller's point of
 view, by design: every caller (the `set_power` MCP tool, `jmri-cli power
-set`, and `_set_power_all` — the shared loop behind `power_off_all`/
+on`/`off`, and `_set_power_all` — the shared loop behind `power_off_all`/
 `power_on_all`) goes through this one function, so the guard applies
 everywhere uniformly rather than needing to be duplicated per call site.
 
@@ -452,19 +672,19 @@ for the case where the caller needs a guarantee that covers every
 locomotive regardless of who's driving it.
 
 The CLI has no equivalent long-lived session to iterate, so `jmri-cli
-throttle stop-all [-a ADDR ...]` resolves its population of throttles
-differently: with no `-a`/`--address` given, it calls `get_roster()`
-(`jmri_client/roster.py`) and uses every roster address — mirroring how
-`power stop-all` needs no argument at all, "all" cannot mean "type every
-address by hand" — then acquires each on a fresh connection and calls the
-same `JmriWsClient.emergency_stop_all()` the MCP tool uses. `-a` remains
-available to limit the stop to specific addresses instead of the whole
-roster. This has its own honestly-documented limitation, distinct from the
-MCP tool's: the roster is JMRI's only exposed list of known addresses
-(verified live against the real server — no RailCom/reporters configured,
-`GET /json/throttle` list still 400s), not a scan of what's actually
-transmitting on the DCC bus, so hardware never added to the roster is out
-of reach here.
+throttle stop [loco]` resolves its population of throttles differently:
+with no `loco` given, it reads every address key out of `cli/state.py`'s
+local cache (`~/.jmri-cli/throttle_state.json`) instead of the roster —
+"every locomotive this CLI has already touched", not "every locomotive
+JMRI knows about" — then acquires each on a fresh connection and issues a
+controlled stop (`set_speed(tid, 0.0)`), not the decoder e-stop
+`emergency_stop_all()` uses (`throttle estop <loco>` remains the CLI's
+single-target e-stop). This has its own honestly-documented limitation,
+distinct from the MCP tool's: a locomotive only ever driven from a JMRI
+panel or another client, never touched by this CLI, is out of reach here.
+`power off` remains the CLI's actual "stop absolutely everything
+regardless of who's driving" primitive (see below), since cutting power
+stops every decoder unconditionally.
 
 ## `power_off_all` / `power_on_all`: cut or restore power to every DCC system at once
 
@@ -473,8 +693,9 @@ system via `get_systems()` and calls the existing
 `set_power(prefix, turn_on)` on each in turn, inheriting the same
 re-read-and-confirm honesty contract as a single `set_power()` call.
 `power_off_all()` and `power_on_all()` are both thin wrappers over this one
-shared loop — same reasoning as `_power_set_all` in `cli/power.py` and the
-`turn_on: bool` shared `power_off_all`/`power_on_all` MCP tool pair, so the
+shared loop — same reasoning as `_power_set(args, turn_on)` in `cli/power.py`
+(the shared body behind `power on`/`power off`) and the `turn_on: bool`
+shared `power_off_all`/`power_on_all` MCP tool pair, so the
 sequential/re-read logic exists exactly once instead of being copied per
 direction. Systems are processed **sequentially, not concurrently** —
 `set_power`'s own `_POST_RECHECK_DELAY` already serializes one system's
@@ -488,8 +709,9 @@ no throttle acquired anywhere, because they lose track power entirely.
 It's also more drastic — re-powering afterward requires an explicit
 `power_on_all` (or per-system `set_power(system, turn_on=True)`) before
 anything can move again, so both MCP tools' docstrings and `jmri-cli power
-stop-all`/`start-all` frame `power_off_all` as a genuine-emergency tool,
-not a routine "stop the train" command. `power_on_all`'s own docstring is
+off`/`on` (with no target — see the CLI redesign section above) frame
+`power_off_all` as a genuine-emergency tool, not a routine "stop the
+train" command. `power_on_all`'s own docstring is
 explicit that restoring power does **not** resume any locomotive's
 previous speed — every decoder stays stopped until a new speed command is
 sent, since JMRI's throttle software state is untouched by a power cycle;

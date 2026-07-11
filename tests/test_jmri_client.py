@@ -398,10 +398,23 @@ def test_resolve_roster_entry_empty_roster_raises():
 
 
 def test_resolve_roster_entry_empty_query_raises():
-    with pytest.raises(JmriError, match="No locomotive name given"):
+    with pytest.raises(JmriError, match="No locomotive name or address given"):
         resolve_roster_entry("", ROSTER)
-    with pytest.raises(JmriError, match="No locomotive name given"):
+    with pytest.raises(JmriError, match="No locomotive name or address given"):
         resolve_roster_entry("   ", ROSTER)
+
+
+@pytest.mark.parametrize(
+    "query,expected_name",
+    [("2", "141R"), ("4", "Autorail"), ("8", "Boite à Sel")],
+)
+def test_resolve_roster_entry_matches_by_dcc_address(query, expected_name):
+    assert resolve_roster_entry(query, ROSTER)["name"] == expected_name
+
+
+def test_resolve_roster_entry_unknown_address_raises():
+    with pytest.raises(JmriError, match="No roster entry with address 99"):
+        resolve_roster_entry("99", ROSTER)
 
 
 # --- resolve_system: pure function, no I/O ---

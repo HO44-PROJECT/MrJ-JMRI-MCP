@@ -10,6 +10,66 @@ package version stays `0.1.0` during active milestone development).
 
 ### Added
 
+- `jmri-cli` command-shape redesign: two consistency rules now apply across
+  every subcommand group. **Bare group = smart default** — `jmri-cli power`
+  behaves like `power status`, `jmri-cli roster` like `roster list`,
+  `jmri-cli throttle` like `throttle list`, `light`/`turnout`/`sensor`/
+  `signal` likewise default to their own `list`. **Verb elevation** — a
+  state value that used to be a positional argument is now the subcommand
+  name itself, with the target becoming an optional fuzzy positional that
+  defaults to "everything": `power on [system]` / `power off [system]`
+  (replacing `power set` / `stop-all` / `start-all`), `throttle forward
+  <loco>` / `throttle reverse <loco>` (replacing `throttle direction`),
+  `throttle on <loco> [function]` / `throttle off <loco> [function]`
+  (replacing `lights-on` / `lights-off` / `function`), `light on [name]` /
+  `light off [name]` and `turnout closed [name]` / `turnout thrown [name]`
+  (replacing each group's `status` / `set`). `throttle stop [loco]`
+  replaces `stop-all` and, with no loco given, stops every address the
+  local cache has touched.
+  - Added `power get [system]` (read one/all systems without the table)
+    and `power default` (print the configured default system).
+  - `roster find` / `roster functions` now accept a DCC address as well as
+    a fuzzy name — `resolve_roster_entry()` matches a numeric query against
+    `address` first, falling back to name matching otherwise.
+  - Every list-style output (`power status`, `roster list`, `throttle
+    list`, `light list`, `turnout list`) now renders as a `tabulate` table
+    with explicit headers instead of ad hoc printed lines.
+  - New `src/jmri_mcp/cli/state.py`: a local JSON cache at
+    `~/.jmri-cli/throttle_state.json` recording the last known
+    speed/direction/functions per address. `jmri-cli throttle` is
+    architecturally one-shot (acquire → act → close per invocation; JMRI
+    releases the throttle the moment the connection closes — see the
+    known-limitation note on `throttle speed`), so there is no live JMRI
+    state left to query between separate CLI invocations once the process
+    exits. This cache is what makes bare `throttle` (list touched locos)
+    and `throttle speed <loco>` (no value = read current) possible; it is
+    a convenience cache only, not a source of truth — another client's
+    changes aren't reflected until the next `jmri-cli throttle` command
+    touches that address again.
+  - `throttle on`/`off` with no function number given resolves every
+    labeled function from the roster (`get_roster_function_labels()`) and
+    sets them all; if the locomotive has no labeled functions and no
+    number was given either, this is an explicit error, not a silent F0
+    fallback.
+  - Full test suite rewritten/extended alongside the redesign (244 passed);
+    `docs/cli.md` and `docs/architecture.md` updated to match.
+
+- **Fixed**: `jmri-cli --help` rendered as an unreadable wall of text —
+  argparse's default formatter rewraps a multi-line `description` into one
+  prose paragraph, so the ~30 one-per-line usage examples in the CLI
+  package docstring collapsed into a run-on block. Also, each of those
+  lines repeated `JMRI_URL=http://localhost:12080 python -m jmri_mcp.cli`
+  verbatim, which was pure noise once `JMRI_URL` was already exported.
+  Fixed by moving the full example list to its own `jmri-cli examples`
+  subcommand (prints the real, currently-configured `JMRI_URL` once at the
+  top, then bare `jmri-cli <command>` lines — no per-line prefix), shrinking
+  `--help`'s own description to a short paragraph, and setting
+  `formatter_class=argparse.RawDescriptionHelpFormatter` so that shorter
+  description is never auto-rewrapped either. A new test re-parses every
+  line `jmri-cli examples` prints against the real argument parser, so a
+  renamed/removed subcommand that isn't kept in sync fails the suite
+  instead of silently going stale.
+
 - Signal masts (#26): `list_signals` / `get_signal` / `set_signal` +
   `jmri-cli signal list/status/set`, a fifth layout domain alongside light/
   turnout/sensor. Covers JMRI's `signalMast` objects only, not

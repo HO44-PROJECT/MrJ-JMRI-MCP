@@ -28,6 +28,15 @@ def reset_ws_client():
 
 
 @pytest.fixture(autouse=True)
+def isolated_cli_state(monkeypatch, tmp_path):
+    """Point jmri-cli's local throttle-state cache at a tmp file, never the
+    real user's ~/.jmri-cli/throttle_state.json."""
+    import jmri_mcp.cli.state as state_module
+
+    monkeypatch.setattr(state_module, "STATE_FILE", tmp_path / "throttle_state.json")
+
+
+@pytest.fixture(autouse=True)
 def reset_executor_mode():
     """Reset tools.mode's process-wide flag so tests don't leak state across each other."""
     import jmri_mcp.tools.mode as mode_module

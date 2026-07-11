@@ -50,6 +50,52 @@ async def test_acquire_and_release_throttle(fake_jmri):
     await client.close()
 
 
+async def test_reacquire_same_throttle_is_a_noop(fake_jmri):
+    """Re-acquiring a throttle_id/address this connection already holds
+    must not send a second wire request. Verified live against real JMRI:
+    a genuine duplicate acquire on the same connection crashes it
+    (ConnectionClosedError) — see CLAUDE.md. cli/throttle.py's throttle_*
+    commands all call acquire_throttle() unconditionally before acting, so
+    without this no-op guard, any second shell command touching an
+    already-acquired address corrupted the shell's shared connection
+    (reproduced live: `throttle speed 4 5` then `throttle stop 4` in the
+    same shell session — the second command timed out)."""
+    client = JmriWsClient()
+    first = await client.acquire_throttle("t1", 42)
+
+    request_lock_calls = []
+    original_send_and_wait = client._send_and_wait
+
+    async def counting_send_and_wait(msg_type, data):
+        request_lock_calls.append((msg_type, data))
+        return await original_send_and_wait(msg_type, data)
+
+    client._send_and_wait = counting_send_and_wait
+
+    second = await client.acquire_throttle("t1", 42)
+
+    assert request_lock_calls == []  # no wire request sent for the re-acquire
+    # first is the raw wire reply, second is a cache snapshot — different
+    # shapes by design, but callers only ever read these two fields.
+    assert second["address"] == first["address"]
+    assert second["speed"] == first["speed"]
+    assert second["forward"] == first["forward"]
+    await client.close()
+
+
+async def test_reacquire_different_address_sends_wire_request(fake_jmri):
+    """The no-op guard is scoped to the same throttle_id+address pair —
+    reusing a throttle_id for a different address must still hit the wire
+    (this shouldn't happen in practice since cli_throttle_id() derives the
+    id from the address, but the guard itself must not be overly broad)."""
+    client = JmriWsClient()
+    await client.acquire_throttle("t1", 42)
+    data = await client.acquire_throttle("t1", 43)
+    assert data["address"] == 43
+    assert client._throttles["t1"]["address"] == 43
+    await client.close()
+
+
 async def test_keepalive_sends_ping_and_gets_pong(fake_jmri, monkeypatch):
     client = JmriWsClient()
     await client.connect()

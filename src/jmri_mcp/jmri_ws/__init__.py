@@ -168,17 +168,24 @@ class JmriWsClient:
 
         prefix optionally targets a specific command station (e.g. "R" for
         DCC++ Raijin) when more than one is connected to JMRI.
+
+        Idempotent per connection: re-acquiring a throttle_id this same
+        connection already holds is a no-op that returns the live cache
+        instead of re-sending the wire request — verified live that JMRI
+        crashes the connection (ConnectionClosedError) on a genuine
+        duplicate acquire (see CLAUDE.md). Every WS-based throttle_*
+        command in cli/throttle.py calls acquire_throttle() unconditionally
+        before acting, which is harmless in one-shot mode (fresh connection
+        every time) but, without this check, corrupted the interactive
+        shell's shared connection on a second command touching an address
+        already acquired earlier in the same session (reproduced live:
+        `throttle speed 4 5` then `throttle stop 4` in the same shell
+        session timed out on the second command).
         """
-        # connect() first, then register in _throttles, THEN send: if a
-        # fresh connection is what connect() just made, _do_connect() ends
-        # by calling _reacquire_throttles() for every already-registered
-        # id — registering before connect() would make it "re"-acquire this
-        # same throttle a second time before our own send below, stealing
-        # the one reply this connection gets and hanging us forever.
-        # Registered before sending (not before connect) so _dispatch can
-        # still update it from the reply below (dispatch only updates
-        # existing entries).
         await self.connect()
+        cached = self._throttles.get(throttle_id)
+        if cached is not None and cached.get("address") == address and cached.get("prefix") == prefix:
+            return dict(cached)
         self._throttles[throttle_id] = {"address": address, "prefix": prefix, "speed": None}
         data_out: dict[str, Any] = {"throttle": throttle_id, "address": address}
         if prefix:
@@ -271,6 +278,19 @@ class JmriWsClient:
         if info is not None and info.get("functions", {}).get(function) == state:
             return {"throttle": throttle_id, f"F{function}": state}
         return await self.request("throttle", {"throttle": throttle_id, f"F{function}": state})
+
+    def throttle_state(self, throttle_id: str) -> dict[str, Any] | None:
+        """Read-only snapshot of the live-synced cache for one throttle id.
+
+        Callers (cli/throttle.py, cli/shell.py) use this instead of reaching
+        into the private `_throttles` dict directly.
+        """
+        state = self._throttles.get(throttle_id)
+        return dict(state) if state is not None else None
+
+    def all_throttle_states(self) -> dict[str, dict[str, Any]]:
+        """Read-only snapshot of every throttle id's cache, keyed by throttle id."""
+        return {tid: dict(state) for tid, state in self._throttles.items()}
 
     # -- internals ---------------------------------------------------
 

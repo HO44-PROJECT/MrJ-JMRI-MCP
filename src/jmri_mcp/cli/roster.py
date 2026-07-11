@@ -6,6 +6,8 @@ Talks to jmri_client.py directly (one-shot HTTP, no MCP/JSON-RPC involved).
 import argparse
 import sys
 
+from tabulate import tabulate
+
 from jmri_mcp.jmri_client import (
     JmriError,
     get_roster,
@@ -32,18 +34,20 @@ async def roster_list(args: argparse.Namespace) -> int:
     if not roster:
         print("Roster is empty")
         return 0
-    for entry in roster:
-        road = entry["road"] or "-"
-        model = entry["model"] or "-"
-        print(f"{entry['address']:<5} {entry['name']:<20} {road:<30} {model}")
+    rows = [
+        [e["address"], e["name"], e["road"] or "-", e["model"] or "-"]
+        for e in sorted(roster, key=lambda e: e["name"].casefold())
+    ]
+    print(tabulate(rows, headers=["Address", "Name", "Road", "Model"]))
     return 0
 
 
 async def roster_find(args: argparse.Namespace) -> int:
-    """Resolve a locomotive name (fuzzy, accent-insensitive) to its roster entry.
+    """Resolve a locomotive name or DCC address to its roster entry.
 
     Args:
-        args: Parsed CLI arguments; uses `args.name` (a full name or fragment).
+        args: Parsed CLI arguments; uses `args.name` (a full name, a
+            fragment of one, or a numeric DCC address as a string).
 
     Returns:
         0 on success, 1 if JMRI is unreachable or `args.name` is ambiguous
@@ -65,12 +69,14 @@ async def roster_find(args: argparse.Namespace) -> int:
 async def roster_functions(args: argparse.Namespace) -> int:
     """Print a locomotive's user-labeled decoder functions (F0-F28).
 
-    Resolves `args.name` the same fuzzy way as `roster_find`, then looks up
-    the function labels the user set in JMRI's own roster editor. Most
-    locos have none set at all — that's reported plainly, not as an error.
+    Resolves `args.name` the same way as `roster_find` (name, fragment, or
+    DCC address), then looks up the function labels the user set in JMRI's
+    own roster editor. Most locos have none set at all — that's reported
+    plainly, not as an error.
 
     Args:
-        args: Parsed CLI arguments; uses `args.name` (a full name or fragment).
+        args: Parsed CLI arguments; uses `args.name` (a full name, a
+            fragment of one, or a numeric DCC address as a string).
 
     Returns:
         0 on success (including no labeled functions), 1 if JMRI is
@@ -88,6 +94,6 @@ async def roster_functions(args: argparse.Namespace) -> int:
     if not labels:
         print("  no labeled functions")
         return 0
-    for n in sorted(labels):
-        print(f"  F{n}: {labels[n]}")
+    rows = [[f"F{n}", labels[n]] for n in sorted(labels)]
+    print(tabulate(rows, headers=["Function", "Label"]))
     return 0

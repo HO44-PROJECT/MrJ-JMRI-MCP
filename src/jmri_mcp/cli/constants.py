@@ -18,3 +18,13 @@ MAX_SPEED_PERCENT = 100.0
 # wake-ups while waiting for Ctrl-C. Not a protocol value - JMRI's own
 # keepalive is handled separately by JmriWsClient's heartbeat ping/pong.
 IDLE_POLL_SECONDS = 3600
+
+# Ramp granularity: how many intermediate `set_speed` calls per second of
+# --rampup/--rampdown. Each step is a real network round-trip to JMRI, so
+# this trades ramp smoothness against total command count / wall-clock time.
+RAMP_STEPS_PER_SECOND = 4.0
+
+# Fallback ramp-down duration used by the interactive shell's exit
+# confirmation (see shell.py) when stopping locomotives left in motion, on
+# the way out. Fixed rather than per-address, to keep the exit flow simple.
+SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS = 3.0

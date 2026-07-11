@@ -1,44 +1,62 @@
-"""Power-system commands: `jmri-cli power status`, `power set`, `status`.
+"""Power-system commands: `jmri-cli power [status|on|off|get|default]`, `status`.
 
 Talks to jmri_client.py directly (one-shot HTTP, no MCP/JSON-RPC involved).
+Bare `jmri-cli power` behaves exactly like `jmri-cli power status` — a
+group with an obvious "just show me the state" default shouldn't force
+typing the leaf name too.
 """
 
 import argparse
 import sys
+
+from tabulate import tabulate
 
 from jmri_mcp.cli.constants import POWER_STATE_NAMES
 from jmri_mcp.jmri_client import (
     JmriError,
     get_systems,
     get_version,
-    power_off_all,
-    power_on_all,
     resolve_system,
     set_power,
 )
 
 
-def _format_system(system: dict) -> str:
-    """Format one power system's state as a single display line.
+def _state_name(system: dict) -> str:
+    return POWER_STATE_NAMES.get(system.get("state"), "UNKNOWN")
 
-    Args:
-        system: A system dict as returned by jmri_client.get_systems(),
-            with at least "name" and "state", and optionally "default".
 
-    Returns:
-        A line like "DCC++ Ohara    : ON (default)".
-    """
-    state = POWER_STATE_NAMES.get(system.get("state"), "UNKNOWN")
-    marker = " (default)" if system.get("default") else ""
-    return f"{system.get('name', '?'):<15}: {state}{marker}"
+def _print_systems_table(systems: list[dict]) -> None:
+    rows = [
+        [s.get("name", "?"), _state_name(s), "yes" if s.get("default") else ""]
+        for s in sorted(systems, key=lambda s: str(s.get("name", "")).casefold())
+    ]
+    print(tabulate(rows, headers=["System", "State", "Default"]))
 
 
 async def power_status(args: argparse.Namespace) -> int:
-    """Print the power state of every system, or one if `args.system` is set.
+    """Print the power state of every system, sorted alphabetically.
+
+    Args:
+        args: Parsed CLI arguments; no fields used.
+
+    Returns:
+        0 on success, 1 if JMRI is unreachable.
+    """
+    try:
+        systems = await get_systems()
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    _print_systems_table(systems)
+    return 0
+
+
+async def power_get(args: argparse.Namespace) -> int:
+    """Print a single system's power state as a bare ON/OFF/UNKNOWN/IDLE.
 
     Args:
         args: Parsed CLI arguments; uses `args.system` (name/prefix/fragment,
-            or None for all systems).
+            or None for the default system).
 
     Returns:
         0 on success, 1 if JMRI is unreachable or `args.system` doesn't
@@ -46,95 +64,103 @@ async def power_status(args: argparse.Namespace) -> int:
     """
     try:
         systems = await get_systems()
-        if args.system:
-            match = resolve_system(args.system, systems)
-            print(_format_system(match))
-        else:
-            for system in systems:
-                print(_format_system(system))
+        match = resolve_system(args.system, systems)
     except JmriError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+    print(_state_name(match))
     return 0
 
 
-async def power_set(args: argparse.Namespace) -> int:
-    """Turn a system's power on or off, and confirm by re-reading its state.
+async def power_default(args: argparse.Namespace) -> int:
+    """Print which power system JMRI treats as the default.
 
     Args:
-        args: Parsed CLI arguments; uses `args.system` (name/prefix/fragment)
-            and `args.state` ("on" or "off").
+        args: Parsed CLI arguments; no fields used.
 
     Returns:
-        0 on success with the requested state confirmed, 1 if JMRI is
-        unreachable, `args.system` is ambiguous/unknown, or the re-read
-        state doesn't confirm the request.
+        0 on success, 1 if JMRI is unreachable.
     """
-    turn_on = args.state == "on"
     try:
         systems = await get_systems()
-        match = resolve_system(args.system, systems)
-        result = await set_power(match["prefix"], turn_on)
+        match = resolve_system(None, systems)
     except JmriError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-
-    print(_format_system(result))
-    if not result["confirmed"]:
-        print(f"WARNING: requested {args.state.upper()} but observed state "
-              f"did not confirm after re-read", file=sys.stderr)
-        return 1
+    print(match.get("name", "?"))
     return 0
 
 
-async def _power_set_all(turn_on: bool) -> int:
-    """Shared body for power_stop_all/power_start_all — see their docstrings."""
+async def _power_set(args: argparse.Namespace, turn_on: bool) -> int:
+    """Shared body for power_on/power_off.
+
+    No `args.system` means every system; a fuzzy `args.system` means just
+    that one. Sequential like _set_power_all, so results print in a stable
+    order and JMRI/DCC++ isn't hit with simultaneous POSTs.
+    """
+    state_name = "ON" if turn_on else "OFF"
     try:
-        results = await (power_on_all() if turn_on else power_off_all())
+        systems = await get_systems()
+        if args.system:
+            targets = [resolve_system(args.system, systems)]
+        else:
+            targets = systems
     except JmriError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    state_name = "ON" if turn_on else "OFF"
+    results = []
     all_confirmed = True
-    for result in results:
-        print(_format_system(result))
-        if not result["confirmed"]:
-            all_confirmed = False
+    try:
+        for target in targets:
+            result = await set_power(target["prefix"], turn_on)
+            results.append(result)
+            if not result["confirmed"]:
+                all_confirmed = False
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    _print_systems_table(results)
     if not all_confirmed:
         print(f"WARNING: not every system confirmed {state_name} after re-read", file=sys.stderr)
         return 1
     return 0
 
 
-async def power_stop_all(args: argparse.Namespace) -> int:
-    """Cut power to every DCC system at once, confirming each by re-read.
+async def power_on(args: argparse.Namespace) -> int:
+    """Turn a system on, or every system if none is given, confirming by re-read.
 
     Args:
-        args: Parsed CLI arguments; no fields used.
+        args: Parsed CLI arguments; uses `args.system` (name/prefix/fragment,
+            or None for every system).
 
     Returns:
-        0 if every system confirmed OFF, 1 if JMRI is unreachable or any
-        system's re-read didn't confirm OFF.
+        0 on success with every targeted system confirmed ON, 1 if JMRI is
+        unreachable, `args.system` is ambiguous/unknown, or any re-read
+        didn't confirm ON.
     """
-    return await _power_set_all(turn_on=False)
+    return await _power_set(args, turn_on=True)
 
 
-async def power_start_all(args: argparse.Namespace) -> int:
-    """Restore power to every DCC system at once, confirming each by re-read.
+async def power_off(args: argparse.Namespace) -> int:
+    """Turn a system off, or every system if none is given, confirming by re-read.
 
-    The inverse of power_stop_all. Does NOT resume any locomotive's
-    previous speed — decoders stay stopped until a new speed command is
-    sent, this only restores track power.
+    With no target this is the layout-wide emergency stop: cutting power
+    stops every locomotive regardless of who's driving it (a JMRI panel,
+    another MCP session), unlike a throttle e-stop which only reaches
+    locomotives this session has acquired.
 
     Args:
-        args: Parsed CLI arguments; no fields used.
+        args: Parsed CLI arguments; uses `args.system` (name/prefix/fragment,
+            or None for every system).
 
     Returns:
-        0 if every system confirmed ON, 1 if JMRI is unreachable or any
-        system's re-read didn't confirm ON.
+        0 on success with every targeted system confirmed OFF, 1 if JMRI is
+        unreachable, `args.system` is ambiguous/unknown, or any re-read
+        didn't confirm OFF.
     """
-    return await _power_set_all(turn_on=True)
+    return await _power_set(args, turn_on=False)
 
 
 async def system_status(args: argparse.Namespace) -> int:
@@ -156,9 +182,8 @@ async def system_status(args: argparse.Namespace) -> int:
     print(f"JMRI reachable, version {version}")
     try:
         systems = await get_systems()
-        for system in systems:
-            print(f"  {_format_system(system)}")
     except JmriError as exc:
-        print(f"  Power systems unavailable: {exc}", file=sys.stderr)
+        print(f"Power systems unavailable: {exc}", file=sys.stderr)
         return 1
+    _print_systems_table(systems)
     return 0

@@ -1,36 +1,29 @@
-"""Layout light commands: `jmri-cli light list`, `light status`, `light set`.
+"""Layout light commands: `jmri-cli light [list|on|off]`.
 
 Talks to jmri_client.py directly (one-shot HTTP, no MCP/JSON-RPC involved).
 These are JMRI `light` objects wired to the layout/scenery itself (depot
 lighting, street lamps, ...), distinct from a locomotive's F0 headlight
-function (see `jmri-cli throttle lights-on`/`lights-off` for that).
+function (see `jmri-cli throttle on/off` for that).
 """
 
 import argparse
 import sys
+
+from tabulate import tabulate
 
 from jmri_mcp.cli.constants import LIGHT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_lights, resolve_light
 from jmri_mcp.jmri_client import set_light as _set_light
 
 
-def _format_light(light: dict) -> str:
-    """Format one light's state as a single display line.
-
-    Args:
-        light: A light dict as returned by jmri_client.get_lights(), with
-            at least "name" and "state", and optionally "userName".
-
-    Returns:
-        A line like "Depot Lighting  : ON".
-    """
+def _row(light: dict) -> list:
     state = LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN")
     label = light.get("userName") or light.get("name", "?")
-    return f"{label:<20}: {state}"
+    return [label, state]
 
 
 async def light_list(args: argparse.Namespace) -> int:
-    """Print the state of every layout light.
+    """Print the state of every layout light, sorted alphabetically.
 
     Args:
         args: Parsed CLI arguments; no fields used.
@@ -47,56 +40,69 @@ async def light_list(args: argparse.Namespace) -> int:
     if not lights:
         print("No lights found")
         return 0
-    for light in lights:
-        print(_format_light(light))
+    rows = [_row(lt) for lt in sorted(lights, key=lambda lt: _row(lt)[0].casefold())]
+    print(tabulate(rows, headers=["Light", "State"]))
     return 0
 
 
-async def light_status(args: argparse.Namespace) -> int:
-    """Print the state of one layout light.
+async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
+    """Shared body for light_on/light_off.
 
-    Args:
-        args: Parsed CLI arguments; uses `args.name` (system name, userName,
-            or an unambiguous fragment).
-
-    Returns:
-        0 on success, 1 if JMRI is unreachable or `args.name` doesn't
-        resolve to exactly one light.
+    No `args.name` means every light; a fuzzy `args.name` means just that
+    one, matching power/turnout's "verb + optional target, default = all".
     """
+    state_name = "ON" if turn_on else "OFF"
     try:
         lights = await get_lights()
-        match = resolve_light(args.name, lights)
-    except JmriError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-    print(_format_light(match))
-    return 0
-
-
-async def light_set(args: argparse.Namespace) -> int:
-    """Turn a layout light on or off, and confirm by re-reading its state.
-
-    Args:
-        args: Parsed CLI arguments; uses `args.name` (system name, userName,
-            or an unambiguous fragment) and `args.state` ("on" or "off").
-
-    Returns:
-        0 on success with the requested state confirmed, 1 if JMRI is
-        unreachable, `args.name` is ambiguous/unknown, or the re-read
-        state doesn't confirm the request.
-    """
-    turn_on = args.state == "on"
-    try:
-        lights = await get_lights()
-        match = resolve_light(args.name, lights)
-        result = await _set_light(match["name"], turn_on)
+        targets = [resolve_light(args.name, lights)] if args.name else lights
     except JmriError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(_format_light(result))
-    if not result["confirmed"]:
-        print(f"WARNING: requested {args.state.upper()} but observed state "
-              f"did not confirm after re-read", file=sys.stderr)
+    all_confirmed = True
+    rows = []
+    try:
+        for target in targets:
+            result = await _set_light(target["name"], turn_on)
+            rows.append(_row(result))
+            if not result["confirmed"]:
+                all_confirmed = False
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(tabulate(rows, headers=["Light", "State"]))
+    if not all_confirmed:
+        print(f"WARNING: not every light confirmed {state_name} after re-read", file=sys.stderr)
         return 1
     return 0
+
+
+async def light_on(args: argparse.Namespace) -> int:
+    """Turn a light on, or every light if none is given, confirming by re-read.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.name` (system name, userName,
+            fragment, or None for every light).
+
+    Returns:
+        0 on success with every targeted light confirmed ON, 1 if JMRI is
+        unreachable, `args.name` is ambiguous/unknown, or any re-read
+        didn't confirm ON.
+    """
+    return await _light_set(args, turn_on=True)
+
+
+async def light_off(args: argparse.Namespace) -> int:
+    """Turn a light off, or every light if none is given, confirming by re-read.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.name` (system name, userName,
+            fragment, or None for every light).
+
+    Returns:
+        0 on success with every targeted light confirmed OFF, 1 if JMRI is
+        unreachable, `args.name` is ambiguous/unknown, or any re-read
+        didn't confirm OFF.
+    """
+    return await _light_set(args, turn_on=False)

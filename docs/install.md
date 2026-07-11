@@ -94,9 +94,20 @@ conda activate <env-name>
 pip install -e .
 ```
 
-Re-run `pip install -e .` again any time `pyproject.toml`'s `[project.scripts]`
-section changes (e.g. a new CLI subcommand was added) — pip only regenerates the
-entry-point scripts at install time, not automatically.
+Re-run `pip install -e .` (or `-e ".[dev]"`) again any time `pyproject.toml` changes —
+whether `[project.scripts]` (a new CLI subcommand) or `[project.dependencies]`/the
+`dev`/`xiaozhi` extras (a new package requirement, e.g. `tabulate`). An editable
+install does **not** auto-install newly added dependencies on `git pull`; you'll see
+`ModuleNotFoundError` for the new package until you re-run the install in that env:
+
+```bash
+conda activate <env-name>
+pip install -e ".[dev]"
+```
+
+If you use `environment.yml` instead, `conda env update -f environment.yml --prune`
+(mentioned above) covers this the same way, since it re-runs `pip install -e .[dev]`
+as part of the env update.
 
 ## Configuration
 

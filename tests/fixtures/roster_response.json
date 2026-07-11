@@ -18,6 +18,7 @@
       "shuntingFunction": "",
       "owner": "SNCF",
       "dateModified": "2024-01-20T13:18:40.774+00:00",
+      "rosterGroups": ["test"],
       "functionKeys": [
         {"name": "F0", "label": null, "lockable": true, "icon": null, "selectedIcon": null},
         {"name": "F1", "label": null, "lockable": true, "icon": null, "selectedIcon": null}
@@ -43,6 +44,7 @@
       "shuntingFunction": "",
       "owner": "",
       "dateModified": "2024-01-20T13:18:40.774+00:00",
+      "rosterGroups": [],
       "functionKeys": [
         {"name": "F0", "label": "Lumières avant", "lockable": true, "icon": null, "selectedIcon": null},
         {"name": "F1", "label": "Lumières cabine", "lockable": true, "icon": null, "selectedIcon": null},
@@ -69,6 +71,7 @@
       "shuntingFunction": "",
       "owner": "",
       "dateModified": "2024-01-20T13:18:40.774+00:00",
+      "rosterGroups": [],
       "functionKeys": []
     }
   }

@@ -1,10 +1,12 @@
-"""The banner shown by `jmri-cli -h`/`--help`.
+"""The banner shown by `jmri-cli help`/`-h`/`--help` (at any command level) —
+and nowhere else. A real command's output (or an argparse error for an
+invalid/unrecognized command) is never preceded by it, so one-shot
+invocations stay script/pipe-friendly.
 
 Kept as one static string (not folded into argparse's own description
 formatting) so it renders identically everywhere it's shown - one
 canonical "front page" for the tool instead of several different first
-impressions. Note: bare `jmri-cli` (no arguments) does NOT show this -
-it launches the interactive shell instead (see shell.py).
+impressions.
 """
 
 from importlib.metadata import PackageNotFoundError, version

@@ -26,15 +26,19 @@ def register(mcp) -> None:
 
     @mcp.tool()
     async def list_roster() -> dict:
-        """List every locomotive in JMRI's roster: name, DCC address, road, model.
+        """List every locomotive in JMRI's roster: name, DCC address, road,
+        road number, manufacturer, model, owner, last-modified date, and
+        roster groups.
 
         Use this to discover what locomotives exist and their DCC addresses
         before calling acquire_throttle/set_speed/etc. — those tools take a
         DCC address, not a name, and this is currently the only way to find
         out which address belongs to which named loco (e.g. the user says
-        "start the Autorail" but set_speed needs address=4). road/model can
-        be empty strings if the user never filled them in in JMRI — that's
-        normal, not an error. No side effects.
+        "start the Autorail" but set_speed needs address=4). Any of these
+        fields can be empty (string or list) if the user never filled them
+        in in JMRI — that's normal, not an error. "groups" lists the JMRI
+        Roster Groups (set in PanelPro) this locomotive belongs to — most
+        locomotives belong to none. No side effects.
 
         This does NOT resolve a name to an address for you automatically —
         use find_locomotive for that.

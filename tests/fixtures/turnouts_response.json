@@ -5,7 +5,9 @@
             "name": "IT100",
             "userName": "Layout Turnout A",
             "state": 2,
-            "comment": null
+            "comment": "Yard throat switch",
+            "feedbackMode": 16,
+            "sensor": [{"name": "OS37", "userName": "Turnout Motor A", "state": 4}, null]
         }
     },
     {
@@ -14,7 +16,9 @@
             "name": "IT101",
             "userName": "Layout Turnout BL",
             "state": 2,
-            "comment": null
+            "comment": null,
+            "feedbackMode": 16,
+            "sensor": [{"name": "OS39", "userName": "Turnout Motor BL", "state": 4}, null]
         }
     },
     {
@@ -23,7 +27,9 @@
             "name": "OT23",
             "userName": "A / Mountain A -> Platform A/B",
             "state": 4,
-            "comment": null
+            "comment": null,
+            "feedbackMode": 2,
+            "sensor": [null, null]
         }
     }
 ]

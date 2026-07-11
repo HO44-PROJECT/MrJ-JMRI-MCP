@@ -1,4 +1,4 @@
-"""Throttle commands: `jmri-cli throttle [acquire|release|speed|stop|estop|direction|on|off|sniff]`.
+"""Throttle commands: `jmri-cli throttle [acquire|release|speed|stop|estop|direction|on|off|function|sniff]`.
 
 Talks to jmri_ws.py. Two connection modes now coexist:
   - One-shot (the default: `client=None`): a fresh WebSocket connection is
@@ -37,25 +37,25 @@ import contextlib
 import datetime
 import json
 import sys
-from typing import Any, Awaitable, Callable
 
 from tabulate import tabulate
 
 from jmri_mcp.cli import state as _state
 from jmri_mcp.cli._common import cli_throttle_id
+from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.cli.constants import (
     IDLE_POLL_SECONDS,
     MAX_FUNCTION_NUMBER,
     MAX_SPEED_PERCENT,
     MIN_FUNCTION_NUMBER,
     MIN_SPEED_PERCENT,
-    RAMP_STEPS_PER_SECOND,
     SNIFF_THROTTLE_ID_PREFIX,
 )
 from jmri_mcp.jmri_client import JmriError as JmriHttpError
 from jmri_mcp.jmri_client import get_roster, get_roster_function_labels, resolve_roster_entry
 from jmri_mcp.jmri_ws import JmriError as JmriWsError
 from jmri_mcp.jmri_ws import JmriWsClient
+from jmri_mcp.jmri_ws.ramp import execute_speed_change as _execute_speed_change
 
 _SECONDS_REQUIRED_MESSAGE = (
     "Error: --hold is required when setting a nonzero speed outside the "
@@ -108,114 +108,6 @@ async def _client_scope(client: JmriWsClient | None):
         await owned.close()
 
 
-async def _ramp_speed(
-    client: JmriWsClient,
-    throttle_id: str,
-    from_fraction: float,
-    to_fraction: float,
-    seconds: float,
-    *,
-    sleep: Callable[[float], Awaitable[None]] | None = None,
-    steps_per_second: float = RAMP_STEPS_PER_SECOND,
-) -> None:
-    """Linearly ramp speed from `from_fraction` to `to_fraction` over `seconds`.
-
-    Sends intermediate `set_speed` calls at roughly `steps_per_second`
-    steps/sec, always finishing with one exact final `set_speed(to_fraction)`
-    call so floating-point step accumulation never leaves the throttle short
-    of the target. `seconds <= 0` (or the endpoints already matching) skips
-    straight to that final call — this is what "no --rampup/--rampdown
-    given" degenerates to, so callers never need to branch on "was a ramp
-    requested".
-
-    `sleep` is resolved fresh on each call (not a bound default parameter)
-    so `monkeypatch.setattr("jmri_mcp.cli.throttle.asyncio.sleep", ...)`
-    in tests affects it — a bound default would capture `asyncio.sleep` at
-    import time, before any test patch is applied.
-    """
-    sleep = sleep or asyncio.sleep
-    if seconds <= 0 or from_fraction == to_fraction:
-        await client.set_speed(throttle_id, to_fraction)
-        return
-    steps = max(1, int(seconds * steps_per_second))
-    for i in range(1, steps + 1):
-        fraction = from_fraction + (to_fraction - from_fraction) * (i / steps)
-        await client.set_speed(throttle_id, fraction)
-        if i < steps:
-            await sleep(seconds / steps)
-    await client.set_speed(throttle_id, to_fraction)
-
-
-async def _execute_speed_change(
-    client: JmriWsClient,
-    throttle_id: str,
-    *,
-    target_forward: bool | None,
-    target_fraction: float,
-    rampup: float | None,
-    rampdown: float | None,
-    hold_seconds: float | None,
-) -> dict[str, Any]:
-    """Shared state machine behind throttle_speed/throttle_direction/throttle_stop.
-
-    Sequence: ramp down first if a direction flip is needed (or the target
-    is simply lower and --rampdown was given) -> flip direction if needed
-    -> ramp up to the final target (if --rampup was given) -> hold for
-    hold_seconds, if given -> ramp back down to 0 if a bounded hold just
-    ended at a nonzero speed. This auto-stop applies unconditionally,
-    whether called one-shot or from the shell: a caller that bounds a
-    speed with --hold N means "hold this speed for N seconds, then
-    stop" either way — the shell case matters just as much as one-shot,
-    since the shell's shared connection makes a nonzero speed persist
-    indefinitely otherwise (bug found live: `throttle speed 4 10 --hold
-    2` inside the shell held correctly for 2s but then left the
-    locomotive at 10% forever, since this step used to be gated on a
-    one_shot flag that's now removed).
-
-    A Ctrl-C (or task cancellation) during the hold is caught so the
-    locomotive is ramped/jumped back to 0 before the interrupt propagates,
-    rather than leaving it coasting at whatever speed it had at the moment
-    of interruption — deliberately the ONE place in this whole design with
-    interrupt handling; everywhere else a Ctrl-C propagates normally.
-
-    Reads current state via `client.throttle_state()` (never a private
-    attribute) and returns the same, re-read once at the end, as the single
-    source of truth for the caller's printed output.
-    """
-    info = client.throttle_state(throttle_id) or {}
-    current_fraction = info.get("speed") or 0.0
-    current_forward = info.get("forward", True)
-
-    needs_flip = target_forward is not None and target_forward != current_forward
-
-    if needs_flip and current_fraction > 0.0:
-        await _ramp_speed(client, throttle_id, current_fraction, 0.0, rampdown or 0.0)
-        current_fraction = 0.0
-    elif rampdown is not None and target_fraction < current_fraction:
-        await _ramp_speed(client, throttle_id, current_fraction, target_fraction, rampdown)
-        current_fraction = target_fraction
-
-    if needs_flip:
-        await client.set_direction(throttle_id, target_forward)
-
-    if target_fraction > current_fraction:
-        await _ramp_speed(client, throttle_id, current_fraction, target_fraction, rampup or 0.0)
-    elif target_fraction != current_fraction:
-        await client.set_speed(throttle_id, target_fraction)
-
-    if hold_seconds:
-        try:
-            await asyncio.sleep(hold_seconds)
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            await _ramp_speed(client, throttle_id, target_fraction, 0.0, rampdown or 0.0)
-            raise
-
-    if hold_seconds is not None and target_fraction > 0.0:
-        await _ramp_speed(client, throttle_id, target_fraction, 0.0, rampdown or 0.0)
-
-    return client.throttle_state(throttle_id) or {}
-
-
 async def throttle_list(args: argparse.Namespace) -> int:
     """Print last-known speed/direction/functions for every locomotive this CLI has touched.
 
@@ -247,6 +139,105 @@ async def throttle_list(args: argparse.Namespace) -> int:
         rows.append([address, speed_display, direction_display, functions_display])
     print(tabulate(rows, headers=["Address", "Speed", "Direction", "Functions on"]))
     return 0
+
+
+def _cache_row(address: int) -> list:
+    """Build one throttle_list-style row for `address` from state.py's local cache."""
+    info = _state.load_state().get(str(address), {})
+    speed = info.get("speed")
+    speed_display = "-" if speed is None else f"{speed * 100:.0f}%"
+    direction = info.get("forward")
+    direction_display = "-" if direction is None else _direction_name(direction)
+    functions = info.get("functions", {})
+    on_functions = sorted(int(n) for n, v in functions.items() if v)
+    functions_display = ", ".join(f"F{n}" for n in on_functions) or "-"
+    return [address, speed_display, direction_display, functions_display]
+
+
+async def throttle_find(args: argparse.Namespace) -> int:
+    """Resolve a locomotive name/fragment/address to its roster identity and last-known throttle state.
+
+    Read-only — resolves via the roster (same tolerant matching as `roster
+    find`/`_resolve_address`) but never opens a JMRI connection; the
+    speed/direction/functions shown come from state.py's local cache (see
+    `throttle_list`'s docstring for why a fresh connection has nothing live
+    to ask between CLI invocations), so they read "-" for a locomotive this
+    CLI hasn't touched yet even if it's actually moving under JMRI/another
+    client's control.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.loco` (name, a fragment of
+            it, or a DCC address).
+
+    Returns:
+        0 on success, 1 if JMRI is unreachable or `args.loco` is ambiguous
+        or matches no roster entry (a bare numeric address always resolves,
+        even if absent from the roster).
+    """
+    try:
+        address = await _resolve_address(args.loco)
+    except JmriHttpError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    _, speed, direction, functions = _cache_row(address)
+    print(f"address={address} speed={speed} direction={direction} functions_on={functions}")
+    return 0
+
+
+def _roster_label(entry: dict) -> str:
+    return str(entry.get("name", ""))
+
+
+async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
+    """Shared body for throttle_findr/throttle_findg: list every roster entry matching a pattern.
+
+    Filters the roster by name (same as roster_findr/findg) but shows each
+    match's last-known throttle state (from state.py's local cache,
+    `throttle_list`-style) instead of roster fields — the throttle-relevant
+    view of a name search. Zero matches is not an error.
+    """
+    try:
+        roster = await get_roster()
+        matcher = find_regex if regex else find_glob
+        matches = matcher(args.pattern, roster, _roster_label)
+    except JmriHttpError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if not matches:
+        print(f"No roster entries match {args.pattern!r}")
+        return 0
+    rows = [_cache_row(e["address"]) for e in sorted(matches, key=lambda e: _roster_label(e).casefold())]
+    print(tabulate(rows, headers=["Address", "Speed", "Direction", "Functions on"]))
+    return 0
+
+
+async def throttle_findr(args: argparse.Namespace) -> int:
+    """List every roster entry whose name matches a regular expression (case-insensitive, re.search).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a Python regex,
+            matched against each roster entry's name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable or
+        `args.pattern` is not a valid regex.
+    """
+    return await _throttle_find_pattern(args, regex=True)
+
+
+async def throttle_findg(args: argparse.Namespace) -> int:
+    """List every roster entry whose name matches a shell-style glob (case-insensitive, *, ?, [...]).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a glob, matched
+            against each roster entry's name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable.
+    """
+    return await _throttle_find_pattern(args, regex=False)
 
 
 async def throttle_acquire(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
@@ -683,6 +674,40 @@ async def throttle_off(args: argparse.Namespace, *, client: JmriWsClient | None 
         unreachable, nothing resolves, or any command was rejected.
     """
     return await _throttle_set_functions(args, state=False, client=client)
+
+
+async def throttle_function(args: argparse.Namespace) -> int:
+    """Print a locomotive's user-labeled decoder functions (F0-F28).
+
+    Identical to `roster functions <name>`, reachable from the `throttle`
+    group too since that's where a user looking to run `throttle on`/`off`
+    is most likely to look first for "what functions does this loco have?".
+    Read-only — no JMRI WebSocket/throttle connection involved, just the
+    roster HTTP read.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.loco` (name, a fragment of
+            it, or a DCC address).
+
+    Returns:
+        0 on success (including no labeled functions), 1 if JMRI is
+        unreachable or `args.loco` is ambiguous or matches no roster entry.
+    """
+    try:
+        roster = await get_roster()
+        entry = resolve_roster_entry(args.loco, roster)
+        labels = await get_roster_function_labels(entry["name"])
+    except JmriHttpError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"{entry['name']} (address={entry['address']})")
+    if not labels:
+        print("  no labeled functions")
+        return 0
+    rows = [[f"F{n}", labels[n]] for n in sorted(labels)]
+    print(tabulate(rows, headers=["Function", "Label"]))
+    return 0
 
 
 def _format_sniff_data(msg_type: str, data) -> str:

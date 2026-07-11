@@ -21,8 +21,19 @@ async def get_turnouts() -> list[dict[str, Any]]:
 
     Each entry has at least: name (JMRI system name, e.g. "IT100"),
     userName (may be None if never set in JMRI), state (2=CLOSED,
-    4=THROWN; JMRI can also report 0=UNKNOWN or 8=INCONSISTENT for a
-    turnout with feedback wired up that hasn't settled).
+    4=THROWN, 0=UNKNOWN, 8=INCONSISTENT), and "sensor" (JMRI's 2-element
+    feedback-sensor array, entries null if no real sensor is wired there).
+
+    INCONSISTENT is NOT always a transient settling condition. Verified
+    live (2026-07-11) against a turnout with no wired feedback sensor
+    (sensor: [null, null]): it reported state=8 persistently, at rest,
+    with no command in flight — JMRI simply has no way to confirm that
+    kind of turnout's real position, so it reports INCONSISTENT
+    indefinitely as its steady state. Only a turnout with an actual
+    sensor object in its "sensor" array can meaningfully "settle" out of
+    INCONSISTENT. See jmri_mcp.tools._common.compact_turnout's
+    has_feedback_sensor field, derived from this same "sensor" array, for
+    how downstream callers should interpret this.
     """
     payload = await _get_json("/json/turnouts")
     if isinstance(payload, dict):

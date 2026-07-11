@@ -291,9 +291,24 @@ def test_resolve_sensor_empty_query_raises():
 async def test_get_roster_compacts_fixture_entries(mock_roster, roster_fixture):
     roster = await get_roster()
     assert roster == [
-        {"name": "141R", "address": 2, "road": "Mikado 141 R", "model": "8273"},
-        {"name": "Autorail", "address": 4, "road": "Railcar", "model": "4185A"},
-        {"name": "Boite à Sel", "address": 8, "road": "", "model": ""},
+        {
+            "name": "141R", "address": 2, "road": "Mikado 141 R",
+            "road_number": "141 R 1246, dépôt de Miramas", "manufacturer": "Jouef",
+            "model": "8273", "owner": "SNCF", "date_modified": "2024-01-20T13:18:40.774+00:00",
+            "groups": ["test"],
+        },
+        {
+            "name": "Autorail", "address": 4, "road": "Railcar",
+            "road_number": "", "manufacturer": "", "model": "4185A",
+            "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
+            "groups": [],
+        },
+        {
+            "name": "Boite à Sel", "address": 8, "road": "",
+            "road_number": "", "manufacturer": "", "model": "",
+            "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
+            "groups": [],
+        },
     ]
 
 
@@ -312,7 +327,11 @@ async def test_get_roster_skips_entries_with_unusable_address():
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=bad))
         roster = await get_roster()
-    assert roster == [{"name": "141R", "address": 2, "road": "Mikado", "model": "8273"}]
+    assert roster == [{
+        "name": "141R", "address": 2, "road": "Mikado",
+        "road_number": "", "manufacturer": "", "model": "8273",
+        "owner": "", "date_modified": "", "groups": [],
+    }]
 
 
 async def test_get_roster_accepts_bare_data():
@@ -320,7 +339,11 @@ async def test_get_roster_accepts_bare_data():
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=bare))
         roster = await get_roster()
-    assert roster == [{"name": "141R", "address": 2, "road": "Mikado", "model": "8273"}]
+    assert roster == [{
+        "name": "141R", "address": 2, "road": "Mikado",
+        "road_number": "", "manufacturer": "", "model": "8273",
+        "owner": "", "date_modified": "", "groups": [],
+    }]
 
 
 async def test_get_roster_raises_on_non_list_non_dict_payload():

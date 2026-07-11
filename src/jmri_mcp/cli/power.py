@@ -11,6 +11,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.cli.constants import POWER_STATE_NAMES
 from jmri_mcp.jmri_client import (
     JmriError,
@@ -70,6 +71,83 @@ async def power_get(args: argparse.Namespace) -> int:
         return 1
     print(_state_name(match))
     return 0
+
+
+async def power_find(args: argparse.Namespace) -> int:
+    """Resolve a power system name/prefix/fragment to its full state, roster-`find`-style.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.system` (name, prefix, or an
+            unambiguous fragment of the name).
+
+    Returns:
+        0 on success, 1 if JMRI is unreachable or `args.system` is
+        ambiguous or matches no system.
+    """
+    try:
+        systems = await get_systems()
+        match = resolve_system(args.system, systems)
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"name={match.get('name', '?')} prefix={match.get('prefix', '?')} "
+        f"state={_state_name(match)} default={'yes' if match.get('default') else 'no'}"
+    )
+    return 0
+
+
+def _system_label(system: dict) -> str:
+    return str(system.get("name", ""))
+
+
+async def _power_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
+    """Shared body for power_findr/power_findg: list every power system matching a pattern.
+
+    Unlike power_find, a pattern can legitimately match zero, one, or many
+    systems — no ambiguity error, just a filtered `power status`-style
+    table (or "no power systems match" if the pattern matches nothing).
+    """
+    try:
+        systems = await get_systems()
+        matcher = find_regex if regex else find_glob
+        matches = matcher(args.pattern, systems, _system_label)
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if not matches:
+        print(f"No power systems match {args.pattern!r}")
+        return 0
+    _print_systems_table(matches)
+    return 0
+
+
+async def power_findr(args: argparse.Namespace) -> int:
+    """List every power system whose name matches a regular expression (case-insensitive, re.search).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a Python regex,
+            matched against each system's name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable or
+        `args.pattern` is not a valid regex.
+    """
+    return await _power_find_pattern(args, regex=True)
+
+
+async def power_findg(args: argparse.Namespace) -> int:
+    """List every power system whose name matches a shell-style glob (case-insensitive, *, ?, [...]).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a glob, matched
+            against each system's name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable.
+    """
+    return await _power_find_pattern(args, regex=False)
 
 
 async def power_default(args: argparse.Namespace) -> int:

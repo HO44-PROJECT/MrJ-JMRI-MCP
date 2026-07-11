@@ -14,10 +14,10 @@ of this redesign): a group whose members share an obvious "just show me
 the state" default doesn't force typing a leaf name for it — bare `power`
 behaves like `power status`, bare `roster` like `roster list`, bare
 `throttle` like `throttle list`. And where a leaf's own value is really a
-verb (on/off, forward/reverse, closed/thrown), that value is elevated to
+verb (on/off, forward/reverse, close/throw), that value is elevated to
 be the subcommand name itself instead of a positional choice argument —
 `power on`/`power off`, `throttle forward`/`throttle reverse`, `light
-on`/`light off`, `turnout closed`/`turnout thrown`, `throttle on`/`off`.
+on`/`light off`, `turnout close`/`turnout throw`, `throttle on`/`off`.
 """
 
 import argparse
@@ -139,6 +139,25 @@ def build_parser() -> argparse.ArgumentParser:
     get_.add_argument("system", nargs="?", default=None,
                        help="System name/prefix/fragment (omit for the default system)")
 
+    power_find_cmd = _leaf(
+        power_sub, "find", help="Resolve a power system name/prefix/fragment to its full state",
+        example="jmri-cli power find ohara", func=power.power_find,
+    )
+    power_find_cmd.add_argument("system", nargs="?", default=None,
+                                 help="System name/prefix/fragment (omit for the default system)")
+
+    power_findr_cmd = _leaf(
+        power_sub, "findr", help="List every power system whose name matches a regex",
+        example="jmri-cli power findr '^DCC'", func=power.power_findr,
+    )
+    power_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+
+    power_findg_cmd = _leaf(
+        power_sub, "findg", help="List every power system whose name matches a shell glob",
+        example="jmri-cli power findg 'DCC*'", func=power.power_findg,
+    )
+    power_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+
     _leaf(
         power_sub, "default", help="Print which power system JMRI treats as the default",
         example="jmri-cli power default", func=power.power_default,
@@ -157,9 +176,14 @@ def build_parser() -> argparse.ArgumentParser:
     roster_cmd.epilog = "example:\n  jmri-cli roster"
     roster_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
-    _leaf(
+    list_cmd = _leaf(
         roster_sub, "list", help="Show every locomotive in the roster",
-        example="jmri-cli roster list", func=roster.roster_list,
+        example="jmri-cli roster list bydcc", func=roster.roster_list,
+    )
+    list_cmd.add_argument(
+        "sort_by", nargs="?", default="byname",
+        choices=roster.SORT_CHOICES,
+        help="Sort order (default: byname)",
     )
 
     roster_find_cmd = _leaf(
@@ -167,6 +191,18 @@ def build_parser() -> argparse.ArgumentParser:
         example="jmri-cli roster find autorail", func=roster.roster_find,
     )
     roster_find_cmd.add_argument("name", help="Locomotive name, a fragment of it, or a DCC address")
+
+    roster_findr_cmd = _leaf(
+        roster_sub, "findr", help="List every roster entry whose name matches a regex",
+        example="jmri-cli roster findr '^auto'", func=roster.roster_findr,
+    )
+    roster_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+
+    roster_findg_cmd = _leaf(
+        roster_sub, "findg", help="List every roster entry whose name matches a shell glob",
+        example="jmri-cli roster findg 'boite*'", func=roster.roster_findg,
+    )
+    roster_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
 
     roster_functions_cmd = _leaf(
         roster_sub, "functions", help="List a locomotive's user-labeled decoder functions",
@@ -183,6 +219,24 @@ def build_parser() -> argparse.ArgumentParser:
         throttle_sub, "list", help="Show last-known speed/direction/functions per locomotive",
         example="jmri-cli throttle list", func=throttle.throttle_list,
     )
+
+    throttle_find_cmd = _leaf(
+        throttle_sub, "find", help="Resolve a locomotive name/fragment/address to its roster identity and cached state",
+        example="jmri-cli throttle find autorail", func=throttle.throttle_find,
+    )
+    throttle_find_cmd.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+
+    throttle_findr_cmd = _leaf(
+        throttle_sub, "findr", help="List every roster locomotive whose name matches a regex",
+        example="jmri-cli throttle findr '^auto'", func=throttle.throttle_findr,
+    )
+    throttle_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+
+    throttle_findg_cmd = _leaf(
+        throttle_sub, "findg", help="List every roster locomotive whose name matches a shell glob",
+        example="jmri-cli throttle findg 'Auto*'", func=throttle.throttle_findg,
+    )
+    throttle_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
 
     acquire = _leaf(
         throttle_sub, "acquire", help="Acquire a locomotive by name/fragment/address",
@@ -278,6 +332,13 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Function number (0-28) or a fragment of its roster label "
                               "(omit for every labeled function)")
 
+    function_cmd = _leaf(
+        throttle_sub, "function",
+        help="List a locomotive's user-labeled decoder functions",
+        example="jmri-cli throttle function 3", func=throttle.throttle_function,
+    )
+    function_cmd.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+
     sniff = _leaf(
         throttle_sub, "sniff", help="Dump every JMRI WebSocket message live, until Ctrl-C",
         example="jmri-cli throttle sniff -a 3 -a 7", func=throttle.throttle_sniff,
@@ -302,6 +363,24 @@ def build_parser() -> argparse.ArgumentParser:
         example="jmri-cli light list", func=light.light_list,
     )
 
+    light_find_cmd = _leaf(
+        light_sub, "find", help="Resolve a light name/fragment/system ID to its full state",
+        example='jmri-cli light find "Depot Lighting"', func=light.light_find,
+    )
+    light_find_cmd.add_argument("name", help="Light userName, a fragment of it, or JMRI's system ID (e.g. IL1)")
+
+    light_findr_cmd = _leaf(
+        light_sub, "findr", help="List every light whose name matches a regex",
+        example="jmri-cli light findr '^Depot'", func=light.light_findr,
+    )
+    light_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+
+    light_findg_cmd = _leaf(
+        light_sub, "findg", help="List every light whose name matches a shell glob",
+        example="jmri-cli light findg 'Depot*'", func=light.light_findg,
+    )
+    light_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+
     light_on_cmd = _leaf(
         light_sub, "on", help="Turn a light on, or every light if none is given",
         example='jmri-cli light on "Depot Lighting"', func=light.light_on,
@@ -316,7 +395,7 @@ def build_parser() -> argparse.ArgumentParser:
     light_off_cmd.add_argument("name", nargs="?", default=None,
                                 help="Light name/userName/fragment (omit for every light)")
 
-    # -- turnout: bare = list; closed/thrown take an optional fuzzy target
+    # -- turnout: bare = list; close/throw take an optional fuzzy target
     turnout_cmd, turnout_sub = _group(subparsers, "turnout", default_func=turnout.turnout_list)
     turnout_cmd.epilog = "example:\n  jmri-cli turnout"
     turnout_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
@@ -326,19 +405,37 @@ def build_parser() -> argparse.ArgumentParser:
         example="jmri-cli turnout list", func=turnout.turnout_list,
     )
 
-    turnout_closed_cmd = _leaf(
-        turnout_sub, "closed", help="Set a turnout closed, or every turnout if none is given",
-        example='jmri-cli turnout closed "Layout Turnout A"', func=turnout.turnout_closed,
+    turnout_find_cmd = _leaf(
+        turnout_sub, "find", help="Resolve a turnout name or system ID to its full state",
+        example="jmri-cli turnout find IT100", func=turnout.turnout_find,
     )
-    turnout_closed_cmd.add_argument("name", nargs="?", default=None,
-                                     help="Turnout name/userName/fragment (omit for every turnout)")
+    turnout_find_cmd.add_argument("name", help="Turnout name/userName/fragment/system ID")
 
-    turnout_thrown_cmd = _leaf(
-        turnout_sub, "thrown", help="Set a turnout thrown, or every turnout if none is given",
-        example='jmri-cli turnout thrown "Layout Turnout A"', func=turnout.turnout_thrown,
+    turnout_findr_cmd = _leaf(
+        turnout_sub, "findr", help="List every turnout whose name matches a regex",
+        example="jmri-cli turnout findr '^Mountain'", func=turnout.turnout_findr,
     )
-    turnout_thrown_cmd.add_argument("name", nargs="?", default=None,
-                                     help="Turnout name/userName/fragment (omit for every turnout)")
+    turnout_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+
+    turnout_findg_cmd = _leaf(
+        turnout_sub, "findg", help="List every turnout whose name matches a shell glob",
+        example="jmri-cli turnout findg 'Layout*'", func=turnout.turnout_findg,
+    )
+    turnout_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+
+    turnout_close_cmd = _leaf(
+        turnout_sub, "close", help="Close a turnout, or every turnout if none is given",
+        example='jmri-cli turnout close "Layout Turnout A"', func=turnout.turnout_closed,
+    )
+    turnout_close_cmd.add_argument("name", nargs="?", default=None,
+                                    help="Turnout name/userName/fragment (omit for every turnout)")
+
+    turnout_throw_cmd = _leaf(
+        turnout_sub, "throw", help="Throw a turnout, or every turnout if none is given",
+        example='jmri-cli turnout throw "Layout Turnout A"', func=turnout.turnout_thrown,
+    )
+    turnout_throw_cmd.add_argument("name", nargs="?", default=None,
+                                    help="Turnout name/userName/fragment (omit for every turnout)")
 
     # -- sensor: bare = list; read-only ---------------------------------
     sensor_cmd, sensor_sub = _group(subparsers, "sensor", default_func=sensor.sensor_list)
@@ -356,6 +453,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sensor_status_cmd.add_argument("name", help="Sensor system name, userName, or fragment")
 
+    sensor_find_cmd = _leaf(
+        sensor_sub, "find", help="Resolve a sensor name/fragment/system ID to its full state",
+        example='jmri-cli sensor find "Montagne B"', func=sensor.sensor_find,
+    )
+    sensor_find_cmd.add_argument("name", help="Sensor system name, userName, or fragment")
+
+    sensor_findr_cmd = _leaf(
+        sensor_sub, "findr", help="List every sensor whose name matches a regex",
+        example="jmri-cli sensor findr '^Montagne'", func=sensor.sensor_findr,
+    )
+    sensor_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+
+    sensor_findg_cmd = _leaf(
+        sensor_sub, "findg", help="List every sensor whose name matches a shell glob",
+        example="jmri-cli sensor findg 'Montagne*'", func=sensor.sensor_findg,
+    )
+    sensor_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+
     # -- signal: bare = list ---------------------------------------------
     signal_cmd, signal_sub = _group(subparsers, "signal", default_func=signal.signal_list)
     signal_cmd.epilog = "example:\n  jmri-cli signal"
@@ -371,6 +486,24 @@ def build_parser() -> argparse.ArgumentParser:
         example='jmri-cli signal status "Entry Signal A"', func=signal.signal_status,
     )
     signal_status_cmd.add_argument("name", help="Signal mast system name, userName, or fragment")
+
+    signal_find_cmd = _leaf(
+        signal_sub, "find", help="Resolve a signal mast name/fragment/system ID to its full state",
+        example='jmri-cli signal find "Entry Signal A"', func=signal.signal_find,
+    )
+    signal_find_cmd.add_argument("name", help="Signal mast system name, userName, or fragment")
+
+    signal_findr_cmd = _leaf(
+        signal_sub, "findr", help="List every signal mast whose name matches a regex",
+        example="jmri-cli signal findr '^Entry'", func=signal.signal_findr,
+    )
+    signal_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+
+    signal_findg_cmd = _leaf(
+        signal_sub, "findg", help="List every signal mast whose name matches a shell glob",
+        example="jmri-cli signal findg 'Entry*'", func=signal.signal_findg,
+    )
+    signal_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
 
     signal_set_cmd = _leaf(
         signal_sub, "set", help="Set a signal mast's aspect (writes to JMRI)",

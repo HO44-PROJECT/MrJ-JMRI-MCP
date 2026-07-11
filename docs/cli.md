@@ -35,11 +35,11 @@ Two rules apply consistently across every command group below:
   like `throttle list`; bare `light`/`turnout`/`sensor`/`signal` like their
   own `list`.
 - **A state value that would otherwise be a positional argument (on/off,
-  forward/reverse, closed/thrown) is elevated to be the subcommand name
+  forward/reverse, close/throw) is elevated to be the subcommand name
   itself**, and the target becomes an *optional* fuzzy argument that
   defaults to "every member of the group" when omitted — `power on`/`power
   off`, `throttle forward`/`throttle reverse`, `light on`/`light off`,
-  `turnout closed`/`turnout thrown`. `jmri-cli power on` turns every system
+  `turnout close`/`turnout throw`. `jmri-cli power on` turns every system
   on; `jmri-cli power on zou` turns on just the one matching `"zou"`.
 
 ## Interactive shell (`jmri-cli` with no arguments)
@@ -151,6 +151,40 @@ $ jmri-cli power get ohara
 OFF
 ```
 
+## `jmri-cli power find [system]`
+
+Resolve a system name/prefix/fragment to its full state — like `power get`
+but a richer one-line summary (`name=... prefix=... state=... default=...`)
+rather than a bare state word, matching `turnout find`/`roster find`'s
+style. Errors (ambiguous or unknown) exactly like `power get`.
+
+```bash
+$ jmri-cli power find ohara
+name=DCC++ Ohara prefix=O state=ON default=no
+```
+
+## `jmri-cli power findr <regex>` / `power findg <glob>`
+
+List every power system whose name matches a pattern — a filtered `power
+status`-style table. Zero matches is not an error, just
+`No power systems match '<pattern>'`. Same regex (`re.search`,
+case-insensitive) vs. glob (`fnmatch`, case-insensitive) split as
+`roster findr`/`findg`.
+
+```bash
+$ jmri-cli power findr '^DCC\+\+ O'
+System            State    Default
+----------------  -------  ---------
+DCC++ Ohara       ON
+
+$ jmri-cli power findg 'DCC*'
+System              State    Default
+------------------  -------  ---------
+DCC++ Ohara         ON
+DCC++ Raijin        ON       yes
+DCC++ Zou           ON
+```
+
 ## `jmri-cli power default`
 
 Print which system JMRI treats as the default (the one used when no system
@@ -225,10 +259,10 @@ before feeding it to `throttle`.
 
 ```bash
 $ jmri-cli roster find autorail
-address=4 name=Autorail road=Railcar model=4185A
+address=4 name=Autorail road=Railcar road_number=ET 90 02 manufacturer=Roco model=4185A owner=DB modified=2023-12-30T17:06:47.954+00:00 groups=-
 
 $ jmri-cli roster find 4
-address=4 name=Autorail road=Railcar model=4185A
+address=4 name=Autorail road=Railcar road_number=ET 90 02 manufacturer=Roco model=4185A owner=DB modified=2023-12-30T17:06:47.954+00:00 groups=-
 
 $ jmri-cli roster find tgv
 Error: Unknown locomotive 'tgv'. Available: ['141R', 'Autorail', ...]
@@ -236,6 +270,33 @@ Error: Unknown locomotive 'tgv'. Available: ['141R', 'Autorail', ...]
 
 A name matching more than one entry (e.g. `"a"`) is reported as an
 `Ambiguous locomotive` error listing every match, rather than guessing one.
+
+## `jmri-cli roster findr <regex>` / `roster findg <glob>`
+
+Unlike `roster find` (exactly one result, or an error), `findr`/`findg` list
+**every** roster entry whose name matches a pattern — a filtered `roster
+list`, sorted the same way and marked with the same `▼` chevron on the Name
+column. Zero matches is not an error, just an empty-looking result printed
+as `No roster entries match '<pattern>'`.
+
+- `findr <regex>`: a case-insensitive Python regular expression, matched
+  with `re.search` (so it doesn't need to match the whole name — `auto`
+  matches `Autorail` anywhere in the string, `^auto` anchors to the start).
+  An invalid regex is reported as `Error: Invalid regex ...`, exit code 1.
+- `findg <glob>`: a case-insensitive shell-style glob (`*`, `?`, `[...]`),
+  matched against the whole name with `fnmatch`.
+
+```bash
+$ jmri-cli roster findr '^auto'
+  Address  Name ▼    Road     Road #    Manufacturer  Model  Owner  Modified                      Groups
+---------  --------  -------  --------  ------------  -----  -----  ----------------------------  ------
+        4  Autorail  Railcar  ET 90 02  Roco          4185A  DB     2023-12-30T17:06:47.954+00:00  -
+
+$ jmri-cli roster findg 'boite*'
+  Address  Name ▼       Road  Road #  Manufacturer  Model  Owner  Modified                      Groups
+---------  -----------  ----  ------  ------------  -----  -----  ----------------------------  ------
+        8  Boite à Sel  -     -       -             -      -      2025-07-01T23:30:58.695+00:00  -
+```
 
 ## `jmri-cli roster functions <name-or-address>`
 
@@ -298,6 +359,42 @@ truth — another client (a JMRI panel, an MCP session) changing a loco's
 speed between two `jmri-cli` calls won't be reflected here until the next
 `jmri-cli throttle ...` command touches that address again and resyncs from
 JMRI's own reply.
+
+## `jmri-cli throttle find <loco>`
+
+Resolve a locomotive name/fragment/address to its roster identity and
+last-known throttle state, `roster find`-style. **Read-only and never
+opens a JMRI connection** — resolves via the roster (same tolerant
+matching as `roster find`) and reads the same local cache as `throttle
+list`, so speed/direction/functions show `-` for a locomotive this CLI
+hasn't touched yet, even if it's actually moving under JMRI/another
+client's control (see "Why `throttle` has a local cache" above).
+
+```bash
+$ jmri-cli throttle find autorail
+address=4 speed=- direction=- functions_on=-
+```
+
+## `jmri-cli throttle findr <regex>` / `throttle findg <glob>`
+
+List every roster locomotive whose name matches a pattern — a filtered
+`throttle list`-style table (cached state, same caveat as `throttle find`
+above). Zero matches is not an error, just
+`No roster entries match '<pattern>'`. Same regex (`re.search`,
+case-insensitive) vs. glob (`fnmatch`, case-insensitive) split as
+`roster findr`/`findg`.
+
+```bash
+$ jmri-cli throttle findr '^auto'
+  Address  Speed    Direction    Functions on
+---------  -------  -----------  --------------
+        4  -        -            -
+
+$ jmri-cli throttle findg 'Auto*'
+  Address  Speed    Direction    Functions on
+---------  -------  -----------  --------------
+        4  -        -            -
+```
 
 ## `jmri-cli throttle acquire <loco> [--prefix P]`
 
@@ -534,15 +631,48 @@ is identical to `jmri-cli light list`.
 
 ```bash
 $ jmri-cli light
-Light           State
---------------  -------
-Depot Lighting  OFF
-Street Lamps    ON
-IL3             OFF
+System ID ▼    Light           State
+-----------  --------------  -------
+IL1          Depot Lighting  OFF
+IL2          Street Lamps    ON
+IL3          IL3             OFF
 ```
 
 A light with no `userName` set in JMRI prints its raw system name (`IL3`
-above) instead — not an error, just unlabeled.
+above) as the label too — not an error, just unlabeled. `System ID` is
+JMRI's own internal name, useful when several lights share a similar
+`userName` — shown first since it's the stable identifier, with the
+(possibly absent/duplicate) friendly name next to it.
+
+## `jmri-cli light find <name>`
+
+Resolve a light name/fragment/system ID to its full state — exactly one
+result, or an error if ambiguous/unknown. Same tolerant matching (exact,
+then unambiguous fragment) as `roster find`/`turnout find`.
+
+```bash
+$ jmri-cli light find "depot"
+system_id=IL1 name=Depot Lighting state=OFF
+```
+
+## `jmri-cli light findr <regex>` / `light findg <glob>`
+
+List every light whose name matches a pattern — a filtered `light
+list`-style table. Zero matches is not an error, just
+`No lights match '<pattern>'`. Same regex (`re.search`, case-insensitive)
+vs. glob (`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
+
+```bash
+$ jmri-cli light findr '^Depot'
+System ID ▼    Light           State
+-----------  --------------  -------
+IL1          Depot Lighting  OFF
+
+$ jmri-cli light findg 'Street*'
+System ID ▼    Light         State
+-----------  ------------  -------
+IL2          Street Lamps  ON
+```
 
 ## `jmri-cli light on [name]` / `light off [name]`
 
@@ -552,9 +682,9 @@ Turn a layout light on or off, or **every** light if `[name]` is omitted.
 
 ```bash
 $ jmri-cli light on depot
-Light           State
---------------  -------
-Depot Lighting  ON
+System ID    Light           State
+-----------  --------------  -------
+IL1          Depot Lighting  ON
 ```
 
 The state is re-read after the command and confirmed the same honest way
@@ -564,38 +694,101 @@ warning to stderr and exits with code 1.
 
 ## `jmri-cli turnout` / `turnout list`
 
-Show the state of every turnout known to JMRI. No side effects. Bare
-`jmri-cli turnout` is identical to `jmri-cli turnout list`.
+Show the state of every turnout known to JMRI, sorted alphabetically by name
+(the sorted column marked with a `▼`). No side effects. Bare `jmri-cli
+turnout` is identical to `jmri-cli turnout list`.
 
 ```bash
 $ jmri-cli turnout
-Turnout                         State
-------------------------------  -------
-Layout Turnout A                CLOSED
-Layout Turnout BL               CLOSED
-A / Mountain A -> Platform A/B  THROWN
+System ID ▼    Turnout                         State    Feedback  Comment
+-----------  ------------------------------  -------  ----------  -------------------
+IT100        Layout Turnout A                CLOSED   yes         Yard throat switch
+IT101        Layout Turnout BL               CLOSED   yes
+OT23         A / Mountain A -> Platform A/B  THROWN   no
 ```
 
-## `jmri-cli turnout closed [name]` / `turnout thrown [name]`
+The "System ID" column is JMRI's own internal name for the turnout (e.g.
+`IT100`) — useful for turnouts that were never given a friendly userName in
+JMRI, and always accepted anywhere a turnout name is (`find`, `close`,
+`throw`). Shown first as the stable identifier.
 
-Set a turnout closed or thrown, or **every** turnout if `[name]` is omitted.
+The "Feedback" column ("yes"/"no") reports whether JMRI has a real position
+sensor wired to that turnout. **A turnout with `Feedback: no` can show
+`State: INCONSISTENT` indefinitely, even at rest with no command pending —
+this is that turnout's normal steady state, not a fault.** Verified live
+against the user's own layout (2026-07-11): a turnout with no wired sensor
+reported INCONSISTENT persistently, while `feedbackMode` alone (JMRI's own
+internal setting) was NOT a reliable way to detect this — one turnout was
+configured `feedbackMode=DIRECT` (JMRI's "no feedback" mode) yet still had
+a real sensor object attached. This column is instead derived directly from
+whether JMRI reports an actual sensor for that turnout.
+
+The "Comment" column shows JMRI's own free-text `comment` field for that
+turnout (set in PanelPro's turnout table), blank if unset.
+
+## `jmri-cli turnout find <name>`
+
+Resolve a turnout name, userName fragment, or system ID to its full state.
+No side effects — same tolerant matching as `close`/`throw` but without
+touching anything, mirroring `roster find`.
+
+```bash
+$ jmri-cli turnout find IT100
+system_id=IT100 name=Layout Turnout A state=CLOSED feedback_sensor=yes comment=Yard throat switch
+```
+
+## `jmri-cli turnout findr <regex>` / `turnout findg <glob>`
+
+Unlike `turnout find` (exactly one result, or an error), `findr`/`findg`
+list **every** turnout whose name matches a pattern — a filtered `turnout
+list`, same columns and chevron. Zero matches is not an error, just
+`No turnouts match '<pattern>'`. Same regex (`re.search`, case-insensitive)
+vs. glob (`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
+
+```bash
+$ jmri-cli turnout findr '^Mountain'
+No turnouts match '^Mountain'
+
+$ jmri-cli turnout findr 'Mountain'
+System ID ▼    Turnout                         State    Feedback  Comment
+-----------  ------------------------------  -------  ----------  ---------
+OT23         A / Mountain A -> Platform A/B  THROWN   no
+OT25         B / Mountain B -> Platform B    THROWN   no
+OT27         C / Mountain C -> Platform B/C  THROWN   yes
+OT29         D / Viaduc -> Mountain A/B      THROWN   no
+
+$ jmri-cli turnout findg 'Layout*'
+System ID ▼    Turnout            State    Feedback  Comment
+-----------  -----------------  -------  ----------  -------------------
+IT100        Layout Turnout A   THROWN   yes         Yard throat switch
+IT101        Layout Turnout BL  THROWN   yes
+IT102        Layout Turnout BR  CLOSED   yes
+IT103        Layout Turnout C   CLOSED   yes
+```
+
+## `jmri-cli turnout close [name]` / `turnout throw [name]`
+
+Close or throw a turnout, or **every** turnout if `[name]` is omitted.
 **This writes to JMRI and can move a physical turnout motor on the real
 layout** — omitting `[name]` moves every turnout JMRI knows about, so use it
-deliberately. Resolves `[name]` the same tolerant way as before. Uses
+deliberately. Resolves `[name]` the same tolerant way as before. The verbs
+are the natural imperatives `close`/`throw`; the reported *state* still uses
 JMRI/PanelPro's own CLOSED/THROWN vocabulary rather than "open"/"closed"
 track terminology, which would be ambiguous about which route is which.
 
 ```bash
-$ jmri-cli turnout thrown "layout turnout a"
-Turnout            State
------------------  -------
-Layout Turnout A   THROWN
+$ jmri-cli turnout throw "layout turnout a"
+System ID    Turnout            State    Feedback  Comment
+-----------  -----------------  -------  ----------  -------------------
+IT100        Layout Turnout A   THROWN   yes         Yard throat switch
 ```
 
 The state is re-read after the command and confirmed the same honest way
 as `power on`/`off`/`light on`/`off` — if the observed state doesn't match
-the request (e.g. a feedback-wired turnout that didn't settle), the command
-prints a warning to stderr and exits with code 1.
+the request, the command prints a warning to stderr and exits with code 1.
+If any unconfirmed turnout has `Feedback: no`, an extra note is printed
+first clarifying that the command was sent OK and JMRI simply can't confirm
+that turnout's real position — not a sign that anything went wrong.
 
 ## `jmri-cli sensor` / `sensor list`
 
@@ -607,19 +800,49 @@ own hardware inputs, not a command this project should issue. Bare
 
 ```bash
 $ jmri-cli sensor
-ISCLOCKRUNNING      : ACTIVE
-Montagne B          : INACTIVE
+Sensor ▼          System ID       State
+----------------  --------------  --------
+ISCLOCKRUNNING    ISCLOCKRUNNING  ACTIVE
+Montagne A int    RS24            INACTIVE
+Montagne B        RS22            INACTIVE
 ```
 
-## `jmri-cli sensor status <name>`
+`System ID` is JMRI's own internal name — the same value shown when a
+sensor has no `userName` set (e.g. `ISCLOCKRUNNING` above, which has no
+friendly label at all).
 
-Show one sensor's state. `<name>` matches either JMRI's system name
+## `jmri-cli sensor status <name>` / `sensor find <name>`
+
+Show one sensor's full state. `<name>` matches either JMRI's system name
 (`"RS22"`) or its user-friendly `userName` (`"Montagne B"`), case-
-insensitive, tolerant of an unambiguous fragment. No side effects.
+insensitive, tolerant of an unambiguous fragment. No side effects. `find`
+is an alias for `status`, kept for naming consistency with every other
+domain's "resolve one, no side effects" command.
 
 ```bash
-$ jmri-cli sensor status "montagne b"
-Montagne B          : INACTIVE
+$ jmri-cli sensor find "montagne b"
+name=Montagne B system_id=RS22 state=INACTIVE
+```
+
+## `jmri-cli sensor findr <regex>` / `sensor findg <glob>`
+
+List every sensor whose name matches a pattern — a filtered `sensor
+list`-style table. Zero matches is not an error, just
+`No sensors match '<pattern>'`. Same regex (`re.search`, case-insensitive)
+vs. glob (`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
+
+```bash
+$ jmri-cli sensor findr '^Montagne'
+Sensor ▼        System ID    State
+--------------  -----------  --------
+Montagne A int  RS24         INACTIVE
+Montagne B      RS22         INACTIVE
+
+$ jmri-cli sensor findg 'Quai*'
+Sensor ▼    System ID    State
+----------  -----------  --------
+Quai A int  RS26         ACTIVE
+Quai B      RS49         INACTIVE
 ```
 
 ## `jmri-cli signal` / `signal list`
@@ -632,27 +855,51 @@ for why. No side effects. Bare `jmri-cli signal` is identical to
 
 ```bash
 $ jmri-cli signal
-Entry Signal A      : Hp1
+Signal ▼    System ID                    Aspect
+----------  ---------------------------  --------
+bloc31      ZF$dsm:DB-HV-1969:block(31)  Unknown
 ```
 
-Aspect names (`Hp0`, `Hp1`, `Hp2`, ...) are whatever vocabulary the mast's
-configured signal system uses (e.g. German `DB-HV-1969`) — passed through
-verbatim, never hardcoded or translated by this project.
+Aspect names (`Hp0`, `Hp1`, `Hp2`, `Unknown`, ...) are whatever vocabulary
+the mast's configured signal system uses (e.g. German `DB-HV-1969`) —
+passed through verbatim, never hardcoded or translated by this project.
 
-## `jmri-cli signal status <name>`
+## `jmri-cli signal status <name>` / `signal find <name>`
 
-Show one signal mast's aspect. `<name>` matches either JMRI's system name
-(e.g. `"ZF$dsm:DB-HV-1969:block(31)"`) or its user-friendly `userName`,
-case-insensitive, tolerant of an unambiguous fragment of `userName` — but
-**not** a fragment of the system name. JMRI auto-generates long system
-names for DCC-driven masts and, unlike most turnouts, these are commonly
-left without a `userName` set in PanelPro; if so, only the exact full
-system name resolves. Set a `userName` per mast in PanelPro if you want
-short-fragment matching to work. No side effects.
+Show one signal mast's full state. `<name>` matches either JMRI's system
+name (e.g. `"ZF$dsm:DB-HV-1969:block(31)"`) or its user-friendly
+`userName`, case-insensitive, tolerant of an unambiguous fragment of
+`userName` — but **not** a fragment of the system name. JMRI
+auto-generates long system names for DCC-driven masts and, unlike most
+turnouts, these are commonly left without a `userName` set in PanelPro; if
+so, only the exact full system name resolves. Set a `userName` per mast in
+PanelPro if you want short-fragment matching to work. No side effects.
+`find` is an alias for `status`, kept for naming consistency with every
+other domain's "resolve one, no side effects" command.
 
 ```bash
-$ jmri-cli signal status "ZF\$dsm:DB-HV-1969:block(31)"
-ZF$dsm:DB-HV-1969:block(31): Hp1
+$ jmri-cli signal find "ZF\$dsm:DB-HV-1969:block(31)"
+name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1
+```
+
+## `jmri-cli signal findr <regex>` / `signal findg <glob>`
+
+List every signal mast whose name matches a pattern — a filtered `signal
+list`-style table. Zero matches is not an error, just
+`No signal masts match '<pattern>'`. Same regex (`re.search`,
+case-insensitive) vs. glob (`fnmatch`, case-insensitive) split as
+`roster findr`/`findg`.
+
+```bash
+$ jmri-cli signal findr '^bloc'
+Signal ▼    System ID                    Aspect
+----------  ---------------------------  --------
+bloc31      ZF$dsm:DB-HV-1969:block(31)  Unknown
+
+$ jmri-cli signal findg 'bloc*'
+Signal ▼    System ID                    Aspect
+----------  ---------------------------  --------
+bloc31      ZF$dsm:DB-HV-1969:block(31)  Unknown
 ```
 
 ## `jmri-cli signal set <name> <aspect>`
@@ -669,10 +916,11 @@ as a hard error rather than a silent non-confirm.
 
 ```bash
 $ jmri-cli signal set "ZF\$dsm:DB-HV-1969:block(31)" Hp0
+name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp0
 ```
 
 The aspect is re-read after the command and confirmed the same honest way
-as `power on`/`off`/`turnout closed`/`thrown` — if a *valid* aspect still
+as `power on`/`off`/`turnout close`/`throw` — if a *valid* aspect still
 doesn't match after the command (e.g. unresponsive external hardware), the
 command prints a warning to stderr and exits with code 1. **Fixed**: the
 first live test of this command showed the POST completing with no HTTP

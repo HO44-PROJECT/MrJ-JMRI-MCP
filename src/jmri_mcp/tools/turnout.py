@@ -5,6 +5,16 @@ turnout is CLOSED or THROWN — this project uses those two words (not
 "open"/"closed" track terminology, which is ambiguous) to match JMRI's own
 vocabulary exactly, so the LLM's tool calls and any state it reports back
 to the user stay consistent with what JMRI/PanelPro shows.
+
+INCONSISTENT state and has_feedback_sensor: every tool below returns a
+"has_feedback_sensor" field (see jmri_mcp.tools._common.compact_turnout).
+Verified live (2026-07-11) that a turnout with no wired feedback sensor
+can report state=INCONSISTENT indefinitely, at rest, with no command in
+flight — this is that turnout's normal steady state, not a fault. Never
+report INCONSISTENT as an anomaly/problem to the user when
+has_feedback_sensor is false; only treat it as noteworthy when
+has_feedback_sensor is true (there, it can mean the motor genuinely
+hasn't settled or failed to reach the commanded position).
 """
 
 import logging
@@ -30,6 +40,13 @@ def register(mcp) -> None:
         Use this to discover what turnouts exist before calling
         get_turnout/set_turnout, or to answer "what turnouts are there?"/
         "which way is turnout X set?". No side effects.
+
+        Each entry includes "has_feedback_sensor" (bool). When false, that
+        turnout has no real position sensor wired up, and a state of
+        INCONSISTENT is its normal/expected steady state — not an
+        anomaly. Do not flag it to the user as a problem in that case;
+        only state="INCONSISTENT" on a turnout where has_feedback_sensor
+        is true is worth calling out as possibly unsettled.
         """
         try:
             turnouts = await get_turnouts()
@@ -49,6 +66,13 @@ def register(mcp) -> None:
 
         No side effects — this only reads state, it never changes the
         turnout.
+
+        The result includes "has_feedback_sensor" (bool). When false, that
+        turnout has no real position sensor wired up, and a state of
+        INCONSISTENT is its normal/expected steady state — not an
+        anomaly. Do not flag it to the user as a problem in that case;
+        only state="INCONSISTENT" on a turnout where has_feedback_sensor
+        is true is worth calling out as possibly unsettled.
         """
         try:
             turnouts = await get_turnouts()

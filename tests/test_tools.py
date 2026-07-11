@@ -122,9 +122,24 @@ async def test_list_roster_registered_and_compact(mock_roster):
     out = await call(mcp, "list_roster")
     assert out == {
         "roster": [
-            {"name": "141R", "address": 2, "road": "Mikado 141 R", "model": "8273"},
-            {"name": "Autorail", "address": 4, "road": "Railcar", "model": "4185A"},
-            {"name": "Boite à Sel", "address": 8, "road": "", "model": ""},
+            {
+                "name": "141R", "address": 2, "road": "Mikado 141 R",
+                "road_number": "141 R 1246, dépôt de Miramas", "manufacturer": "Jouef",
+                "model": "8273", "owner": "SNCF", "date_modified": "2024-01-20T13:18:40.774+00:00",
+                "groups": ["test"],
+            },
+            {
+                "name": "Autorail", "address": 4, "road": "Railcar",
+                "road_number": "", "manufacturer": "", "model": "4185A",
+                "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
+                "groups": [],
+            },
+            {
+                "name": "Boite à Sel", "address": 8, "road": "",
+                "road_number": "", "manufacturer": "", "model": "",
+                "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
+                "groups": [],
+            },
         ]
     }
 
@@ -142,7 +157,12 @@ async def test_find_locomotive_resolves_fuzzy_name(mock_roster):
     assert "find_locomotive" in tool_names
 
     out = await call(mcp, "find_locomotive", name="autorail")
-    assert out == {"name": "Autorail", "address": 4, "road": "Railcar", "model": "4185A"}
+    assert out == {
+        "name": "Autorail", "address": 4, "road": "Railcar",
+        "road_number": "", "manufacturer": "", "model": "4185A",
+        "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
+        "groups": [],
+    }
 
 
 async def test_find_locomotive_accent_insensitive(mock_roster):
@@ -408,9 +428,9 @@ async def test_list_turnouts_registered_and_compact(mock_turnouts):
     out = await call(mcp, "list_turnouts")
     assert out == {
         "turnouts": [
-            {"name": "Layout Turnout A", "state": "CLOSED"},
-            {"name": "Layout Turnout BL", "state": "CLOSED"},
-            {"name": "A / Mountain A -> Platform A/B", "state": "THROWN"},
+            {"name": "Layout Turnout A", "state": "CLOSED", "has_feedback_sensor": True},
+            {"name": "Layout Turnout BL", "state": "CLOSED", "has_feedback_sensor": True},
+            {"name": "A / Mountain A -> Platform A/B", "state": "THROWN", "has_feedback_sensor": False},
         ]
     }
 
@@ -425,7 +445,7 @@ async def test_list_turnouts_reports_error_honestly(monkeypatch):
 async def test_get_turnout_resolves_by_fragment(mock_turnouts):
     mcp = make_server()
     out = await call(mcp, "get_turnout", name="Layout Turnout A")
-    assert out == {"name": "Layout Turnout A", "state": "CLOSED"}
+    assert out == {"name": "Layout Turnout A", "state": "CLOSED", "has_feedback_sensor": True}
 
 
 async def test_get_turnout_unknown_name_returns_error_not_exception(mock_turnouts):
@@ -450,7 +470,12 @@ async def test_set_turnout_throws_and_confirms():
         )
         router.post(f"{MOCK_JMRI_URL}/json/turnout/IT100").mock(return_value=Response(200, json={}))
         out = await call(mcp, "set_turnout", name="Layout Turnout A", thrown=True)
-    assert out == {"name": "Layout Turnout A", "state": "THROWN", "confirmed": True}
+    assert out == {
+        "name": "Layout Turnout A",
+        "state": "THROWN",
+        "has_feedback_sensor": False,
+        "confirmed": True,
+    }
 
 
 async def test_set_turnout_reports_error_honestly(monkeypatch):
@@ -458,6 +483,37 @@ async def test_set_turnout_reports_error_honestly(monkeypatch):
     mcp = make_server()
     out = await call(mcp, "set_turnout", name="Layout Turnout A", thrown=True)
     assert "error" in out
+
+
+def test_compact_turnout_has_feedback_sensor_true_when_sensor_present():
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "IT100", "state": 2, "sensor": [{"name": "OS37"}, None]}
+    assert compact_turnout(turnout)["has_feedback_sensor"] is True
+
+
+def test_compact_turnout_has_feedback_sensor_false_when_no_sensor():
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "OT23", "state": 8, "sensor": [None, None]}
+    assert compact_turnout(turnout)["has_feedback_sensor"] is False
+
+
+def test_compact_turnout_has_feedback_sensor_false_when_sensor_field_missing():
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "OT23", "state": 8}
+    assert compact_turnout(turnout)["has_feedback_sensor"] is False
+
+
+def test_compact_turnout_has_feedback_sensor_ignores_feedback_mode():
+    """feedbackMode alone is not a reliable signal (verified live: a turnout
+    can be feedbackMode=2/DIRECT yet still carry a real sensor object) — only
+    the sensor array's actual content should matter."""
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "OT27", "state": 2, "feedbackMode": 2, "sensor": [{"name": "OS43"}, None]}
+    assert compact_turnout(turnout)["has_feedback_sensor"] is True
 
 
 async def test_list_signals_registered_and_compact(mock_signals):

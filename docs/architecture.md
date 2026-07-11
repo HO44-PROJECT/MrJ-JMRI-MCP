@@ -22,16 +22,19 @@ src/jmri_mcp/
 │   └── signal.py        # signal mast discovery, aspect set, resolve_signal
 │   │                    #   (signalMast only, not signalHead — see file docstring)
 ├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
-│   └── __init__.py     #   incl. emergency_stop_all() (every acquired throttle at once)
+│   ├── __init__.py     #   incl. emergency_stop_all() (every acquired throttle at once)
+│   └── ramp.py          #  ramp_speed/execute_speed_change: shared ramp state
+│                        #   machine, used by cli/throttle.py, cli/shell.py, and
+│                        #   tools/throttle.py's set_speed_ramped
 ├── tools/             # MCP tools exposed to the LLM
 │   ├── __init__.py    #   register(mcp): wires every domain module below
 │   ├── _common.py      #  shared helpers (throttle_id, compact_*, ensure_acquired)
 │   ├── power.py         # list_systems, get_power, set_power, power_off_all,
 │   │                    #   power_on_all, system_status
 │   ├── roster.py        # list_roster, find_locomotive, get_locomotive_functions
-│   ├── throttle.py      # acquire/release_throttle, set_speed/stop/emergency_stop,
-│   │                    #   emergency_stop_all, set_direction, set_function,
-│   │                    #   lights_on/lights_off
+│   ├── throttle.py      # acquire/release_throttle, set_speed/set_speed_ramped/
+│   │                    #   stop/emergency_stop, emergency_stop_all, set_direction,
+│   │                    #   set_function, lights_on/lights_off
 │   ├── light.py         # list_lights, get_light, set_light (layout/scenery lights,
 │   │                    #   distinct from a locomotive's F0 headlight function)
 │   ├── turnout.py       # list_turnouts, get_turnout, set_turnout
@@ -43,21 +46,24 @@ src/jmri_mcp/
 │   ├── __init__.py    #   main(); FastMCP wiring; logging → stderr only
 │   └── __main__.py    #   enables `python -m jmri_mcp.server`
 └── cli/               # jmri-cli: manual command-line tool, no MCP client needed
-    ├── __init__.py    #   main(); bare/-h/--help all show banner.py's welcome banner
+    ├── __init__.py    #   main(); bare launches shell.py, help/-h/--help show
+    │                  #     banner.py's welcome banner, everything else runs clean
     ├── __main__.py    #   enables `python -m jmri_mcp.cli`
     ├── banner.py      #   the welcome banner (name, version, repo link, command list)
     ├── constants.py   #   shared constants (state names, id prefixes, ranges)
     ├── _common.py     #   cross-module helpers (cli_throttle_id)
     ├── _doc.py        #   GROUP_HELP: short one-liner per top-level command group
+    ├── _match.py      #   find_regex/find_glob: shared matching for findr/findg leaves
     ├── state.py       #   local throttle-state cache (~/.jmri-cli/throttle_state.json)
-    ├── power.py       #   power [status|on|off|get|default], status (jmri_client)
-    ├── roster.py      #   roster [list|find|functions] (jmri_client)
-    ├── throttle.py    #   throttle [list|acquire|release|speed|stop|estop|
-    │                  #     forward|reverse|on|off|sniff] (jmri_ws + state.py)
-    ├── light.py       #   light [list|on|off] (jmri_client)
-    ├── turnout.py     #   turnout [list|closed|thrown] (jmri_client)
-    ├── sensor.py      #   sensor [list|status] (jmri_client, read-only)
-    ├── signal.py      #   signal [list|status|set] (jmri_client, signalMast only)
+    ├── power.py       #   power [status|on|off|get|find|findr|findg|default] (jmri_client)
+    ├── roster.py      #   roster [list|find|findr|findg|functions] (jmri_client)
+    ├── throttle.py    #   throttle [list|find|findr|findg|acquire|release|speed|
+    │                  #     stop|estop|forward|reverse|on|off|sniff] (jmri_ws +
+    │                  #     state.py; find/findr/findg are read-only, roster+cache only)
+    ├── light.py       #   light [list|find|findr|findg|on|off] (jmri_client)
+    ├── turnout.py     #   turnout [list|find|findr|findg|close|throw] (jmri_client)
+    ├── sensor.py      #   sensor [list|find|findr|findg|status] (jmri_client, read-only)
+    ├── signal.py      #   signal [list|status|find|findr|findg|set] (jmri_client, signalMast only)
     └── parser.py      #   build_parser(): wires the above into one CLI, incl. the
                         #     bare-group-default and verb-elevation patterns (see docs/cli.md)
 ```
@@ -233,12 +239,12 @@ a place or a locomotive?" before picking a tool.
 
 `jmri_client/turnout.py` is a structural copy of `light.py`: JMRI's
 `/json/turnouts` (list) and `/json/turnout/<name>` (single get/set), state
-2=CLOSED/4=THROWN (0=UNKNOWN, 8=INCONSISTENT for a feedback-wired turnout
-that hasn't settled — see `TURNOUT_STATE_NAMES`). `set_turnout()` re-reads
-via `get_turnouts()` after the POST and reports `confirmed` honestly, same
-contract as `set_power()`/`set_light()`. `resolve_turnout()` uses the same
-tolerant case-insensitive exact-then-fragment match as `resolve_light()`,
-with no default fallback (a turnout must be named).
+2=CLOSED/4=THROWN/0=UNKNOWN/8=INCONSISTENT (see `TURNOUT_STATE_NAMES`).
+`set_turnout()` re-reads via `get_turnouts()` after the POST and reports
+`confirmed` honestly, same contract as `set_power()`/`set_light()`.
+`resolve_turnout()` uses the same tolerant case-insensitive exact-then-
+fragment match as `resolve_light()`, with no default fallback (a turnout
+must be named).
 
 The tool surface deliberately uses JMRI/PanelPro's own **CLOSED/THROWN**
 vocabulary rather than track terminology like "open"/"closed", which would
@@ -250,6 +256,26 @@ turnout motor on the real layout, so — like the throttle tools — its
 confirmation is never assumed; a turnout with a feedback sensor wired up
 can fail to settle to the commanded position, which shows up as
 `confirmed: false` rather than being silently reported as success.
+
+**INCONSISTENT is not always transient.** Verified live against the user's
+own layout (2026-07-11): a turnout with no wired feedback sensor reported
+`state: 8` (INCONSISTENT) persistently, at rest, with no command in
+flight — JMRI has no way to confirm that turnout's real position, so it
+reports INCONSISTENT as a permanent steady state, not a settling delay.
+JMRI's own `feedbackMode` field is **not** a reliable way to detect this on
+its own — a counter-example was found live where a turnout configured
+`feedbackMode: 2` (DIRECT/no-feedback) still carried a genuine `sensor`
+object. `tools/_common.py`'s `compact_turnout()` instead derives a
+`has_feedback_sensor` boolean directly from whether JMRI's `sensor` array
+(2 elements, `null` if unwired) has any non-null entry, and exposes it
+alongside `state` on `list_turnouts`/`get_turnout`/`set_turnout`. Every
+turnout tool's docstring tells the LLM explicitly: when
+`has_feedback_sensor` is false, INCONSISTENT is expected/normal and must
+not be reported to the user as an anomaly; it's only worth flagging when
+`has_feedback_sensor` is true. `cli/turnout.py` mirrors this with a
+"Feedback" (yes/no) column on `list`/`find`/`findr`/`findg`, and
+`turnout close`/`throw`'s unconfirmed-state warning adds an extra note
+when the unconfirmed turnout(s) are sensorless, for the same reason.
 
 ## Sensors: `list_sensors` / `get_sensor` (read-only)
 
@@ -422,6 +448,39 @@ specific, never a protocol guarantee.
 
 ## CLI UX: interactive shell, ramping, and the `client=` kwarg pattern
 
+**Persistence model, summarized.** The CLI has exactly two ways to run a
+throttle command, and they hold a connection open in different ways —
+there is no thread and no subprocess involved in either; both are plain
+single-threaded `asyncio`, one event loop doing cooperative multitasking:
+
+- **One-shot** (`jmri-cli throttle speed 3 60 --hold 60`): the process
+  itself blocks. `_execute_speed_change`'s hold step does
+  `await asyncio.sleep(hold_seconds)` on the *same* connection that just
+  set the speed, so the connection — and therefore the throttle JMRI
+  granted on it — stays alive for the full 60 seconds. Only after the hold
+  ends (and the auto-stop below runs) does the function return, `_client_scope`
+  close the connection, and the process exit. Control is **not** returned to
+  the shell/terminal until all of that has happened — this is required, not
+  a limitation: JMRI releases a throttle the instant its owning connection
+  closes (see below), so a one-shot command that returned early would leave
+  nothing holding the throttle and the locomotive would stop mid-command.
+- **Shell** (`jmri-cli` bare, then `speed 3 60` typed at the prompt): the
+  shell's `JmriWsClient` was already opened once when the shell started and
+  outlives every individual command — so sending a speed command doesn't
+  need to block on anything to keep the locomotive moving. `throttle_speed`
+  returns as soon as JMRI confirms the speed change, and control comes back
+  to the `jmri-cli>` prompt immediately, while the locomotive keeps moving
+  in the background (the connection's reader/keepalive tasks and the
+  prompt's `input()` all run concurrently on the one event loop — see
+  `asyncio.to_thread(input, ...)` below). The locomotive only stops when a
+  later command says so, or the shell exits (see exit-confirmation below).
+  **Caveat**: if `--hold` *is* given inside the shell too (e.g.
+  `speed 3 60 --hold 10`), the shell prompt blocks for those 10 seconds
+  and then auto-stops, exactly like one-shot — `--hold N` always means
+  "hold for N seconds then stop, blocking the caller for that long"
+  regardless of mode. Omit `--hold` in the shell to get the immediate-return,
+  indefinite-hold behavior described above.
+
 **Why one-shot mode can never reliably hold a nonzero speed.** Every
 `jmri-cli throttle` invocation opened a fresh `JmriWsClient`, acted, then
 closed it in a `finally` block — and JMRI releases a throttle the instant
@@ -509,36 +568,44 @@ constant for every address (deliberately no per-address memory of past
 current state with an explicit stderr warning; JMRI does not stop a loco
 just because its throttle's owning connection closes.
 
-**Ramping** (`_ramp_speed`, `_execute_speed_change`, both in `throttle.py`).
-`_ramp_speed` is the shared linear-ramp primitive: `seconds <= 0` or
-`from_fraction == to_fraction` degenerates to a single final `set_speed()`
-call, so every caller can unconditionally call it rather than branching on
-"was a ramp actually requested." Steps are `max(1, int(seconds *
-RAMP_STEPS_PER_SECOND))` (4 steps/second, `constants.py`), always finishing
-with one exact final `set_speed(to_fraction)` so float accumulation never
-leaves the throttle short of target. Its `sleep` parameter is resolved
-*inside* the function body (`sleep = sleep or asyncio.sleep`), not as a bound
-default — a bound default captures the function object at import time, which
-would make `monkeypatch.setattr("...throttle.asyncio.sleep", fake_sleep)`
-silently ineffective; resolving fresh inside the body is what makes that
-monkeypatch actually take effect, scoped to `throttle.py` only.
+**Ramping** (`ramp_speed`, `execute_speed_change`, both in the shared module
+`jmri_ws/ramp.py` — moved out of `cli/throttle.py` when `tools/throttle.py`
+gained its own ramped MCP tool, see "Ramped speed changes over MCP" below;
+`jmri_ws/` has no dependency on `cli/`, so this is the correct lowest-common
+home for logic both surfaces need, keeping `tools/` from ever importing
+`cli/`-private code). `ramp_speed` is the shared linear-ramp primitive:
+`seconds <= 0` or `from_fraction == to_fraction` degenerates to a single
+final `set_speed()` call, so every caller can unconditionally call it rather
+than branching on "was a ramp actually requested." Steps are `max(1,
+int(seconds * RAMP_STEPS_PER_SECOND))` (4 steps/second, module constant),
+always finishing with one exact final `set_speed(to_fraction)` so float
+accumulation never leaves the throttle short of target. Its `sleep`
+parameter is resolved *inside* the function body (`sleep = sleep or
+asyncio.sleep`), not as a bound default — a bound default captures the
+function object at import time, which would make
+`monkeypatch.setattr("jmri_mcp.jmri_ws.ramp.asyncio", fake_asyncio)` silently
+ineffective; resolving fresh inside the body is what makes that monkeypatch
+actually take effect.
 
-`_execute_speed_change` is the shared orchestrator behind `speed`,
+`execute_speed_change` is the shared orchestrator behind CLI `speed`,
 `forward`/`reverse` (via the `target_forward`/`target_fraction` split, see
-below): ramp-down (if direction is flipping, or `--rampdown` is given) →
-optional direction flip via `client.set_direction()` → ramp-up to target (if
-`--rampup` given) → hold for `--hold` → for one-shot mode only, a final
-ramp-to-0 once a bounded hold ends. It re-reads `client.throttle_state()`
-once at the end for its return value rather than threading state through
-every internal step. The hold is the one place in the whole design with
-explicit interrupt handling:
+below) and the MCP `set_speed_ramped` tool: ramp-down (if direction is
+flipping, or `--rampdown` is given) → optional direction flip via
+`client.set_direction()` → ramp-up to target (if `--rampup` given) → hold
+for `hold_seconds` → a final ramp-to-0 once a bounded hold ends,
+unconditionally for any caller (a caller that bounds a speed with a hold
+means "hold for N seconds, then stop" either way — see the persistence-model
+summary above). It re-reads `client.throttle_state()` once at the end for
+its return value rather than threading state through every internal step.
+The hold is the one place in the whole design with explicit interrupt
+handling:
 
 ```python
 if hold_seconds:
     try:
         await asyncio.sleep(hold_seconds)
     except (KeyboardInterrupt, asyncio.CancelledError):
-        await _ramp_speed(client, throttle_id, target_fraction, 0.0, rampdown or 0.0)
+        await ramp_speed(client, throttle_id, target_fraction, 0.0, rampdown or 0.0)
         raise
 ```
 
@@ -602,6 +669,29 @@ range); `lights_on`/`lights_off` are thin wrappers calling
 `set_function(address, 0, True/False)` directly as a plain Python call
 (not through the MCP dispatcher) since F0 is the near-universal DCC
 headlight convention.
+
+## Ramped speed changes over MCP: `set_speed_ramped`
+
+`tools/throttle.py`'s `set_speed_ramped` is the LLM-facing equivalent of the
+CLI's `--rampup`/`--rampdown`/`--hold` flags — added because the CLI's
+ramping (from the interactive-shell work above) was never actually exposed
+to the LLM, so a voice/chat request like "run the autorail forward at 30%
+for 10 seconds, ramp up and down" had no tool that could do it. It reuses
+`jmri_ws.ramp.execute_speed_change` directly rather than duplicating the
+ramp state machine — the same function CLI `speed`/`stop`/`forward`/
+`reverse` and `shell.py`'s exit-confirmation ramp-down call. `speed_percent`
+accepts the same CLI-only negative-value shorthand as `throttle speed`
+("reverse at |value|%", resolved client-side, never sent as JMRI's real
+`speed=-1.0` e-stop sentinel). `hold_seconds`, if given, blocks the tool
+call server-side for the full ramp-up + hold + ramp-down duration before
+returning — the LLM never has to measure or track time itself, it just
+passes the number of seconds through; the tool's docstring says this
+explicitly (added after a live report that an LLM verbally refused a
+`hold_seconds` request, saying it couldn't "measure time" — the fix was
+reassuring language in the docstring, not a code change, since the call was
+never actually attempted). Uses the same `ensure_acquired`/`throttle_id`
+plumbing as `set_speed`/`stop`/etc., so it auto-acquires the throttle like
+every other throttle tool.
 
 ## `set_power`: never re-POST a state JMRI already reports
 

@@ -50,9 +50,14 @@ async def get_roster() -> list[dict[str, Any]]:
     Each raw entry is wrapped ({"type": "rosterEntry", "data": {...}}, the
     legacy prototype bug was reading the envelope level instead of ["data"])
     and carries ~2 KB of fields (functionKeys, comment, icon paths, ...) not
-    useful for a voice/chat summary. This returns only name, address (as
-    int; JMRI reports it as a numeric string), road, and model — road/model
-    can be empty strings if the user never filled them in JMRI, not missing.
+    useful for a voice/chat summary. This returns name, address (as int;
+    JMRI reports it as a numeric string), road, road number, manufacturer,
+    model, owner, last-modified date, and roster groups the entry belongs
+    to — any of these can be empty (string or list) if the user never
+    filled them in JMRI, not missing. JMRI's own field for the latter is
+    "rosterGroups" (a list of group name strings; verified live against
+    the user's JMRI 5.4.0 — most entries have an empty list, one had
+    ["test"]), not "group" as its PanelPro UI name might suggest.
     """
     payload = await _get_json("/json/roster")
     if isinstance(payload, dict):
@@ -72,7 +77,12 @@ async def get_roster() -> list[dict[str, Any]]:
             "name": e.get("name", ""),
             "address": address,
             "road": e.get("road", ""),
+            "road_number": e.get("number", ""),
+            "manufacturer": e.get("mfg", ""),
             "model": e.get("model", ""),
+            "owner": e.get("owner", ""),
+            "date_modified": e.get("dateModified", ""),
+            "groups": e.get("rosterGroups", []),
         })
     return compact
 

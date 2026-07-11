@@ -11,6 +11,7 @@ import sys
 
 from tabulate import tabulate
 
+from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.cli.constants import LIGHT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_lights, resolve_light
 from jmri_mcp.jmri_client import set_light as _set_light
@@ -19,7 +20,12 @@ from jmri_mcp.jmri_client import set_light as _set_light
 def _row(light: dict) -> list:
     state = LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN")
     label = light.get("userName") or light.get("name", "?")
-    return [label, state]
+    system_id = light.get("name", "?")
+    return [system_id, label, state]
+
+
+def _label(light: dict) -> str:
+    return str(light.get("userName") or light.get("name", ""))
 
 
 async def light_list(args: argparse.Namespace) -> int:
@@ -40,9 +46,82 @@ async def light_list(args: argparse.Namespace) -> int:
     if not lights:
         print("No lights found")
         return 0
-    rows = [_row(lt) for lt in sorted(lights, key=lambda lt: _row(lt)[0].casefold())]
-    print(tabulate(rows, headers=["Light", "State"]))
+    rows = [_row(lt) for lt in sorted(lights, key=lambda lt: lt.get("name", "?"))]
+    print(tabulate(rows, headers=["System ID ▼", "Light", "State"]))
     return 0
+
+
+async def light_find(args: argparse.Namespace) -> int:
+    """Resolve a light name/fragment/system ID to its full state, roster-`find`-style.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.name` (userName, a fragment
+            of it, or JMRI's own system ID like "IL1").
+
+    Returns:
+        0 on success, 1 if JMRI is unreachable or `args.name` is ambiguous
+        or matches no light.
+    """
+    try:
+        lights = await get_lights()
+        light = resolve_light(args.name, lights)
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    system_id, label, state = _row(light)
+    print(f"system_id={system_id} name={label} state={state}")
+    return 0
+
+
+async def _light_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
+    """Shared body for light_findr/light_findg: list every light matching a pattern.
+
+    Unlike light_find, a pattern can legitimately match zero, one, or many
+    lights — no ambiguity error, just a filtered `light list`-style table
+    (or "no lights match" if the pattern matches nothing).
+    """
+    try:
+        lights = await get_lights()
+        matcher = find_regex if regex else find_glob
+        matches = matcher(args.pattern, lights, _label)
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if not matches:
+        print(f"No lights match {args.pattern!r}")
+        return 0
+    rows = [_row(lt) for lt in sorted(matches, key=lambda lt: lt.get("name", "?"))]
+    print(tabulate(rows, headers=["System ID ▼", "Light", "State"]))
+    return 0
+
+
+async def light_findr(args: argparse.Namespace) -> int:
+    """List every light whose name matches a regular expression (case-insensitive, re.search).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a Python regex,
+            matched against each light's userName/name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable or
+        `args.pattern` is not a valid regex.
+    """
+    return await _light_find_pattern(args, regex=True)
+
+
+async def light_findg(args: argparse.Namespace) -> int:
+    """List every light whose name matches a shell-style glob (case-insensitive, *, ?, [...]).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a glob, matched
+            against each light's userName/name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable.
+    """
+    return await _light_find_pattern(args, regex=False)
 
 
 async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
@@ -71,7 +150,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(tabulate(rows, headers=["Light", "State"]))
+    print(tabulate(rows, headers=["System ID", "Light", "State"]))
     if not all_confirmed:
         print(f"WARNING: not every light confirmed {state_name} after re-read", file=sys.stderr)
         return 1

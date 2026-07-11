@@ -1,14 +1,19 @@
-"""Throttle MCP tools: acquire/release_throttle, set_speed, stop, emergency_stop, set_direction, set_function, lights_on, lights_off.
+"""Throttle MCP tools: acquire/release_throttle, set_speed, set_speed_ramped, stop, emergency_stop, set_direction, set_function, lights_on, lights_off.
 
 All keyed on DCC address — see jmri_mcp.tools._common.throttle_id. Talks to
 jmri_ws.py's shared, process-wide WebSocket connection (see
 jmri_mcp.jmri_ws.get_ws_client), unlike power.py/roster.py's one-shot HTTP.
+set_speed_ramped reuses jmri_ws.ramp.execute_speed_change, the same
+ramping state machine cli/throttle.py's `speed`/`stop`/`forward`/`reverse`
+subcommands and cli/shell.py's exit-confirmation use — one implementation,
+shared by the CLI and the LLM-facing MCP surface.
 """
 
 import logging
 
 from jmri_mcp.jmri_ws import JmriError as JmriWsError
 from jmri_mcp.jmri_ws import get_ws_client
+from jmri_mcp.jmri_ws.ramp import execute_speed_change
 from jmri_mcp.tools._common import compact_throttle, direction_name, ensure_acquired, throttle_id
 
 logger = logging.getLogger("jmri_mcp.tools")
@@ -112,6 +117,101 @@ def register(mcp) -> None:
             logger.warning("set_speed(%r, %r) failed: %s", address, speed_percent, exc)
             return {"error": str(exc)}
         return {"address": address, "speed_percent": data.get("speed", speed) * 100}
+
+    @mcp.tool()
+    async def set_speed_ramped(
+        address: int,
+        speed_percent: float,
+        rampup_seconds: float = 0.0,
+        rampdown_seconds: float = 0.0,
+        hold_seconds: float | None = None,
+    ) -> dict:
+        """Change a locomotive's speed gradually instead of instantly — a smooth ramp up and/or down.
+
+        Args:
+            address: The locomotive's DCC address. Acquires the throttle
+                automatically if this session doesn't already hold it.
+            speed_percent: Target speed, 0-100% of maximum. As CLI-only
+                shorthand, a NEGATIVE value means "reverse at |value|%" and
+                flips direction as part of the same ramp (e.g. -30 means
+                direction=reverse, speed=30%) — this is resolved entirely
+                here and is unrelated to emergency_stop's real decoder
+                e-stop command, which this tool never sends.
+            rampup_seconds: How long to spend climbing from the current
+                speed up to the target, if the target is higher (or a
+                direction flip is needed while moving — see below). 0 (the
+                default) means jump straight to the target instantly, same
+                as plain set_speed.
+            rampdown_seconds: How long to spend descending, whenever the
+                target is lower than the current speed, when a direction
+                flip requires slowing to 0 first, and (if hold_seconds is
+                given) for the automatic stop at the end of the hold. 0 (the
+                default) means an instant drop/stop.
+            hold_seconds: If given, hold the target speed for this many
+                seconds and then AUTOMATICALLY RAMP BACK TO A STOP (using
+                rampdown_seconds) before this tool returns — use this for
+                requests like "run forward at 30% for 10 seconds". Omit
+                (the default, None) to just reach the target and keep going
+                indefinitely, like plain set_speed but ramped.
+
+                YOU DO NOT NEED TO TRACK OR MEASURE THIS DURATION YOURSELF.
+                Just pass through the number of seconds the user asked for
+                (e.g. "pendant 10 secondes" -> hold_seconds=10) — this MCP
+                server does the actual waiting internally on the JMRI
+                connection while your tool call is in flight, and this
+                call's response only arrives once the hold and the
+                auto-stop are already finished. Never refuse or say you
+                "can't track time" for this parameter; it's a plain number,
+                not something you have to count yourself.
+
+        Use this instead of plain set_speed whenever the user asks for
+        smoothness/gentleness ("en douceur", "progressivement", "ramp up/
+        down") or gives a explicit duration to run at a speed before
+        stopping ("pendant 10 secondes", "for 10 seconds"). Use plain
+        set_speed for an immediate, unqualified speed change, and
+        emergency_stop for any panic/safety stop — this tool never sends
+        JMRI's real -1.0 e-stop sentinel, even at rampdown_seconds=0.
+
+        NOTE: this call blocks until rampup + hold_seconds + rampdown have
+        all elapsed server-side before returning a result — for a 10s hold
+        with ramps, expect the tool response to take on the order of that
+        many seconds, not to return instantly. This is expected latency,
+        not a hang.
+
+        If a direction flip is needed while the locomotive is already
+        moving, this ramps down to 0 first (over rampdown_seconds), flips
+        direction, then ramps back up to the requested speed (over
+        rampup_seconds) — never flips direction while still rolling.
+
+        Returns the actual speed/direction JMRI reports back after the
+        ramp (and the auto-stop, if hold_seconds was given) completes, the
+        same shape as set_speed/set_direction's combined fields.
+        """
+        client = get_ws_client()
+        target_forward = False if speed_percent < 0 else None
+        target_fraction = max(0.0, min(100.0, abs(speed_percent))) / 100.0
+        try:
+            await ensure_acquired(client, address)
+            data = await execute_speed_change(
+                client,
+                throttle_id(address),
+                target_forward=target_forward,
+                target_fraction=target_fraction,
+                rampup=rampup_seconds,
+                rampdown=rampdown_seconds,
+                hold_seconds=hold_seconds,
+            )
+        except JmriWsError as exc:
+            logger.warning(
+                "set_speed_ramped(%r, %r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
+                address, speed_percent, rampup_seconds, rampdown_seconds, hold_seconds, exc,
+            )
+            return {"error": str(exc)}
+        return {
+            "address": address,
+            "speed_percent": (data.get("speed") or 0.0) * 100,
+            "direction": direction_name(data.get("forward")),
+        }
 
     @mcp.tool()
     async def stop(address: int) -> dict:

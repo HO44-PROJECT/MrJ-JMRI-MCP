@@ -1,4 +1,4 @@
-"""Sensor commands: `jmri-cli sensor list`, `sensor status`.
+"""Sensor commands: `jmri-cli sensor [list|find|findr|findg|status]`.
 
 Talks to jmri_client.py directly (one-shot HTTP, no MCP/JSON-RPC involved).
 Sensors are read-only — they report real-world state JMRI detects (block
@@ -9,27 +9,26 @@ no `sensor set` subcommand.
 import argparse
 import sys
 
+from tabulate import tabulate
+
+from jmri_mcp.cli._match import find_glob, find_regex
 from jmri_mcp.cli.constants import SENSOR_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_sensors, resolve_sensor
 
 
-def _format_sensor(sensor: dict) -> str:
-    """Format one sensor's state as a single display line.
-
-    Args:
-        sensor: A sensor dict as returned by jmri_client.get_sensors(),
-            with at least "name" and "state", and optionally "userName".
-
-    Returns:
-        A line like "Montagne B          : ACTIVE".
-    """
+def _row(sensor: dict) -> list:
     state = SENSOR_STATE_NAMES.get(sensor.get("state"), "UNKNOWN")
     label = sensor.get("userName") or sensor.get("name", "?")
-    return f"{label:<20}: {state}"
+    system_id = sensor.get("name", "?")
+    return [label, system_id, state]
+
+
+def _label(sensor: dict) -> str:
+    return str(sensor.get("userName") or sensor.get("name", ""))
 
 
 async def sensor_list(args: argparse.Namespace) -> int:
-    """Print the state of every sensor.
+    """Print the state of every sensor, sorted alphabetically.
 
     Args:
         args: Parsed CLI arguments; no fields used.
@@ -46,8 +45,8 @@ async def sensor_list(args: argparse.Namespace) -> int:
     if not sensors:
         print("No sensors found")
         return 0
-    for sensor in sensors:
-        print(_format_sensor(sensor))
+    rows = [_row(s) for s in sorted(sensors, key=lambda s: _row(s)[0].casefold())]
+    print(tabulate(rows, headers=["Sensor ▼", "System ID", "State"]))
     return 0
 
 
@@ -68,5 +67,76 @@ async def sensor_status(args: argparse.Namespace) -> int:
     except JmriError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    print(_format_sensor(match))
+
+    label, system_id, state = _row(match)
+    print(f"name={label} system_id={system_id} state={state}")
     return 0
+
+
+async def sensor_find(args: argparse.Namespace) -> int:
+    """Resolve a sensor name/fragment/system ID to its full state.
+
+    Identical body to `sensor_status` — `find` is the naming this project
+    uses consistently for "resolve one, no side effects" across every
+    domain (roster/turnout/light/power/throttle/signal); `status` is kept
+    as an alias since it predates that convention.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.name` (system name, userName,
+            or an unambiguous fragment).
+
+    Returns:
+        0 on success, 1 if JMRI is unreachable or `args.name` doesn't
+        resolve to exactly one sensor.
+    """
+    return await sensor_status(args)
+
+
+async def _sensor_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
+    """Shared body for sensor_findr/sensor_findg: list every sensor matching a pattern.
+
+    Unlike sensor_find, a pattern can legitimately match zero, one, or many
+    sensors — no ambiguity error, just a filtered `sensor list`-style table
+    (or "no sensors match" if the pattern matches nothing).
+    """
+    try:
+        sensors = await get_sensors()
+        matcher = find_regex if regex else find_glob
+        matches = matcher(args.pattern, sensors, _label)
+    except JmriError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if not matches:
+        print(f"No sensors match {args.pattern!r}")
+        return 0
+    rows = [_row(s) for s in sorted(matches, key=lambda s: _row(s)[0].casefold())]
+    print(tabulate(rows, headers=["Sensor ▼", "System ID", "State"]))
+    return 0
+
+
+async def sensor_findr(args: argparse.Namespace) -> int:
+    """List every sensor whose name matches a regular expression (case-insensitive, re.search).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a Python regex,
+            matched against each sensor's userName/name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable or
+        `args.pattern` is not a valid regex.
+    """
+    return await _sensor_find_pattern(args, regex=True)
+
+
+async def sensor_findg(args: argparse.Namespace) -> int:
+    """List every sensor whose name matches a shell-style glob (case-insensitive, *, ?, [...]).
+
+    Args:
+        args: Parsed CLI arguments; uses `args.pattern` (a glob, matched
+            against each sensor's userName/name).
+
+    Returns:
+        0 on success (including zero matches), 1 if JMRI is unreachable.
+    """
+    return await _sensor_find_pattern(args, regex=False)

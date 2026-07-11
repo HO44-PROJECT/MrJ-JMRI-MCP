@@ -6,12 +6,12 @@ than buried inline among argparse wiring calls.
 """
 
 GROUP_HELP = {
-    "power": "Control power to your DCC systems",
-    "status": "Quick health check: is JMRI reachable, and what's the power state",
-    "roster": "Browse your locomotive roster",
-    "throttle": "Drive your locomotives: speed, direction, functions, lights",
     "light": "Control your layout lights",
-    "turnout": "Control your turnouts",
-    "sensor": "Check your sensors (read-only)",
+    "power": "Control power to your DCC systems",
+    "roster": "Browse your locomotive roster",
+    "sensor": "Check your sensors",
     "signal": "Control your signal masts",
+    "status": "Quick health check: is JMRI reachable, and what's the power state",
+    "throttle": "Drive your locomotives: speed, direction, functions, lights",
+    "turnout": "Control your turnouts",
 }

@@ -60,16 +60,32 @@ def compact_turnout(turnout: dict) -> dict:
 
     Args:
         turnout: A turnout dict as returned by jmri_client.get_turnouts(),
-            with at least "name" and "state", and optionally "userName".
+            with at least "name" and "state", and optionally "userName",
+            "sensor" (JMRI's 2-element feedback-sensor array).
 
     Returns:
-        {"name": ..., "state": "CLOSED"/"THROWN"/"UNKNOWN"/"INCONSISTENT"}.
-        "name" is the user-friendly userName if JMRI has one set, else
-        falls back to the raw system name (e.g. "IT100").
+        {"name": ..., "state": "CLOSED"/"THROWN"/"UNKNOWN"/"INCONSISTENT",
+        "has_feedback_sensor": bool}. "name" is the user-friendly userName
+        if JMRI has one set, else falls back to the raw system name (e.g.
+        "IT100"). "has_feedback_sensor" is True only if JMRI actually has a
+        real feedback sensor wired to this turnout (a non-null entry in its
+        "sensor" array) — verified live (2026-07-11) that JMRI's
+        "feedbackMode" number alone is NOT a reliable signal for this (a
+        turnout in DIRECT mode can still carry a leftover sensor object),
+        so presence of an actual sensor entry is what's checked instead.
+        When False, INCONSISTENT is normal/expected background noise for
+        that turnout — JMRI has no way to confirm the motor's real
+        position and reports INCONSISTENT indefinitely, even at rest with
+        no command in flight, not just transiently after a set_turnout
+        call. See set_turnout's docstring for how this should change what
+        gets reported to the user.
     """
+    sensors = turnout.get("sensor") or []
+    has_feedback_sensor = any(s is not None for s in sensors)
     return {
         "name": turnout.get("userName") or turnout.get("name"),
         "state": TURNOUT_STATE_NAMES.get(turnout.get("state"), "UNKNOWN"),
+        "has_feedback_sensor": has_feedback_sensor,
     }
 
 

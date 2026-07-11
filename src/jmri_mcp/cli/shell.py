@@ -63,6 +63,7 @@ from jmri_mcp.cli.constants import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_mcp.cli.parser import build_parser
 from jmri_mcp.jmri_ws import JmriError as JmriWsError
 from jmri_mcp.jmri_ws import JmriWsClient
+from jmri_mcp.jmri_ws.ramp import ramp_speed
 
 _PROMPT = "jmri-cli> "
 _EXIT_WORDS = {"exit", "quit"}
@@ -145,14 +146,12 @@ async def _confirm_exit(client: JmriWsClient) -> bool:
         "Stop them all before exiting? [Y/n] ",
     )
     if reply.strip().lower() in ("", "y", "yes"):
-        from jmri_mcp.cli.throttle import _ramp_speed  # local import: avoid a cycle at module load
-
         for address in moving:
             throttle_id = cli_throttle_id(address)
             state = client.throttle_state(throttle_id) or {}
             current = state.get("speed") or 0.0
             try:
-                await _ramp_speed(
+                await ramp_speed(
                     client, throttle_id, current, 0.0, SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
                 )
             except JmriWsError as exc:
@@ -173,6 +172,7 @@ async def run_shell() -> None:
     parser = build_parser()
     client = JmriWsClient()
     _load_history()
+    print(banner())
     print("jmri-cli interactive shell. Type `exit`, `quit`, or Ctrl-D to leave.")
 
     try:

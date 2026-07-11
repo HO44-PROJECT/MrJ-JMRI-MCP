@@ -185,6 +185,50 @@ async def test_power_on_one_system_only(monkeypatch, capsys):
     assert live_state["R"] == 2 and live_state["O"] == 4
 
 
+async def test_power_find_resolves_fuzzy_name(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "find", "ohara")
+    assert code == 0
+    assert "name=DCC++ Ohara" in out and "prefix=O" in out
+
+
+async def test_power_find_unknown_name(mock_power, capsys):
+    code, _, err = await run(capsys, "power", "find", "tgv")
+    assert code == 1
+    assert "Unknown system 'tgv'" in err
+
+
+async def test_power_findr_matches_regex(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "findr", "^DCC\\+\\+ O")
+    assert code == 0
+    assert "DCC++ Ohara" in out
+    assert "DCC++ Zou" not in out
+
+
+async def test_power_findr_no_match(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "findr", "zzz")
+    assert code == 0
+    assert "No power systems match" in out
+
+
+async def test_power_findr_invalid_regex(mock_power, capsys):
+    code, _, err = await run(capsys, "power", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_power_findg_matches_glob(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "findg", "*Ohara")
+    assert code == 0
+    assert "DCC++ Ohara" in out
+    assert "DCC++ Zou" not in out
+
+
+async def test_power_findg_no_match(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "findg", "zzz*")
+    assert code == 0
+    assert "No power systems match" in out
+
+
 async def test_roster_lists_every_entry(mock_roster, capsys):
     code, out, _ = await run(capsys, "roster")
     assert code == 0
@@ -212,6 +256,38 @@ async def test_roster_find_unknown_name(mock_roster, capsys):
     assert "Unknown locomotive 'tgv'" in err
 
 
+async def test_roster_findr_matches_regex(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "findr", "^auto")
+    assert code == 0
+    assert "Autorail" in out
+    assert "Boite" not in out
+
+
+async def test_roster_findr_no_match(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "findr", "zzz")
+    assert code == 0
+    assert "No roster entries match" in out
+
+
+async def test_roster_findr_invalid_regex(mock_roster, capsys):
+    code, _, err = await run(capsys, "roster", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_roster_findg_matches_glob(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "findg", "auto*")
+    assert code == 0
+    assert "Autorail" in out
+    assert "Boite" not in out
+
+
+async def test_roster_findg_no_match(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "findg", "zzz*")
+    assert code == 0
+    assert "No roster entries match" in out
+
+
 async def test_roster_functions_lists_labels(mock_roster, capsys):
     code, out, _ = await run(capsys, "roster", "functions", "autorail")
     assert code == 0
@@ -231,6 +307,8 @@ async def test_light_list_all(mock_lights, capsys):
     assert code == 0
     assert "Depot Lighting" in out and "OFF" in out
     assert "Street Lamps" in out and "ON" in out
+    header = out.splitlines()[0]
+    assert header.index("System ID") < header.index("Light")
 
 
 async def test_light_on_unknown_name(mock_lights, capsys):
@@ -239,17 +317,135 @@ async def test_light_on_unknown_name(mock_lights, capsys):
     assert "Unknown light 'tgv'" in err
 
 
+async def test_light_find_by_system_id(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "find", "IL1")
+    assert code == 0
+    assert "system_id=IL1" in out
+    assert "name=Depot Lighting" in out
+    assert "state=OFF" in out
+    assert out.index("system_id=") < out.index("name=")
+
+
+async def test_light_find_by_username(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "find", "Street Lamps")
+    assert code == 0
+    assert "system_id=IL2" in out
+
+
+async def test_light_find_unknown_name(mock_lights, capsys):
+    code, _, err = await run(capsys, "light", "find", "tgv")
+    assert code == 1
+    assert "Unknown light 'tgv'" in err
+
+
+async def test_light_findr_matches_regex(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "findr", "^Depot")
+    assert code == 0
+    assert "Depot Lighting" in out
+    assert "Street Lamps" not in out
+
+
+async def test_light_findr_no_match(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "findr", "zzz")
+    assert code == 0
+    assert "No lights match" in out
+
+
+async def test_light_findr_invalid_regex(mock_lights, capsys):
+    code, _, err = await run(capsys, "light", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_light_findg_matches_glob(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "findg", "Depot*")
+    assert code == 0
+    assert "Depot Lighting" in out
+    assert "Street Lamps" not in out
+
+
+async def test_light_findg_no_match(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "findg", "zzz*")
+    assert code == 0
+    assert "No lights match" in out
+
+
 async def test_turnout_list_all(mock_turnouts, capsys):
     code, out, _ = await run(capsys, "turnout", "list")
     assert code == 0
+    assert "Feedback" in out
+    assert "Comment" in out
+    assert "Yard throat switch" in out
+    header = out.splitlines()[0]
+    assert header.index("System ID") < header.index("Turnout")
     assert "Layout Turnout A" in out and "CLOSED" in out
     assert "A / Mountain A -> Platform A/B" in out and "THROWN" in out
+    # IT100 has a real sensor wired (fixture), OT23 doesn't.
+    lines = out.splitlines()
+    it100_line = next(line for line in lines if "Layout Turnout A" in line)
+    ot23_line = next(line for line in lines if "Mountain A" in line)
+    assert "yes" in it100_line
+    assert "no" in ot23_line
 
 
 async def test_turnout_closed_unknown_name(mock_turnouts, capsys):
-    code, _, err = await run(capsys, "turnout", "closed", "tgv")
+    code, _, err = await run(capsys, "turnout", "close", "tgv")
     assert code == 1
     assert "Unknown turnout 'tgv'" in err
+
+
+async def test_turnout_find_by_system_id(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "find", "IT100")
+    assert code == 0
+    assert "system_id=IT100" in out
+    assert "name=Layout Turnout A" in out
+    assert "state=CLOSED" in out
+    assert "feedback_sensor=yes" in out
+    assert out.index("system_id=") < out.index("name=")
+
+
+async def test_turnout_find_by_username(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "find", "Layout Turnout BL")
+    assert code == 0
+    assert "system_id=IT101" in out
+
+
+async def test_turnout_find_unknown_name(mock_turnouts, capsys):
+    code, _, err = await run(capsys, "turnout", "find", "tgv")
+    assert code == 1
+    assert "Unknown turnout 'tgv'" in err
+
+
+async def test_turnout_findr_matches_regex(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "findr", "^Layout")
+    assert code == 0
+    assert "Layout Turnout A" in out
+    assert "Mountain" not in out
+
+
+async def test_turnout_findr_no_match(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "findr", "zzz")
+    assert code == 0
+    assert "No turnouts match" in out
+
+
+async def test_turnout_findr_invalid_regex(mock_turnouts, capsys):
+    code, _, err = await run(capsys, "turnout", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_turnout_findg_matches_glob(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "findg", "Layout*")
+    assert code == 0
+    assert "Layout Turnout A" in out
+    assert "Mountain" not in out
+
+
+async def test_turnout_findg_no_match(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "findg", "zzz*")
+    assert code == 0
+    assert "No turnouts match" in out
 
 
 async def test_signal_list_all(mock_signals, capsys):
@@ -262,13 +458,63 @@ async def test_signal_list_all(mock_signals, capsys):
 async def test_signal_status_one(mock_signals, capsys):
     code, out, _ = await run(capsys, "signal", "status", "Entry Signal A")
     assert code == 0
-    assert out.strip() == "Entry Signal A      : Hp1"
+    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1"
 
 
 async def test_signal_status_unknown(mock_signals, capsys):
     code, _, err = await run(capsys, "signal", "status", "tgv")
     assert code == 1
     assert "Unknown signal mast 'tgv'" in err
+
+
+async def test_signal_find_by_username(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "find", "Entry Signal A")
+    assert code == 0
+    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1"
+
+
+async def test_signal_find_by_system_id(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "find", "ZF$dsm:DB-HV-1969:block(45)")
+    assert code == 0
+    assert "Hp0" in out
+
+
+async def test_signal_find_unknown_name(mock_signals, capsys):
+    code, _, err = await run(capsys, "signal", "find", "tgv")
+    assert code == 1
+    assert "Unknown signal mast 'tgv'" in err
+
+
+async def test_signal_findr_matches_regex(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "findr", "^Entry")
+    assert code == 0
+    assert "Entry Signal A" in out
+    assert "Hp0" not in out
+
+
+async def test_signal_findr_no_match(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "findr", "zzz")
+    assert code == 0
+    assert "No signal masts match" in out
+
+
+async def test_signal_findr_invalid_regex(mock_signals, capsys):
+    code, _, err = await run(capsys, "signal", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_signal_findg_matches_glob(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "findg", "Entry*")
+    assert code == 0
+    assert "Entry Signal A" in out
+    assert "Hp0" not in out
+
+
+async def test_signal_findg_no_match(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "findg", "zzz*")
+    assert code == 0
+    assert "No signal masts match" in out
 
 
 async def test_signal_set_aspect_and_confirms(monkeypatch, capsys):
@@ -299,7 +545,7 @@ async def test_signal_set_aspect_and_confirms(monkeypatch, capsys):
         )
         code, out, _ = await run(capsys, "signal", "set", "Entry Signal A", "Hp0")
     assert code == 0
-    assert out.strip() == "Entry Signal A      : Hp0"
+    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp0"
     # Regression guard: see matching comment in tests/test_tools.py - JMRI's
     # POST handler reads "state", not "aspect".
     assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0"}]
@@ -315,13 +561,63 @@ async def test_sensor_list_all(mock_sensors, capsys):
 async def test_sensor_status_one(mock_sensors, capsys):
     code, out, _ = await run(capsys, "sensor", "status", "Montagne B")
     assert code == 0
-    assert out.strip() == "Montagne B          : INACTIVE"
+    assert out.strip() == "name=Montagne B system_id=RS22 state=INACTIVE"
 
 
 async def test_sensor_status_unknown(mock_sensors, capsys):
     code, _, err = await run(capsys, "sensor", "status", "tgv")
     assert code == 1
     assert "Unknown sensor 'tgv'" in err
+
+
+async def test_sensor_find_by_username(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "find", "Montagne B")
+    assert code == 0
+    assert out.strip() == "name=Montagne B system_id=RS22 state=INACTIVE"
+
+
+async def test_sensor_find_by_system_id(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "find", "RS23")
+    assert code == 0
+    assert "name=Montagne A int" in out
+
+
+async def test_sensor_find_unknown_name(mock_sensors, capsys):
+    code, _, err = await run(capsys, "sensor", "find", "tgv")
+    assert code == 1
+    assert "Unknown sensor 'tgv'" in err
+
+
+async def test_sensor_findr_matches_regex(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "findr", "^Montagne B")
+    assert code == 0
+    assert "Montagne B" in out
+    assert "Montagne A int" not in out
+
+
+async def test_sensor_findr_no_match(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "findr", "zzz")
+    assert code == 0
+    assert "No sensors match" in out
+
+
+async def test_sensor_findr_invalid_regex(mock_sensors, capsys):
+    code, _, err = await run(capsys, "sensor", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_sensor_findg_matches_glob(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "findg", "Montagne B")
+    assert code == 0
+    assert "Montagne B" in out
+    assert "Montagne A int" not in out
+
+
+async def test_sensor_findg_no_match(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "findg", "zzz*")
+    assert code == 0
+    assert "No sensors match" in out
 
 
 async def test_throttle_stop_one_address(fake_jmri, capsys):
@@ -454,15 +750,15 @@ async def test_throttle_speed_negative_already_reverse_no_direction_noop(fake_jm
 
 
 class _FastSleepAsyncio:
-    """Proxy for throttle.py's own `asyncio` reference with `sleep` stubbed
-    to instant. Patching `jmri_mcp.cli.throttle.asyncio.sleep` directly
+    """Proxy for jmri_ws.ramp's own `asyncio` reference with `sleep` stubbed
+    to instant. Patching `jmri_mcp.jmri_ws.ramp.asyncio.sleep` directly
     would mutate the REAL asyncio module (import asyncio just binds the
-    same module object - see throttle.py's own note on why _ramp_speed's
+    same module object - see ramp.py's own note on why ramp_speed's
     `sleep` param is resolved fresh instead of bound as a default), which
     breaks fake_jmri's live websockets server (handshake/keepalive rely on
     real sleep timing). Rebinding just the module-level name in
-    throttle.py's namespace to this proxy keeps the patch scoped to only
-    the calls throttle.py itself makes."""
+    jmri_ws.ramp's namespace to this proxy keeps the patch scoped to only
+    the calls ramp.py itself makes."""
 
     def __init__(self, real):
         self._real = real
@@ -479,7 +775,7 @@ async def test_throttle_speed_with_rampup_rampdown_reaches_target(fake_jmri, cap
     with the ramp's intermediate sleeps stubbed out so the test is fast."""
     import asyncio as real_asyncio
 
-    monkeypatch.setattr("jmri_mcp.cli.throttle.asyncio", _FastSleepAsyncio(real_asyncio))
+    monkeypatch.setattr("jmri_mcp.jmri_ws.ramp.asyncio", _FastSleepAsyncio(real_asyncio))
 
     code, out, _ = await run(
         capsys, "throttle", "speed", "3", "40",
@@ -493,7 +789,7 @@ async def test_throttle_speed_with_rampup_rampdown_reaches_target(fake_jmri, cap
 async def test_throttle_stop_with_rampdown(fake_jmri, capsys, monkeypatch):
     import asyncio as real_asyncio
 
-    monkeypatch.setattr("jmri_mcp.cli.throttle.asyncio", _FastSleepAsyncio(real_asyncio))
+    monkeypatch.setattr("jmri_mcp.jmri_ws.ramp.asyncio", _FastSleepAsyncio(real_asyncio))
 
     await run(capsys, "throttle", "speed", "3", "40", "--hold", "1")
     code, out, _ = await run(capsys, "throttle", "stop", "3", "--rampdown", "2")
@@ -608,6 +904,48 @@ async def test_throttle_on_no_function_no_labels_is_explicit_error(fake_jmri, mo
     code, _, err = await run(capsys, "throttle", "on", "8")
     assert code == 1
     assert "no labeled functions" in err
+
+
+async def test_throttle_find_resolves_fuzzy_name(mock_roster, capsys):
+    code, out, _ = await run(capsys, "throttle", "find", "autorail")
+    assert code == 0
+    assert "address=4" in out and "speed=-" in out
+
+
+async def test_throttle_find_unknown_name(mock_roster, capsys):
+    code, _, err = await run(capsys, "throttle", "find", "tgv")
+    assert code == 1
+    assert "Unknown locomotive 'tgv'" in err
+
+
+async def test_throttle_findr_matches_regex(mock_roster, capsys):
+    code, out, _ = await run(capsys, "throttle", "findr", "^auto")
+    assert code == 0
+    assert "4" in out
+
+
+async def test_throttle_findr_no_match(mock_roster, capsys):
+    code, out, _ = await run(capsys, "throttle", "findr", "zzz")
+    assert code == 0
+    assert "No roster entries match" in out
+
+
+async def test_throttle_findr_invalid_regex(mock_roster, capsys):
+    code, _, err = await run(capsys, "throttle", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_throttle_findg_matches_glob(mock_roster, capsys):
+    code, out, _ = await run(capsys, "throttle", "findg", "auto*")
+    assert code == 0
+    assert "4" in out
+
+
+async def test_throttle_findg_no_match(mock_roster, capsys):
+    code, out, _ = await run(capsys, "throttle", "findg", "zzz*")
+    assert code == 0
+    assert "No roster entries match" in out
 
 
 def test_every_leaf_subcommand_epilog_example_is_parseable():

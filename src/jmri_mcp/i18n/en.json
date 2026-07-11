@@ -25,11 +25,197 @@
         "invalid_jmri_url": "Invalid JMRI_URL {url!r}: expected http(s)://host[:port], e.g. {default}"
     },
     "kinds": {
-        "signal mast": {"singular": "signal mast", "plural": "signal masts", "Singular": "Signal mast"},
-        "locomotive": {"singular": "locomotive", "plural": "locomotives", "Singular": "Locomotive"},
-        "system": {"singular": "system", "plural": "power systems", "Singular": "System"},
-        "light": {"singular": "light", "plural": "lights", "Singular": "Light"},
-        "turnout": {"singular": "turnout", "plural": "turnouts", "Singular": "Turnout"},
-        "sensor": {"singular": "sensor", "plural": "sensors", "Singular": "Sensor"}
+        "signal mast": {
+            "singular": "signal mast",
+            "plural": "signal masts",
+            "Singular": "Signal mast"
+        },
+        "locomotive": {
+            "singular": "locomotive",
+            "plural": "locomotives",
+            "Singular": "Locomotive"
+        },
+        "system": {
+            "singular": "system",
+            "plural": "power systems",
+            "Singular": "System"
+        },
+        "light": {
+            "singular": "light",
+            "plural": "lights",
+            "Singular": "Light"
+        },
+        "turnout": {
+            "singular": "turnout",
+            "plural": "turnouts",
+            "Singular": "Turnout"
+        },
+        "sensor": {
+            "singular": "sensor",
+            "plural": "sensors",
+            "Singular": "Sensor"
+        }
+    },
+    "help": {
+        "group": {
+            "light": "Control your layout lights",
+            "power": "Control power to your DCC systems",
+            "roster": "Browse your locomotive roster",
+            "sensor": "Check your sensors",
+            "signal": "Control your signal masts",
+            "status": "Quick health check: is JMRI reachable, and what's the power state",
+            "throttle": "Drive your locomotives: speed, direction, functions, lights",
+            "turnout": "Control your turnouts"
+        },
+        "arg": {
+            "regex_pattern": "Python regular expression (case-insensitive)",
+            "glob_pattern": "Shell-style glob: *, ?, [...] (case-insensitive)",
+            "loco_ref": "Locomotive name, a fragment of it, or a DCC address",
+            "system_ref_or_every": "System name/prefix/fragment (omit for every system)",
+            "system_ref_or_default": "System name/prefix/fragment (omit for the default system)",
+            "function_labels": "List a locomotive's user-labeled decoder functions",
+            "function_ref_or_every": "Function number (0-28) or a fragment of its roster label (omit for every labeled function)",
+            "light_ref_or_every": "Light name/userName/fragment (omit for every light)",
+            "turnout_ref_or_every": "Turnout name/userName/fragment (omit for every turnout)",
+            "sensor_ref": "Sensor system name, userName, or fragment",
+            "signal_ref": "Signal mast system name, userName, or fragment",
+            "ramp_up": "Ramp up to the target speed over this many seconds, instead of jumping instantly",
+            "ramp_down": "Ramp down to the target speed over this many seconds, instead of jumping instantly",
+            "hold_seconds": "Hold the resulting nonzero speed this long, then auto-stop (mandatory outside the shell whenever the target speed is nonzero)"
+        },
+        "power": {
+            "status": "Show power state of every system",
+            "on": "Turn a system on, or every system if none is given",
+            "off": "Turn a system off, or every system if none is given (layout-wide stop)",
+            "get": "Print one system's power state as a bare ON/OFF",
+            "find": "Resolve a power system name/prefix/fragment to its full state",
+            "findr": "List every power system whose name matches a regex",
+            "findg": "List every power system whose name matches a shell glob",
+            "default": "Print which power system JMRI treats as the default"
+        },
+        "roster": {
+            "list": "Show every locomotive in the roster",
+            "sort_by": "Sort order (default: byname)",
+            "find": "Resolve a locomotive name or DCC address to its roster entry",
+            "findr": "List every roster entry whose name matches a regex",
+            "findg": "List every roster entry whose name matches a shell glob"
+        },
+        "throttle": {
+            "list": "Show last-known speed/direction/functions per locomotive",
+            "find": "Resolve a locomotive name/fragment/address to its roster identity and cached state",
+            "findr": "List every roster locomotive whose name matches a regex",
+            "findg": "List every roster locomotive whose name matches a shell glob",
+            "acquire": "Acquire a locomotive by name/fragment/address",
+            "acquire_prefix": "Command station prefix (e.g. O, Z, R) to target",
+            "release": "Release a locomotive by name/fragment/address",
+            "speed": "Get or set a locomotive's speed (0-100%%)",
+            "speed_percent": "Speed, 0-100 (omit to just read the current speed); a NEGATIVE value is shorthand for reverse at that magnitude, e.g. -40",
+            "stop": "Controlled stop of one locomotive, or every touched one if none is given",
+            "stop_loco": "Locomotive name, fragment, or DCC address (omit to stop every locomotive this CLI has touched; required inside the shell)",
+            "estop": "Emergency stop (JMRI decoder e-stop)",
+            "forward": "Set direction forward",
+            "reverse": "Set direction reverse",
+            "on": "Turn a decoder function on (by number or label), or every labeled one",
+            "off": "Turn a decoder function off (by number or label), or every labeled one",
+            "function": "List a locomotive's user-labeled decoder functions",
+            "sniff": "Dump every JMRI WebSocket message live, until Ctrl-C",
+            "sniff_address": "DCC address to acquire first (repeatable) so its pushes from OTHER clients show up too; omit to just watch this connection",
+            "sniff_show_pong": "Include keepalive pong messages (hidden by default, no info)"
+        },
+        "light": {
+            "list": "Show every light's state",
+            "find": "Resolve a light name/fragment/system ID to its full state",
+            "find_name": "Light userName, a fragment of it, or JMRI's system ID (e.g. IL1)",
+            "findr": "List every light whose name matches a regex",
+            "findg": "List every light whose name matches a shell glob",
+            "on": "Turn a light on, or every light if none is given",
+            "off": "Turn a light off, or every light if none is given"
+        },
+        "turnout": {
+            "list": "Show every turnout's state",
+            "find": "Resolve a turnout name or system ID to its full state",
+            "find_name": "Turnout name/userName/fragment/system ID",
+            "findr": "List every turnout whose name matches a regex",
+            "findg": "List every turnout whose name matches a shell glob",
+            "close": "Close a turnout, or every turnout if none is given",
+            "throw": "Throw a turnout, or every turnout if none is given"
+        },
+        "sensor": {
+            "list": "Show every sensor's state",
+            "status": "Show one sensor's state",
+            "find": "Resolve a sensor name/fragment/system ID to its full state",
+            "findr": "List every sensor whose name matches a regex",
+            "findg": "List every sensor whose name matches a shell glob"
+        },
+        "signal": {
+            "list": "Show every signal mast's aspect",
+            "status": "Show one signal mast's aspect",
+            "find": "Resolve a signal mast name/fragment/system ID to its full state",
+            "findr": "List every signal mast whose name matches a regex",
+            "findg": "List every signal mast whose name matches a shell glob",
+            "set": "Set a signal mast's aspect (writes to JMRI)",
+            "set_aspect": "Aspect name, e.g. Hp0/Hp1/Hp2 (not validated locally)"
+        }
+    },
+    "headers": {
+        "system_id": "System ID",
+        "light": "Light",
+        "state": "State",
+        "system": "System",
+        "default": "Default",
+        "sensor": "Sensor",
+        "signal": "Signal",
+        "aspect": "Aspect",
+        "address": "Address",
+        "speed": "Speed",
+        "direction": "Direction",
+        "functions_on": "Functions on",
+        "function": "Function",
+        "label": "Label",
+        "turnout": "Turnout",
+        "feedback": "Feedback",
+        "comment": "Comment",
+        "name": "Name",
+        "road": "Road",
+        "road_number": "Road #",
+        "manufacturer": "Manufacturer",
+        "model": "Model",
+        "owner": "Owner",
+        "modified": "Modified",
+        "groups": "Groups"
+    },
+    "banner": {
+        "title": "jmri-cli v{version} ({url})",
+        "line1": "Control power, locomotives, lights, turnouts and signals on your JMRI layout.",
+        "line2": "Also reports roster and sensor info."
+    },
+    "cli": {
+        "commands_header": "commands:",
+        "help_hint_group": "Run `jmri-cli <command> -h` for its subcommands, or",
+        "help_hint_shell_group": "Run `<command> -h` for its subcommands, or",
+        "help_hint_example": "`jmri-cli <command> <subcommand> -h` for a runnable example.",
+        "help_hint_shell_example": "`<command> <subcommand> -h` for a runnable example.",
+        "shell_welcome": "jmri-cli interactive shell. Type `exit`, `quit`, or Ctrl-D to leave.",
+        "shell_stop_prompt": "{n} loco(s) in motion (address(es) {addrs}). Stop them all before exiting? [Y/n] ",
+        "shell_exit_no_stop": "Exiting without stopping — locomotives left in their current state.",
+        "shell_sniff_needs_own_terminal": "Error: `throttle sniff` needs its own connection and its own indefinite Ctrl-C loop — run it in a separate terminal instead: `jmri-cli throttle sniff ...`",
+        "no_systems_match": "No power systems match {pattern!r}",
+        "not_every_system_confirmed": "WARNING: not every system confirmed {state_name} after re-read",
+        "jmri_reachable": "JMRI reachable, version {version}",
+        "no_entities_found": "No {kind_plural} found",
+        "no_entities_match": "No {kind_plural} match {pattern!r}",
+        "not_every_entity_confirmed": "WARNING: not every {kind} confirmed {state} after re-read",
+        "signal_aspect_not_confirmed": "WARNING: requested aspect {aspect!r} but observed aspect did not confirm after re-read",
+        "turnout_no_feedback_note": "Note: command sent OK; some turnouts have no feedback sensor wired up, so JMRI can't confirm their real position (this is expected for those, not a fault) — see the Feedback column.",
+        "roster_empty": "Roster is empty",
+        "no_roster_entries_match": "No roster entries match {pattern!r}",
+        "no_labeled_functions": "  no labeled functions",
+        "throttle_no_locos_touched": "No locomotives touched yet by this CLI. Run e.g. `jmri-cli throttle speed <loco> <value>` first.",
+        "throttle_no_locos_to_stop": "No locomotives touched yet by this CLI, nothing to stop.",
+        "throttle_hold_required": "Error: --hold is required when setting a nonzero speed outside the interactive shell (use the bare `jmri-cli` shell for an indefinite hold).",
+        "throttle_shell_stop_needs_loco": "Error: a locomotive is required for `stop` inside the shell (e.g. `throttle stop 3`) — the CLI-wide cache of every one-shot-touched address doesn't apply to the shell's own held throttles.",
+        "sniff_acquired_for_observation": "(acquired address={address} for observation)",
+        "sniff_could_not_acquire": "Warning: could not acquire {address}: {exc}",
+        "sniff_listening": "Listening for JMRI messages, Ctrl-C to stop..."
     }
 }

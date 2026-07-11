@@ -25,11 +25,197 @@
         "invalid_jmri_url": "JMRI_URL invalide {url!r} : attendu http(s)://host[:port], ex. {default}"
     },
     "kinds": {
-        "signal mast": {"singular": "mât de signalisation", "plural": "mâts de signalisation", "Singular": "Mât de signalisation"},
-        "locomotive": {"singular": "locomotive", "plural": "locomotives", "Singular": "Locomotive"},
-        "system": {"singular": "système", "plural": "systèmes d'alimentation", "Singular": "Système"},
-        "light": {"singular": "lumière", "plural": "lumières", "Singular": "Lumière"},
-        "turnout": {"singular": "aiguillage", "plural": "aiguillages", "Singular": "Aiguillage"},
-        "sensor": {"singular": "capteur", "plural": "capteurs", "Singular": "Capteur"}
+        "signal mast": {
+            "singular": "mât de signalisation",
+            "plural": "mâts de signalisation",
+            "Singular": "Mât de signalisation"
+        },
+        "locomotive": {
+            "singular": "locomotive",
+            "plural": "locomotives",
+            "Singular": "Locomotive"
+        },
+        "system": {
+            "singular": "système",
+            "plural": "systèmes d'alimentation",
+            "Singular": "Système"
+        },
+        "light": {
+            "singular": "lumière",
+            "plural": "lumières",
+            "Singular": "Lumière"
+        },
+        "turnout": {
+            "singular": "aiguillage",
+            "plural": "aiguillages",
+            "Singular": "Aiguillage"
+        },
+        "sensor": {
+            "singular": "capteur",
+            "plural": "capteurs",
+            "Singular": "Capteur"
+        }
+    },
+    "help": {
+        "group": {
+            "light": "Contrôler les lumières de votre réseau",
+            "power": "Contrôler l'alimentation de vos systèmes DCC",
+            "roster": "Parcourir votre roster de locomotives",
+            "sensor": "Consulter vos capteurs",
+            "signal": "Contrôler vos mâts de signalisation",
+            "status": "Vérification rapide : JMRI est-il joignable, et quel est l'état de l'alimentation",
+            "throttle": "Piloter vos locomotives : vitesse, direction, fonctions, lumières",
+            "turnout": "Contrôler vos aiguillages"
+        },
+        "arg": {
+            "regex_pattern": "Expression régulière Python (insensible à la casse)",
+            "glob_pattern": "Glob façon shell : *, ?, [...] (insensible à la casse)",
+            "loco_ref": "Nom de la locomotive, un fragment de celui-ci, ou une adresse DCC",
+            "system_ref_or_every": "Nom/préfixe/fragment du système (omettre pour tous les systèmes)",
+            "system_ref_or_default": "Nom/préfixe/fragment du système (omettre pour le système par défaut)",
+            "function_labels": "Lister les fonctions du décodeur étiquetées par l'utilisateur pour une locomotive",
+            "function_ref_or_every": "Numéro de fonction (0-28) ou un fragment de son étiquette dans le roster (omettre pour toutes les fonctions étiquetées)",
+            "light_ref_or_every": "Nom/userName/fragment de la lumière (omettre pour toutes les lumières)",
+            "turnout_ref_or_every": "Nom/userName/fragment de l'aiguillage (omettre pour tous les aiguillages)",
+            "sensor_ref": "Nom système, userName, ou fragment du capteur",
+            "signal_ref": "Nom système, userName, ou fragment du mât de signalisation",
+            "ramp_up": "Monter en régime jusqu'à la vitesse cible sur ce nombre de secondes, au lieu d'un saut instantané",
+            "ramp_down": "Descendre en régime jusqu'à la vitesse cible sur ce nombre de secondes, au lieu d'un saut instantané",
+            "hold_seconds": "Maintenir la vitesse non nulle obtenue pendant ce temps, puis arrêter automatiquement (obligatoire hors du shell dès que la vitesse cible est non nulle)"
+        },
+        "power": {
+            "status": "Afficher l'état d'alimentation de tous les systèmes",
+            "on": "Allumer un système, ou tous les systèmes si aucun n'est précisé",
+            "off": "Éteindre un système, ou tous les systèmes si aucun n'est précisé (arrêt général du réseau)",
+            "get": "Afficher l'état d'alimentation d'un système sous forme brute ON/OFF",
+            "find": "Résoudre un nom/préfixe/fragment de système d'alimentation vers son état complet",
+            "findr": "Lister tous les systèmes d'alimentation dont le nom correspond à une expression régulière",
+            "findg": "Lister tous les systèmes d'alimentation dont le nom correspond à un glob shell",
+            "default": "Afficher le système d'alimentation que JMRI considère comme celui par défaut"
+        },
+        "roster": {
+            "list": "Afficher toutes les locomotives du roster",
+            "sort_by": "Ordre de tri (par défaut : byname)",
+            "find": "Résoudre un nom de locomotive ou une adresse DCC vers son entrée dans le roster",
+            "findr": "Lister toutes les entrées du roster dont le nom correspond à une expression régulière",
+            "findg": "Lister toutes les entrées du roster dont le nom correspond à un glob shell"
+        },
+        "throttle": {
+            "list": "Afficher la dernière vitesse/direction/fonctions connues par locomotive",
+            "find": "Résoudre un nom/fragment/adresse de locomotive vers son identité dans le roster et son état en cache",
+            "findr": "Lister toutes les locomotives du roster dont le nom correspond à une expression régulière",
+            "findg": "Lister toutes les locomotives du roster dont le nom correspond à un glob shell",
+            "acquire": "Acquérir une locomotive par nom/fragment/adresse",
+            "acquire_prefix": "Préfixe de la station de commande (ex. O, Z, R) à cibler",
+            "release": "Libérer une locomotive par nom/fragment/adresse",
+            "speed": "Lire ou régler la vitesse d'une locomotive (0-100%%)",
+            "speed_percent": "Vitesse, 0-100 (omettre pour simplement lire la vitesse actuelle) ; une valeur NÉGATIVE signifie marche arrière à cette magnitude, ex. -40",
+            "stop": "Arrêt contrôlé d'une locomotive, ou de toutes celles touchées si aucune n'est précisée",
+            "stop_loco": "Nom, fragment, ou adresse DCC de la locomotive (omettre pour arrêter toutes les locomotives touchées par ce CLI ; obligatoire dans le shell)",
+            "estop": "Arrêt d'urgence (arrêt décodeur JMRI)",
+            "forward": "Régler la direction en marche avant",
+            "reverse": "Régler la direction en marche arrière",
+            "on": "Activer une fonction du décodeur (par numéro ou étiquette), ou toutes les fonctions étiquetées",
+            "off": "Désactiver une fonction du décodeur (par numéro ou étiquette), ou toutes les fonctions étiquetées",
+            "function": "Lister les fonctions du décodeur étiquetées par l'utilisateur pour une locomotive",
+            "sniff": "Afficher en direct chaque message WebSocket de JMRI, jusqu'à Ctrl-C",
+            "sniff_address": "Adresse DCC à acquérir d'abord (répétable) pour que ses messages provenant d'AUTRES clients apparaissent aussi ; omettre pour se contenter d'observer cette connexion",
+            "sniff_show_pong": "Inclure les messages pong de maintien de connexion (masqués par défaut, sans intérêt)"
+        },
+        "light": {
+            "list": "Afficher l'état de chaque lumière",
+            "find": "Résoudre un nom/fragment/ID système de lumière vers son état complet",
+            "find_name": "userName de la lumière, un fragment de celui-ci, ou l'ID système JMRI (ex. IL1)",
+            "findr": "Lister toutes les lumières dont le nom correspond à une expression régulière",
+            "findg": "Lister toutes les lumières dont le nom correspond à un glob shell",
+            "on": "Allumer une lumière, ou toutes les lumières si aucune n'est précisée",
+            "off": "Éteindre une lumière, ou toutes les lumières si aucune n'est précisée"
+        },
+        "turnout": {
+            "list": "Afficher l'état de chaque aiguillage",
+            "find": "Résoudre un nom ou ID système d'aiguillage vers son état complet",
+            "find_name": "Nom/userName/fragment/ID système de l'aiguillage",
+            "findr": "Lister tous les aiguillages dont le nom correspond à une expression régulière",
+            "findg": "Lister tous les aiguillages dont le nom correspond à un glob shell",
+            "close": "Fermer un aiguillage, ou tous les aiguillages si aucun n'est précisé",
+            "throw": "Dévier un aiguillage, ou tous les aiguillages si aucun n'est précisé"
+        },
+        "sensor": {
+            "list": "Afficher l'état de chaque capteur",
+            "status": "Afficher l'état d'un capteur",
+            "find": "Résoudre un nom/fragment/ID système de capteur vers son état complet",
+            "findr": "Lister tous les capteurs dont le nom correspond à une expression régulière",
+            "findg": "Lister tous les capteurs dont le nom correspond à un glob shell"
+        },
+        "signal": {
+            "list": "Afficher l'aspect de chaque mât de signalisation",
+            "status": "Afficher l'aspect d'un mât de signalisation",
+            "find": "Résoudre un nom/fragment/ID système de mât de signalisation vers son état complet",
+            "findr": "Lister tous les mâts de signalisation dont le nom correspond à une expression régulière",
+            "findg": "Lister tous les mâts de signalisation dont le nom correspond à un glob shell",
+            "set": "Régler l'aspect d'un mât de signalisation (écrit dans JMRI)",
+            "set_aspect": "Nom de l'aspect, ex. Hp0/Hp1/Hp2 (non validé localement)"
+        }
+    },
+    "headers": {
+        "system_id": "ID système",
+        "light": "Lumière",
+        "state": "État",
+        "system": "Système",
+        "default": "Défaut",
+        "sensor": "Capteur",
+        "signal": "Signal",
+        "aspect": "Aspect",
+        "address": "Adresse",
+        "speed": "Vitesse",
+        "direction": "Direction",
+        "functions_on": "Fonctions actives",
+        "function": "Fonction",
+        "label": "Étiquette",
+        "turnout": "Aiguillage",
+        "feedback": "Retour",
+        "comment": "Commentaire",
+        "name": "Nom",
+        "road": "Compagnie",
+        "road_number": "N° série",
+        "manufacturer": "Fabricant",
+        "model": "Modèle",
+        "owner": "Propriétaire",
+        "modified": "Modifié",
+        "groups": "Groupes"
+    },
+    "banner": {
+        "title": "jmri-cli v{version} ({url})",
+        "line1": "Contrôlez l'alimentation, les locomotives, les lumières, les aiguillages et les signaux de votre réseau JMRI.",
+        "line2": "Fournit aussi les informations du roster et des capteurs."
+    },
+    "cli": {
+        "commands_header": "commandes :",
+        "help_hint_group": "Lancez `jmri-cli <commande> -h` pour ses sous-commandes, ou",
+        "help_hint_shell_group": "Lancez `<commande> -h` pour ses sous-commandes, ou",
+        "help_hint_example": "`jmri-cli <commande> <sous-commande> -h` pour un exemple exécutable.",
+        "help_hint_shell_example": "`<commande> <sous-commande> -h` pour un exemple exécutable.",
+        "shell_welcome": "Shell interactif jmri-cli. Tapez `exit`, `quit`, ou Ctrl-D pour quitter.",
+        "shell_stop_prompt": "{n} locomotive(s) en mouvement (adresse(s) {addrs}). Toutes les arrêter avant de quitter ? [O/n] ",
+        "shell_exit_no_stop": "Sortie sans arrêt — les locomotives restent dans leur état actuel.",
+        "shell_sniff_needs_own_terminal": "Erreur : `throttle sniff` nécessite sa propre connexion et sa propre boucle Ctrl-C indéfinie — lancez-le dans un terminal séparé : `jmri-cli throttle sniff ...`",
+        "no_systems_match": "Aucun système d'alimentation ne correspond à {pattern!r}",
+        "not_every_system_confirmed": "ATTENTION : tous les systèmes n'ont pas confirmé l'état {state_name} après relecture",
+        "jmri_reachable": "JMRI joignable, version {version}",
+        "no_entities_found": "Aucun {kind} trouvé",
+        "no_entities_match": "Aucun {kind} ne correspond à {pattern!r}",
+        "not_every_entity_confirmed": "ATTENTION : tous les {kind} n'ont pas confirmé l'état {state} après relecture",
+        "signal_aspect_not_confirmed": "ATTENTION : aspect {aspect!r} demandé mais l'aspect observé n'a pas été confirmé après relecture",
+        "turnout_no_feedback_note": "Remarque : commande envoyée avec succès ; certains aiguillages n'ont pas de capteur de retour câblé, donc JMRI ne peut pas confirmer leur position réelle (c'est normal pour ceux-là, pas un défaut) — voir la colonne Retour.",
+        "roster_empty": "Le roster est vide",
+        "no_roster_entries_match": "Aucune entrée du roster ne correspond à {pattern!r}",
+        "no_labeled_functions": "  aucune fonction étiquetée",
+        "throttle_no_locos_touched": "Aucune locomotive touchée par ce CLI pour l'instant. Lancez par ex. `jmri-cli throttle speed <loco> <valeur>` d'abord.",
+        "throttle_no_locos_to_stop": "Aucune locomotive touchée par ce CLI pour l'instant, rien à arrêter.",
+        "throttle_hold_required": "Erreur : --hold est requis pour régler une vitesse non nulle en dehors du shell interactif (utilisez le shell `jmri-cli` nu pour un maintien indéfini).",
+        "throttle_shell_stop_needs_loco": "Erreur : une locomotive est requise pour `stop` dans le shell (ex. `throttle stop 3`) — le cache global du CLI des adresses déjà touchées ne s'applique pas aux locomotives détenues par le shell lui-même.",
+        "sniff_acquired_for_observation": "(adresse={address} acquise pour observation)",
+        "sniff_could_not_acquire": "Attention : impossible d'acquérir {address} : {exc}",
+        "sniff_listening": "Écoute des messages JMRI, Ctrl-C pour arrêter..."
     }
 }

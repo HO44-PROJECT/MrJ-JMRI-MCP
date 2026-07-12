@@ -11,7 +11,9 @@ pip install jmri-mcp
 
 See the [project repository](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP)
 for full documentation, including
-[docs/llm-setup.md](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/blob/main/docs/llm-setup.md)
+[docs/llm-setup-claude.md](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/blob/main/docs/llm-setup-claude.md)
+and
+[docs/llm-setup-xiaozhi.md](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/blob/main/docs/llm-setup-xiaozhi.md)
 for wiring this server into Claude Desktop/Code or xiaozhi/Kira.
 
 Looking for a plain terminal client instead? See
@@ -22,5 +24,5 @@ Looking for a plain terminal client instead? See
 This package includes `xiaozhi_wrapper`, adapted from the MCP pipe example in
 [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) (MIT License, Copyright
 (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and Project
-Contributors) — see `src/xiaozhi_wrapper/__init__.py`'s module docstring for
-the full notice.
+Contributors) — see `src/xiaozhi_wrapper/__init__.py`'s module docstring
+(inside this package) for the full notice.

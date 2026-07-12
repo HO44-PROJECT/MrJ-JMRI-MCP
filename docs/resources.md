@@ -18,7 +18,8 @@ Reference links used while building this project, grouped by topic.
   server implements (`jmri-mcp` is a pure stdio MCP server).
 - [Claude Desktop](https://claude.ai/download) and
   [Claude Code](https://docs.claude.com/en/docs/claude-code) — the two Anthropic MCP
-  clients this project targets; see [llm-setup.md](llm-setup.md) for wiring instructions.
+  clients this project targets; see [llm-setup-claude.md](llm-setup-claude.md) for wiring
+  instructions.
 
 ## xiaozhi / Kira
 

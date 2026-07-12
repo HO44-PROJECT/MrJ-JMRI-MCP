@@ -40,14 +40,16 @@ Pick the one you use:
 - **Claude Code** — one `claude mcp add` command, no file editing.
 - **xiaozhi/Kira** — `jmri-xiaozhi-bridge`, needs the `xiaozhi` extra.
 
-Full config examples for all three: [llm-setup.md](llm-setup.md).
+Full config examples: [llm-setup-claude.md](llm-setup-claude.md) (Claude
+Desktop/Code) and [llm-setup-xiaozhi.md](llm-setup-xiaozhi.md) (xiaozhi/Kira).
 
 ## 5. Try it
 
 Ask your client something that needs a tool call, e.g. "what's the status of
 the JMRI power systems?" or "list the locomotives on the roster". If the
 client doesn't call any tool, re-check the client-specific "verifying it's
-connected" section in [llm-setup.md](llm-setup.md) before assuming the server
+connected" section in [llm-setup-claude.md](llm-setup-claude.md) or
+[llm-setup-xiaozhi.md](llm-setup-xiaozhi.md) before assuming the server
 itself is broken — `jmri-cli status` already proved that part works.
 
 ## Where to go next

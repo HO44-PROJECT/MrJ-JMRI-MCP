@@ -45,7 +45,7 @@ This creates console scripts in the environment's `bin/`:
 | `jmri-cli` | `jmri-cli` | Manual command-line tool for testing against JMRI directly, no MCP client needed |
 | `jmri-xiaozhi-bridge` | `jmri-mcp` | Generic stdio↔WebSocket bridge exposing `jmri-mcp` to xiaozhi/Kira (needs the `xiaozhi` extra, below) |
 
-For the xiaozhi/Kira bridge, install the `xiaozhi` extra of `jmri-mcp` (see [llm-setup.md](llm-setup.md)):
+For the xiaozhi/Kira bridge, install the `xiaozhi` extra of `jmri-mcp` (see [llm-setup-xiaozhi.md](llm-setup-xiaozhi.md)):
 
 ```bash
 pip install -e ./packages/jmri-core -e "./packages/jmri-mcp[xiaozhi]"

@@ -32,6 +32,7 @@ design notes.
 - **[docs/llm-setup-xiaozhi.md](docs/llm-setup-xiaozhi.md)** — exposing the server to xiaozhi/Kira.
 - **[docs/testing.md](docs/testing.md)** — the mocked vs. live test suites, hardware-safety config.
 - **[docs/resources.md](docs/resources.md)** — reference links for JMRI, MCP, and xiaozhi/Kira.
+- **[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md)** — thanks to the open-source projects this depends on.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — project conventions and hard rules before sending a PR.
 
 ## Configuration

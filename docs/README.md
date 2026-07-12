@@ -7,6 +7,7 @@
 - [xiaozhi/Kira setup](llm-setup-xiaozhi.md) — exposing the MCP server to a xiaozhi-based voice assistant.
 - [Testing](testing.md) — the mocked test suite vs. the opt-in live suite, and the hardware-safety config.
 - [Resources](resources.md) — reference links for JMRI, MCP, and xiaozhi/Kira.
+- [Acknowledgments](../ACKNOWLEDGMENTS.md) — thanks to the open-source projects this depends on.
 
 See the top-level [README](../README.md) for the project overview, and [CLAUDE.md](../CLAUDE.md) for
 verified facts about the JMRI JSON API and the project's working agreement.

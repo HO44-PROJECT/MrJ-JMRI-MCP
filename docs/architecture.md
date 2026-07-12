@@ -1,119 +1,162 @@
 # Architecture
 
-```
-src/xiaozhi_wrapper/    # generic stdio<->WebSocket bridge for xiaozhi/Kira (no JMRI code)
-├── __init__.py         #   main(); build_server_command(), connect_with_retry(), ...
-├── __main__.py         #   enables `python -m xiaozhi_wrapper`
-├── constants.py         #  env var names, mcp_config.json keys/transport types, backoff/timeout tunables
-└── mcp_config.json      #  checked in as-is — no env block, JMRI_URL comes from the launching shell
+## Package layout
 
-src/jmri_mcp/
-├── config/             # env vars: JMRI_URL (e.g. http://localhost:12080)
-│   └── __init__.py
-├── constants/          # dedicated modules for every literal used more than once
-│   ├── __init__.py    #   re-exports protocol/endpoints/client_tuning/cli
-│   ├── protocol.py     #  JMRI JSON field names + WS message-type strings
-│   ├── endpoints.py    #  JMRI REST path templates (e.g. TURNOUT = "/json/turnout/{name}")
-│   ├── client_tuning.py #  HTTP/WS timeouts, reconnect delays, ramp step rate
-│   └── cli.py          #  *_STATE_NAMES dicts, CLI id prefixes/ranges, SORT_INDICATOR
-├── jmri_errors.py      # shared JmriError(code, **kwargs), raised by jmri_client AND jmri_ws
-├── i18n/               # hand-rolled i18n: dotted-key lookup against per-language JSON
-│   ├── __init__.py    #   lookup(lang, key, **kwargs), t(key, **kwargs), active_lang()
-│   ├── en.json          # errors.*/kinds.* message templates (English, default)
-│   └── fr.json          # same keys, French
-├── jmri_client/       # async HTTP client for JMRI's JSON API
-│   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor/block/signal)
-│   ├── _http.py        #  shared GET/POST plumbing, JmriError re-export, envelope unwrap
-│   ├── power.py        #  version, power-system discovery, power on/off,
-│   │                   #  power_off_all/power_on_all, resolve_system
-│   ├── roster.py        # roster listing, name resolution, function labels
-│   ├── light.py         # layout light discovery, on/off, resolve_light
-│   ├── turnout.py       # turnout discovery, closed/thrown, resolve_turnout
-│   ├── sensor.py        # sensor discovery (read-only), resolve_sensor
-│   ├── block.py          # layout block discovery (read-only), resolve_block
-│   └── signal.py        # signal mast discovery, aspect set, resolve_signal
-│   │                    #   (signalMast only, not signalHead — see file docstring)
-├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
-│   ├── __init__.py     #   incl. emergency_stop_all() (every acquired throttle at once)
-│   └── ramp.py          #  ramp_speed/execute_speed_change: shared ramp state
-│                        #   machine, used by cli/throttle.py, cli/shell.py, and
-│                        #   tools/throttle.py's set_speed_ramped
-├── tools/             # MCP tools exposed to the LLM
-│   ├── __init__.py    #   register(mcp): wires every domain module below
-│   ├── _common.py      #  shared helpers (throttle_id, compact_*, ensure_acquired)
-│   ├── power.py         # list_systems, get_power, set_power, power_off_all,
-│   │                    #   power_on_all, system_status
-│   ├── roster.py        # list_roster, find_locomotive, get_locomotive_functions
-│   ├── throttle.py      # acquire/release_throttle, set_speed/set_speed_ramped/
-│   │                    #   stop/emergency_stop, emergency_stop_all, set_direction,
-│   │                    #   set_function, lights_on/lights_off
-│   ├── light.py         # list_lights, get_light, set_light (layout/scenery lights,
-│   │                    #   distinct from a locomotive's F0 headlight function)
-│   ├── turnout.py       # list_turnouts, get_turnout, set_turnout
-│   ├── sensor.py        # list_sensors, get_sensor (read-only)
-│   ├── block.py          # list_blocks, get_block (read-only)
-│   ├── signal.py        # list_signals, get_signal, set_signal (signalMast only)
-│   └── mode.py           # set_executor_mode, get_executor_mode (concise/
-│   │                    #   no-narration response style, no JMRI I/O)
-├── server/            # jmri-mcp: the MCP stdio server, no MCP client needed to build it
-│   ├── __init__.py    #   main(); FastMCP wiring; logging → stderr only
-│   └── __main__.py    #   enables `python -m jmri_mcp.server`
-└── cli/               # jmri-cli: manual command-line tool, no MCP client needed
-    ├── __init__.py    #   main(); bare launches shell.py, help/-h/--help show
-    │                  #     banner.py's welcome banner, everything else runs clean
-    ├── __main__.py    #   enables `python -m jmri_mcp.cli`
-    ├── banner.py      #   the welcome banner (name, version, repo link, command list)
-    ├── _common.py     #   cross-module helpers (cli_throttle_id)
-    ├── _match.py      #   find_regex/find_glob: shared matching for findr/findg leaves
-    ├── state.py       #   local throttle-state cache (~/.jmri-cli/throttle_state.json)
-    ├── power.py       #   power [status|on|off|get|find|findr|findg|default] (jmri_client)
-    ├── roster.py      #   roster [list|find|findr|findg|functions] (jmri_client)
-    ├── throttle.py    #   throttle [list|find|findr|findg|acquire|release|speed|
-    │                  #     stop|estop|forward|reverse|on|off|sniff] (jmri_ws +
-    │                  #     state.py; find/findr/findg are read-only, roster+cache only)
-    ├── light.py       #   light [list|find|findr|findg|on|off] (jmri_client)
-    ├── turnout.py     #   turnout [list|find|findr|findg|close|throw] (jmri_client)
-    ├── sensor.py      #   sensor [list|find|findr|findg|status] (jmri_client, read-only)
-    ├── block.py       #   block [list|find|findr|findg|status] (jmri_client, read-only)
-    ├── signal.py      #   signal [list|status|find|findr|findg|set] (jmri_client, signalMast only)
-    └── parser.py      #   build_parser(): wires the above into one CLI, incl. the
-                        #     bare-group-default and verb-elevation patterns (see docs/cli.md)
+This is a monorepo of **three independently-installable PyPI packages**, lockstep-versioned,
+under `packages/`:
+
 ```
+packages/
+├── jmri-core/                 # PyPI: jmri-core — shared foundation, no UI of its own
+│   ├── pyproject.toml
+│   ├── src/jmri_core/
+│   │   ├── config/             # env vars: JMRI_URL (e.g. http://localhost:12080)
+│   │   │   └── __init__.py
+│   │   ├── constants/          # dedicated modules for every literal used more than once
+│   │   │   ├── __init__.py    #   re-exports protocol/endpoints/client_tuning/cli
+│   │   │   ├── protocol.py     #  JMRI JSON field names + WS message-type strings
+│   │   │   ├── endpoints.py    #  JMRI REST path templates (e.g. TURNOUT = "/json/turnout/{name}")
+│   │   │   ├── client_tuning.py #  HTTP/WS timeouts, reconnect delays, ramp step rate
+│   │   │   └── cli.py          #  *_STATE_NAMES dicts, CLI id prefixes/ranges, SORT_INDICATOR
+│   │   │                       #  (lives here, not in jmri-cli — also imported by jmri_client/jmri_ws)
+│   │   ├── jmri_errors.py      # shared JmriError(code, **kwargs), raised by jmri_client AND jmri_ws
+│   │   ├── i18n/               # hand-rolled i18n: dotted-key lookup against per-language JSON
+│   │   │   ├── __init__.py    #   lookup(lang, key, **kwargs), t(key, **kwargs), active_lang()
+│   │   │   ├── en.json          # errors.*/kinds.* message templates (English, default)
+│   │   │   └── fr.json          # same keys, French
+│   │   ├── jmri_client/       # async HTTP client for JMRI's JSON API
+│   │   │   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor/block/signal)
+│   │   │   ├── _http.py        #  shared GET/POST plumbing, JmriError re-export, envelope unwrap
+│   │   │   ├── power.py        #  version, power-system discovery, power on/off,
+│   │   │   │                   #  power_off_all/power_on_all, resolve_system
+│   │   │   ├── roster.py        # roster listing, name resolution, function labels
+│   │   │   ├── light.py         # layout light discovery, on/off, resolve_light
+│   │   │   ├── turnout.py       # turnout discovery, closed/thrown, resolve_turnout
+│   │   │   ├── sensor.py        # sensor discovery (read-only), resolve_sensor
+│   │   │   ├── block.py          # layout block discovery (read-only), resolve_block
+│   │   │   └── signal.py        # signal mast discovery, aspect set, resolve_signal
+│   │   │   │                    #   (signalMast only, not signalHead — see file docstring)
+│   │   ├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
+│   │   │   ├── __init__.py     #   incl. emergency_stop_all() (every acquired throttle at once)
+│   │   │   └── ramp.py          #  ramp_speed/execute_speed_change: shared ramp state
+│   │   │                        #   machine, used by jmri-cli's throttle.py/shell.py, and
+│   │   │                        #   jmri-mcp's tools/throttle.py's set_speed_ramped
+│   │   └── testing/            # pytest plugin: fake_jmri + mock_*/*_fixture fixtures,
+│   │       ├── __init__.py     #   shared by all 3 packages' test suites — installed
+│   │       ├── plugin.py       #   automatically via the pytest11 entry point once
+│   │       └── fixtures/*.json #   jmri-core[test] is installed, no per-package conftest wiring needed
+│   └── tests/                  # tests for jmri_client/jmri_ws/i18n/constants/config/jmri_errors
+│
+├── jmri-cli/                  # PyPI: jmri-cli — manual command-line tool, depends on jmri-core
+│   ├── pyproject.toml
+│   ├── src/jmri_cli/
+│   │   ├── __init__.py    #   main(); bare launches shell.py, help/-h/--help show
+│   │   │                  #     banner.py's welcome banner, everything else runs clean
+│   │   ├── __main__.py    #   enables `python -m jmri_cli`
+│   │   ├── banner.py      #   the welcome banner (name, version, repo link, command list)
+│   │   ├── _common.py     #   cross-module helpers (cli_throttle_id)
+│   │   ├── _match.py      #   find_regex/find_glob: shared matching for findr/findg leaves
+│   │   ├── _sort.py       #   sortable "by*" sibling subcommands shared across list/find
+│   │   ├── state.py       #   local throttle-state cache (~/.jmri-cli/throttle_state.json)
+│   │   ├── power.py       #   power [status|on|off|get|find|findr|findg|default] (jmri_client)
+│   │   ├── roster.py      #   roster [list|find|findr|findg|functions] (jmri_client)
+│   │   ├── throttle.py    #   throttle [list|find|findr|findg|acquire|release|speed|
+│   │   │                  #     stop|estop|forward|reverse|on|off|sniff] (jmri_ws +
+│   │   │                  #     state.py; find/findr/findg are read-only, roster+cache only)
+│   │   ├── light.py       #   light [list|find|findr|findg|on|off] (jmri_client)
+│   │   ├── turnout.py     #   turnout [list|find|findr|findg|close|throw] (jmri_client)
+│   │   ├── sensor.py      #   sensor [list|find|findr|findg|status] (jmri_client, read-only)
+│   │   ├── block.py       #   block [list|find|findr|findg|status] (jmri_client, read-only)
+│   │   ├── signal.py      #   signal [list|status|find|findr|findg|set] (jmri_client, signalMast only)
+│   │   └── parser.py      #   build_parser(): wires the above into one CLI, incl. the
+│   │                      #     bare-group-default and verb-elevation patterns (see docs/cli.md)
+│   └── tests/              # tests for the jmri-cli argument parser and command execution
+│
+└── jmri-mcp/                  # PyPI: jmri-mcp — the MCP stdio server, depends on jmri-core
+    ├── pyproject.toml
+    ├── src/jmri_mcp/
+    │   ├── __init__.py    # __version__
+    │   ├── tools/             # MCP tools exposed to the LLM
+    │   │   ├── __init__.py    #   register(mcp): wires every domain module below
+    │   │   ├── _common.py      #  shared helpers (throttle_id, compact_*, ensure_acquired)
+    │   │   ├── power.py         # list_systems, get_power, set_power, power_off_all,
+    │   │   │                    #   power_on_all, system_status
+    │   │   ├── roster.py        # list_roster, find_locomotive, get_locomotive_functions
+    │   │   ├── throttle.py      # acquire/release_throttle, set_speed/set_speed_ramped/
+    │   │   │                    #   stop/emergency_stop, emergency_stop_all, set_direction,
+    │   │   │                    #   set_function, lights_on/lights_off
+    │   │   ├── light.py         # list_lights, get_light, set_light (layout/scenery lights,
+    │   │   │                    #   distinct from a locomotive's F0 headlight function)
+    │   │   ├── turnout.py       # list_turnouts, get_turnout, set_turnout
+    │   │   ├── sensor.py        # list_sensors, get_sensor (read-only)
+    │   │   ├── block.py          # list_blocks, get_block (read-only)
+    │   │   ├── signal.py        # list_signals, get_signal, set_signal (signalMast only)
+    │   │   └── mode.py           # set_executor_mode, get_executor_mode (concise/
+    │   │   │                    #   no-narration response style, no JMRI I/O)
+    │   └── server/            # jmri-mcp: the MCP stdio server, no MCP client needed to build it
+    │       ├── __init__.py    #   main(); FastMCP wiring; logging → stderr only
+    │       └── __main__.py    #   enables `python -m jmri_mcp.server`
+    ├── src/xiaozhi_wrapper/    # generic stdio<->WebSocket bridge for xiaozhi/Kira (no JMRI code)
+    │   ├── __init__.py         #   main(); build_server_command(), connect_with_retry(), ...
+    │   ├── __main__.py         #   enables `python -m xiaozhi_wrapper`
+    │   ├── constants.py         #  env var names, mcp_config.json keys/transport types, backoff/timeout tunables
+    │   └── mcp_config.json      #  checked in as-is — no env block, JMRI_URL comes from the launching shell
+    └── tests/                  # tests for tools/ and server/
+```
+
+`jmri-core` has **zero UI of its own** — it's a library consumed by both `jmri-cli` and
+`jmri-mcp`, never installed standalone by an end user. `constants/cli.py`'s name is a
+historical misnomer from before the package split: despite the filename, it's imported by
+`jmri_client`/`jmri_ws` too (the state-name dicts and CLI id-prefix constants are genuinely
+shared), so it lives in `jmri-core`, not `jmri-cli` — moving it would create a
+`jmri-cli`→`jmri-core` circular dependency in reverse.
+
+A root-level `pyproject.toml` (no `[project]` of its own) wires the three as a
+[`uv` workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
+(`[tool.uv.workspace] members = ["packages/*"]`) so `uv sync --all-packages` installs all
+three editable in one `.venv` for local development — each package also installs and
+publishes independently via its own `pyproject.toml`. Shared dev tooling config
+(`pytest`, `ruff`) lives in this root file too, since `pytest`/`ruff` read config relative
+to their invocation directory and this project runs both from the repo root across all
+three packages at once.
 
 Eight domains — **power**, **roster**, **throttle**, **light**, **turnout**,
 **sensor**, **block**, **signal** — recur across the project and are split the same way
-everywhere they get big enough to warrant it: `jmri_client/` (HTTP),
-`tools/` (MCP surface), and `cli/` (manual CLI) each have their own
+everywhere they get big enough to warrant it: `jmri_client/` (HTTP, in `jmri-core`),
+`tools/` (MCP surface, in `jmri-mcp`), and the CLI leaves (manual CLI, in `jmri-cli`) each
+have their own
 `power.py`/`roster.py`/`throttle.py`/`light.py`/`turnout.py`/`sensor.py`/`block.py`/`signal.py`.
 `jmri_ws/__init__.py` stays a single file within its package — it's one
 cohesive unit of tightly-coupled state (a WebSocket connection's
 request/reply/cache logic) with no natural seam to split along.
 `tools/mode.py` is the one module with no `jmri_client`/`jmri_ws`
-counterpart and no `cli/` equivalent — it holds no JMRI state at all (see
+counterpart and no CLI equivalent — it holds no JMRI state at all (see
 "Executor mode" below), so there's nothing for a one-shot CLI process to
 usefully exercise (its whole point is a flag that persists across tool
 calls within one long-lived MCP session).
 
-Every directory at the package root is a package (`__init__.py`, no
+Every directory at a package's `src/` root is a package (`__init__.py`, no
 flat `.py` files at the root) — this project's two executables,
-`jmri-mcp` and `jmri-cli`, are each their own package (`server/`,
-`cli/`), both following the exact same shape: `main()` lives in
-`__init__.py`, and a sibling `__main__.py` re-exports it so
-`python -m jmri_mcp.<name>` also works. `config/` and `jmri_ws/` are
-single-file packages (all their content lives in `__init__.py`) — they
-have no `main()` and no natural seam to split into multiple files, but
-still follow the "no bare `.py` at the root" rule. Everything except
-`server/` and `cli/` is library code with no top-level side effects —
-it can't be run standalone, only imported.
+`jmri-mcp` and `jmri-cli`, are each their own package (`jmri_mcp/server/` in the
+`jmri-mcp` distribution, `jmri_cli/` itself in the `jmri-cli` distribution), both
+following the same shape: `main()` lives in `__init__.py`, and a sibling
+`__main__.py` re-exports it so `python -m jmri_cli` / `python -m jmri_mcp.server`
+also work. `jmri_core.config` and `jmri_core.jmri_ws` are single-file packages (all
+their content lives in `__init__.py`) — they have no `main()` and no natural seam to
+split into multiple files, but still follow the "no bare `.py` at the root" rule.
+Everything except `jmri_mcp/server/` and `jmri_cli/` itself is library code with no
+top-level side effects — it can't be run standalone, only imported.
 
-`src/` has two independent top-level packages: `jmri_mcp/` (this project's
-actual purpose — the MCP server and its CLI) and `xiaozhi_wrapper/` (a
-generic MCP stdio↔WebSocket bridge, JMRI-agnostic, for exposing `jmri-mcp`
-— or any other stdio MCP server — to xiaozhi/Kira). They only meet at
-`mcp_config.json`'s `"command": "jmri-mcp"`; `xiaozhi_wrapper` imports
-nothing from `jmri_mcp`. It was ported into this repo from the separate
-`kira` project on 2026-07-09, since `pyproject.toml`'s `[project.scripts]`
-already coupled the two — see `src/xiaozhi_wrapper/__init__.py`'s docstring.
+`jmri-mcp`'s `src/` has two independent top-level packages: `jmri_mcp/` (this
+project's actual purpose — the MCP server) and `xiaozhi_wrapper/` (a generic MCP
+stdio↔WebSocket bridge, JMRI-agnostic, for exposing `jmri-mcp` — or any other stdio
+MCP server — to xiaozhi/Kira). They only meet at `mcp_config.json`'s `"command":
+"jmri-mcp"`; `xiaozhi_wrapper` imports nothing from `jmri_mcp` or `jmri_core`. It was
+ported into this repo from the separate `kira` project on 2026-07-09, since
+`pyproject.toml`'s `[project.scripts]` already coupled the two — see
+`packages/jmri-mcp/src/xiaozhi_wrapper/__init__.py`'s docstring. It ships inside the `jmri-mcp`
+PyPI package (not split into a fourth package) since it has no independent use
+outside exposing an MCP server to xiaozhi/Kira.
 
 M3 (roster) and M4 (layout — `light.py` #17, `turnout.py` #15, `sensor.py`
 #16) are both complete and closed on the
@@ -127,7 +170,7 @@ against.
 
 ## `constants/`: every repeated literal in one place, organized by layer
 
-Any magic string or number used more than once lives in `src/jmri_mcp/constants/`,
+Any magic string or number used more than once lives in `packages/jmri-core/src/jmri_core/constants/`,
 never re-typed at each call site. Four dedicated **modules** (not `class X:` bodies —
 module-qualified access like `endpoints.TURNOUT` gives the same namespacing with less
 boilerplate), split along the same layer boundary as the rest of the tree:
@@ -144,11 +187,11 @@ boilerplate), split along the same layer boundary as the rest of the tree:
   `jmri_ws/ramp.py`, not defined there).
 - **`cli.py`** — the `POWER_STATE_NAMES`/`LIGHT_STATE_NAMES`/`TURNOUT_STATE_NAMES`/
   `SENSOR_STATE_NAMES` dicts (the single source both `tools/_common.py` and every
-  `cli/*.py` module import, rather than each redefining them), CLI throttle-id prefixes,
+  `jmri_cli/*.py` module import, rather than each redefining them), CLI throttle-id prefixes,
   function/speed ranges, and `SORT_INDICATOR` (` ▼`, appended to a sorted column's header
   at the print call site — never baked into the header string itself).
 
-`cli/light.py`, `cli/power.py`, and `cli/turnout.py`'s `_*_set()` helpers reconstruct
+`jmri_cli/light.py`, `jmri_cli/power.py`, and `jmri_cli/turnout.py`'s `_*_set()` helpers reconstruct
 the reported state name via `STATE_NAMES[ON_VALUE if flag else OFF_VALUE]` — reading the
 same dict `_row()` uses to render table rows — rather than a second, independent
 `"ON" if flag else "OFF"`-style string literal that could drift out of sync with it.
@@ -156,16 +199,16 @@ same dict `_row()` uses to render table rows — rather than a second, independe
 ## `jmri_errors.py` + `i18n/`: structured errors, hand-rolled translation
 
 No user-facing message is written as a hardcoded string in `jmri_client`/`jmri_ws`
-anymore. Both raise a single shared `JmriError(code, **kwargs)` (`src/jmri_mcp/jmri_errors.py`)
+anymore. Both raise a single shared `JmriError(code, **kwargs)` (`packages/jmri-core/src/jmri_core/jmri_errors.py`)
 instead of each defining its own exception class with a baked-in English f-string —
 `jmri_client/_http.py` and `jmri_ws/__init__.py` used to each define an identical local
-`JmriError`, which meant `cli/throttle.py`/`cli/shell.py`/`tools/throttle.py` had to
+`JmriError`, which meant `jmri_cli/throttle.py`/`jmri_cli/shell.py`/`tools/throttle.py` had to
 import one of them aliased as `JmriWsError` just to catch both; a single shared class
 collapses that back to one `except JmriError`.
 
 `code` is a short machine-readable key (`"unknown_entity"`, `"vanished_after_post"`,
 `"ws_connect_failed"`, ...) resolved at message-render time against
-`src/jmri_mcp/i18n/en.json` / `fr.json` — not gettext or an external i18n library, a
+`packages/jmri-core/src/jmri_core/i18n/en.json` / `fr.json` — not gettext or an external i18n library, a
 small dotted-key JSON lookup (`i18n.lookup(lang, "errors.<code>", **kwargs)`) using
 `str.format()` interpolation (chosen over `%`-style because several templates need
 `{query!r}`-style conversion flags). `JmriError.__str__` always renders English
@@ -194,12 +237,12 @@ scope** for i18n — they're consumed by the LLM host, not read directly by a hu
 `tools/mode.py` specifically depends on intentional bilingual FR/EN trigger vocabulary
 that a translation table would collapse.
 
-Every `cli/*.py` catch site now goes through `i18n.error(exc)` (`src/jmri_mcp/i18n/__init__.py`)
+Every `jmri_cli/*.py` catch site now goes through `i18n.error(exc)` (`packages/jmri-core/src/jmri_core/i18n/__init__.py`)
 instead of `print(f"Error: {exc}", file=sys.stderr)`: it renders the translated
 `errors.<code>` body via `exc.code`/`exc.kwargs` and wraps it in the translated
 `cli.error_prefix` template ("Error: {message}" / "Erreur : {message}"), so the "Error:"
 label itself is translated too, not just the message body. `i18n.error()` only works on
-`JmriError` — catch sites for other exceptions (e.g. `cli/shell.py`'s `except ValueError`
+`JmriError` — catch sites for other exceptions (e.g. `jmri_cli/shell.py`'s `except ValueError`
 around `shlex.split()` for malformed shell input) are untouched and keep their plain
 f-string, since a plain exception has no `.code`/`.kwargs` to look up. A handful of catch
 sites don't fit the generic "Error: {message}" shape because they prepend domain-specific
@@ -213,30 +256,30 @@ i18n.t(f"errors.{exc.code}", **exc.kwargs)}` instead of `return {"error": str(ex
 tools have no prefix template since the "error" key in the returned dict already carries
 that meaning to the LLM host.
 
-The two independent `JmriError` classes noted above are now fully unified: `cli/throttle.py`,
-`cli/shell.py`, and `tools/throttle.py` no longer alias `jmri_ws`'s class as `JmriWsError`
+The two independent `JmriError` classes noted above are now fully unified: `jmri_cli/throttle.py`,
+`jmri_cli/shell.py`, and `tools/throttle.py` no longer alias `jmri_ws`'s class as `JmriWsError`
 (or `jmri_client`'s as `JmriHttpError`) — every catch site imports and matches on the one
 shared `JmriError`.
 
 `tabulate()` table headers and argparse `help=` strings are translated the same way.
-Each `cli/*.py` file with a table gets a small `_headers()` (or, for `throttle.py`,
+Each `jmri_cli/*.py` file with a table gets a small `_headers()` (or, for `throttle.py`,
 `_throttle_headers()`) helper building `[i18n.t("headers.x"), ...]` at *call* time, not
 import time — `i18n.active_lang()` reads `JMRI_MCP_LANG` dynamically, so headers must
 reflect whatever language is active when the command actually runs. The `▼` sort-indicator
 is never baked into a translated string: it's the shared `SORT_INDICATOR` constant
 (`constants/cli.py`) appended to the plain translated header at the sorted-view call site
 only (`headers[column] += SORT_INDICATOR`), replacing the old mix of hardcoded `"System ID
-▼"` literals and ad hoc `f"{header} ▼"` concatenation. `cli/parser.py`'s `build_parser()`
+▼"` literals and ad hoc `f"{header} ▼"` concatenation. `jmri_cli/parser.py`'s `build_parser()`
 runs fresh per invocation, after `JMRI_MCP_LANG` is already in the environment, so every
 `help=i18n.t("help.<group>.<leaf>")` / `help=i18n.t("help.arg.<name>")` call resolves
 correctly with no special-casing — there's no long-lived parser instance that could outlive
-an env var change. `cli/_doc.py` (the old `GROUP_HELP` dict) is deleted; `cli/__init__.py`'s
-and `cli/shell.py`'s front-page command lists now build `{name: i18n.t(f"help.group.{name}")
+an env var change. `jmri_cli/_doc.py` (the old `GROUP_HELP` dict) is deleted; `jmri_cli/__init__.py`'s
+and `jmri_cli/shell.py`'s front-page command lists now build `{name: i18n.t(f"help.group.{name}")
 for name in _GROUP_NAMES}` instead of importing that dict.
 
-The remaining hardcoded `print()` calls across `cli/*.py` — success/status prose, empty-
-result messages, unconfirmed-state warnings, the welcome banner (`cli/banner.py`), and the
-shell's own welcome/exit/help text (`cli/shell.py`) — are now wired to `i18n.t("cli.*", ...)`
+The remaining hardcoded `print()` calls across `jmri_cli/*.py` — success/status prose, empty-
+result messages, unconfirmed-state warnings, the welcome banner (`jmri_cli/banner.py`), and the
+shell's own welcome/exit/help text (`jmri_cli/shell.py`) — are now wired to `i18n.t("cli.*", ...)`
 the same way. The `no_entities_found`/`no_entities_match`/`not_every_entity_confirmed`
 templates are shared across `light.py`/`turnout.py`/`sensor.py`/`block.py`/`signal.py` via a `kind=`
 kwarg (e.g. `kind="signal mast"`, matching the `kinds` table's key exactly) — callers pass
@@ -409,7 +452,7 @@ alongside `state` on `list_turnouts`/`get_turnout`/`set_turnout`. Every
 turnout tool's docstring tells the LLM explicitly: when
 `has_feedback_sensor` is false, INCONSISTENT is expected/normal and must
 not be reported to the user as an anomaly; it's only worth flagging when
-`has_feedback_sensor` is true. `cli/turnout.py` mirrors this with a
+`has_feedback_sensor` is true. `jmri_cli/turnout.py` mirrors this with a
 "Feedback" (yes/no) column on `list`/`find`/`findr`/`findg`, and
 `turnout close`/`throw`'s unconfirmed-state warning adds an extra note
 when the unconfirmed turnout(s) are sensorless, for the same reason.
@@ -420,7 +463,7 @@ when the unconfirmed turnout(s) are sensorless, for the same reason.
 `/json/sensors` (list) and `/json/sensor/<name>` (single get), state
 2=ACTIVE/4=INACTIVE (0=UNKNOWN, 8=INCONSISTENT — see `SENSOR_STATE_NAMES`).
 There is deliberately **no `set_sensor`**, in either `jmri_client/`,
-`tools/`, or `cli/`: a sensor reports real-world state JMRI detects from
+`tools/`, or `jmri_cli/`: a sensor reports real-world state JMRI detects from
 its own hardware inputs (block occupancy, turnout motor feedback, a
 clock-running flag like `ISCLOCKRUNNING`), not a command this project
 should ever issue — writing to one would be lying to JMRI about the
@@ -540,7 +583,7 @@ first reported) — requesting `Hp0` now confirms correctly.
 `jmri-cli`'s command surface went through two redesigns driven directly by
 maintainer feedback on the real terminal output, not speculative design:
 
-**Welcome banner + per-leaf epilogs** (`cli/banner.py`, `cli/__init__.py`,
+**Welcome banner + per-leaf epilogs** (`jmri_cli/banner.py`, `jmri_cli/__init__.py`,
 `i18n/en.json`'s `help.group.*` keys). Bare `jmri-cli`, `jmri-cli -h`, and
 `jmri-cli --help` all print a byte-identical, non-technical welcome banner
 (name, version via `importlib.metadata`, repo link, one-line purpose,
@@ -595,7 +638,7 @@ cohérence?"):
 one more piece to actually work: a CLI invocation is a fresh
 acquire-act-close WebSocket connection every time (see below), so there is
 no live JMRI state left to query back between two separate `jmri-cli
-throttle` calls. `cli/state.py` is a small local JSON cache
+throttle` calls. `jmri_cli/state.py` is a small local JSON cache
 (`~/.jmri-cli/throttle_state.json`, keyed by DCC address) that every
 throttle-touching command writes to and that `throttle list`/`speed`
 (no value)/`stop` (no address) read from — a convenience cache the CLI
@@ -683,7 +726,7 @@ two branches runs, not a separate code path. `throttle_list` (reads
 see below) don't take a `client` kwarg — neither has a reason to share a
 connection.
 
-**`shell.py`: bare `jmri-cli` launches it, not a subcommand.** `cli/__init__.py`'s
+**`shell.py`: bare `jmri-cli` launches it, not a subcommand.** `jmri_cli/__init__.py`'s
 `main()` special-cases `len(sys.argv) == 1` to call `shell.run_shell()`
 directly, before `build_parser()` is even invoked — deliberately *not* a
 `jmri-cli shell` subcommand, so the shell is the natural "just run it" path
@@ -731,11 +774,11 @@ current state with an explicit stderr warning; JMRI does not stop a loco
 just because its throttle's owning connection closes.
 
 **Ramping** (`ramp_speed`, `execute_speed_change`, both in the shared module
-`jmri_ws/ramp.py` — moved out of `cli/throttle.py` when `tools/throttle.py`
+`jmri_ws/ramp.py` — moved out of `jmri_cli/throttle.py` when `tools/throttle.py`
 gained its own ramped MCP tool, see "Ramped speed changes over MCP" below;
-`jmri_ws/` has no dependency on `cli/`, so this is the correct lowest-common
+`jmri_ws/` has no dependency on `jmri_cli/`, so this is the correct lowest-common
 home for logic both surfaces need, keeping `tools/` from ever importing
-`cli/`-private code). `ramp_speed` is the shared linear-ramp primitive:
+`jmri_cli/`-private code). `ramp_speed` is the shared linear-ramp primitive:
 `seconds <= 0` or `from_fraction == to_fraction` degenerates to a single
 final `set_speed()` call, so every caller can unconditionally call it rather
 than branching on "was a ramp actually requested." Steps are `max(1,
@@ -925,7 +968,7 @@ locomotive regardless of who's driving it.
 
 The CLI has no equivalent long-lived session to iterate, so `jmri-cli
 throttle stop [loco]` resolves its population of throttles differently:
-with no `loco` given, it reads every address key out of `cli/state.py`'s
+with no `loco` given, it reads every address key out of `jmri_cli/state.py`'s
 local cache (`~/.jmri-cli/throttle_state.json`) instead of the roster —
 "every locomotive this CLI has already touched", not "every locomotive
 JMRI knows about" — then acquires each on a fresh connection and issues a
@@ -945,7 +988,7 @@ system via `get_systems()` and calls the existing
 `set_power(prefix, turn_on)` on each in turn, inheriting the same
 re-read-and-confirm honesty contract as a single `set_power()` call.
 `power_off_all()` and `power_on_all()` are both thin wrappers over this one
-shared loop — same reasoning as `_power_set(args, turn_on)` in `cli/power.py`
+shared loop — same reasoning as `_power_set(args, turn_on)` in `jmri_cli/power.py`
 (the shared body behind `power on`/`power off`) and the `turn_on: bool`
 shared `power_off_all`/`power_on_all` MCP tool pair, so the
 sequential/re-read logic exists exactly once instead of being copied per
@@ -1008,7 +1051,7 @@ this server to keep reminding the LLM otherwise — this is a behavioral
 nudge via tool output, not an enforced constraint.
 
 `mode.py` deliberately has **no `jmri_client`/`jmri_ws` counterpart and no
-`cli/` equivalent** — it holds no JMRI state and makes no JMRI calls at
+`jmri_cli/` equivalent** — it holds no JMRI state and makes no JMRI calls at
 all, so there's nothing for a one-shot `jmri-cli` process to usefully
 exercise; the whole point of the flag is that it persists across tool
 calls within one long-lived MCP session, which a fresh CLI invocation

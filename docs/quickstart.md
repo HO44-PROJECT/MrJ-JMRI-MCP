@@ -17,9 +17,9 @@ conda env create -f environment.yml
 conda activate jmri-mcp
 ```
 
-No conda? `pip install -e .` into any virtualenv works too — see
-[install.md](install.md) for the full breakdown (extras, entry points,
-Python version notes).
+No conda? `pip install -e ./packages/jmri-core -e ./packages/jmri-cli -e ./packages/jmri-mcp`
+into any virtualenv works too — see [install.md](install.md) for the full
+breakdown (extras, entry points, Python version notes).
 
 ## 3. Verify JMRI is reachable
 

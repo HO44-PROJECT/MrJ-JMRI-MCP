@@ -8,7 +8,7 @@ MCP (Model Context Protocol) server for [JMRI](https://www.jmri.org/) — contro
 
 - **Fully dynamic** — no hardcoded layout data. Systems (power connections), roster, turnouts, sensors, blocks and signal masts are discovered live from the JMRI server (`GET /json/power`, `{"list": ...}`).
 - **LLM-friendly** — compact tool outputs (voice assistants have small contexts), honest `success`/`error` reporting, docstrings that tell the model *when* and *how* to use each tool.
-- **One server, every client** — pure stdio MCP server: consumed directly by Claude Desktop/Code, and bridged to xiaozhi via `src/xiaozhi_wrapper/` (`jmri-xiaozhi-bridge`), a generic stdio↔WebSocket bridge included in this repo.
+- **One server, every client** — pure stdio MCP server: consumed directly by Claude Desktop/Code, and bridged to xiaozhi via `xiaozhi_wrapper` (`jmri-xiaozhi-bridge`), a generic stdio↔WebSocket bridge included in the `jmri-mcp` package.
 
 ## Architecture
 
@@ -47,8 +47,8 @@ modified source — see the [license text](LICENSE) for the exact terms.
 
 ### Third-party code
 
-`src/xiaozhi_wrapper/` is adapted from the MCP pipe example in
+`xiaozhi_wrapper` (part of the `jmri-mcp` package) is adapted from the MCP pipe example in
 [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) (MIT License,
 Copyright (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and Project
 Contributors) — see the package docstring
-(`src/xiaozhi_wrapper/__init__.py`) for the full notice.
+(`packages/jmri-mcp/src/xiaozhi_wrapper/__init__.py`) for the full notice.

@@ -10,7 +10,7 @@ Tested with Claude Desktop **1.19367.0** (1a5be1), 2026-07-07.
 Claude Desktop spawns each configured MCP server as a subprocess itself, using
 its own launcher (not your shell), so it does **not** inherit your shell `PATH`.
 The `command` must be an absolute path to the `jmri-mcp` script inside the
-environment where you ran `pip install -e .` (see [install.md](install.md)).
+environment where you installed the `jmri-mcp` package (see [install.md](install.md)).
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add
 an entry under `mcpServers`:
@@ -87,14 +87,15 @@ called, not just registered.
 
 ## xiaozhi / Kira
 
-`src/xiaozhi_wrapper/` is a generic stdio↔WebSocket bridge — it speaks stdio
-to `jmri-mcp` (or any configured MCP server) on one side and `MCP_ENDPOINT`
-(a WebSocket) on the other. It knows nothing about JMRI; the only link
-between the two packages is `mcp_config.json`'s `"command": "jmri-mcp"`. See
-the package docstring (`src/xiaozhi_wrapper/__init__.py`) for the full design.
+`xiaozhi_wrapper` (part of the `jmri-mcp` package) is a generic stdio↔WebSocket
+bridge — it speaks stdio to `jmri-mcp` (or any configured MCP server) on one
+side and `MCP_ENDPOINT` (a WebSocket) on the other. It knows nothing about
+JMRI; the only link between the two packages is `mcp_config.json`'s
+`"command": "jmri-mcp"`. See the package docstring
+(`packages/jmri-mcp/src/xiaozhi_wrapper/__init__.py`) for the full design.
 
-`src/xiaozhi_wrapper/mcp_config.json` is checked into the repo as-is (not a
-template to copy) — it has no `env` block at all:
+`packages/jmri-mcp/src/xiaozhi_wrapper/mcp_config.json` is checked into the
+repo as-is (not a template to copy) — it has no `env` block at all:
 
 ```json
 {
@@ -117,7 +118,7 @@ Install the extra dependency this package needs beyond the core install
 `.env` file):
 
 ```bash
-pip install -e ".[xiaozhi]"
+pip install -e ./packages/jmri-core -e "./packages/jmri-mcp[xiaozhi]"
 ```
 
 The bridge is launched from your own shell, so it **does** inherit your

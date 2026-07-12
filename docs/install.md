@@ -12,7 +12,7 @@
 - DCC++ **5.4.16** (the command station firmware behind the `O`/`Z`/`R` power systems)
 - Python **3.11** (the `kira` conda env currently used to run `jmri-mcp` for both
   Claude Desktop and xiaozhi/Kira) — 3.12 is preferred going forward, see below
-- [xiaozhi](https://github.com/78/xiaozhi-esp32) (via `src/xiaozhi_wrapper/`, this repo)
+- [xiaozhi](https://github.com/78/xiaozhi-esp32) (via `xiaozhi_wrapper`, part of the `jmri-mcp` package)
 - Claude Desktop **1.19367.0** (1a5be1), 2026-07-07
 
 ### Python 3.11 vs 3.12
@@ -45,31 +45,41 @@ that touch dependencies.
 
 ### Manual install (any virtualenv or conda env)
 
-From the repo root, with your environment already active:
+This repo is a monorepo of three independently-installable packages under
+`packages/`: `jmri-core` (shared foundation), `jmri-cli` (the manual
+command-line tool), and `jmri-mcp` (the MCP stdio server, including the
+`xiaozhi_wrapper` bridge). Both `jmri-cli` and `jmri-mcp` depend on
+`jmri-core`, but since `jmri-core` isn't published to PyPI yet, a plain `pip`
+can't resolve that dependency on its own — pass all the local paths you need
+to a single `pip install` call so pip resolves them against each other
+instead of trying (and failing) to fetch `jmri-core` from PyPI:
 
 ```bash
-pip install -e .
+pip install -e ./packages/jmri-core -e ./packages/jmri-cli -e ./packages/jmri-mcp
 ```
 
-This registers the packages (`jmri_mcp`, `xiaozhi_wrapper`) in editable mode and
-creates console scripts in the environment's `bin/`:
+(Once `jmri-core` is published to PyPI, `pip install -e ./packages/jmri-cli` alone
+will work, since pip will fetch `jmri-core` as a normal dependency instead.)
 
-| Command | Entry point | Purpose |
+This creates console scripts in the environment's `bin/`:
+
+| Command | Package | Purpose |
 |---|---|---|
-| `jmri-mcp` | `jmri_mcp.server:main` | The MCP stdio server (used by Claude Desktop/Code, or by `jmri-xiaozhi-bridge` for xiaozhi/Kira) |
-| `jmri-cli` | `jmri_mcp.cli:main` | Manual command-line tool for testing against JMRI directly, no MCP client needed |
-| `jmri-xiaozhi-bridge` | `xiaozhi_wrapper:main` | Generic stdio↔WebSocket bridge exposing `jmri-mcp` to xiaozhi/Kira (needs the `xiaozhi` extra, below) |
+| `jmri-mcp` | `jmri-mcp` | The MCP stdio server (used by Claude Desktop/Code, or by `jmri-xiaozhi-bridge` for xiaozhi/Kira) |
+| `jmri-cli` | `jmri-cli` | Manual command-line tool for testing against JMRI directly, no MCP client needed |
+| `jmri-xiaozhi-bridge` | `jmri-mcp` | Generic stdio↔WebSocket bridge exposing `jmri-mcp` to xiaozhi/Kira (needs the `xiaozhi` extra, below) |
 
-For development (running the test suite), install the `dev` extra instead:
+For development (running the full test suite across all three packages), use the
+[`uv`](https://docs.astral.sh/uv/) workspace from the repo root instead:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --all-packages --extra test
 ```
 
-For the xiaozhi/Kira bridge, install the `xiaozhi` extra (see [llm-setup.md](llm-setup.md)):
+For the xiaozhi/Kira bridge, install the `xiaozhi` extra of `jmri-mcp` (see [llm-setup.md](llm-setup.md)):
 
 ```bash
-pip install -e ".[xiaozhi]"
+pip install -e ./packages/jmri-core -e "./packages/jmri-mcp[xiaozhi]"
 ```
 
 ## Verifying the install
@@ -84,29 +94,24 @@ power system and its state. See [cli.md](cli.md) for the full command reference.
 
 ## Conda environments
 
-If you use conda with multiple environments, `pip install -e .` only registers the
-entry points in the **currently active** environment. If `jmri-mcp`/`jmri-cli` are
-"command not found" after activating an env, it usually means that specific env
-never had `pip install -e .` run in it — re-run the install with that env active:
+If you use conda with multiple environments, `pip install -e ./packages/<pkg>` only
+registers the entry points in the **currently active** environment. If `jmri-mcp`/
+`jmri-cli` are "command not found" after activating an env, it usually means that
+specific env never had the install run in it — re-run with that env active:
 
 ```bash
 conda activate <env-name>
-pip install -e .
+pip install -e ./packages/jmri-core -e ./packages/jmri-cli -e ./packages/jmri-mcp
 ```
 
-Re-run `pip install -e .` (or `-e ".[dev]"`) again any time `pyproject.toml` changes —
-whether `[project.scripts]` (a new CLI subcommand) or `[project.dependencies]`/the
-`dev`/`xiaozhi` extras (a new package requirement, e.g. `tabulate`). An editable
-install does **not** auto-install newly added dependencies on `git pull`; you'll see
-`ModuleNotFoundError` for the new package until you re-run the install in that env:
-
-```bash
-conda activate <env-name>
-pip install -e ".[dev]"
-```
+Re-run the install again any time a package's `pyproject.toml` changes — whether
+`[project.scripts]` (a new CLI subcommand) or `[project.dependencies]`/its extras (a
+new package requirement, e.g. `tabulate`). An editable install does **not**
+auto-install newly added dependencies on `git pull`; you'll see `ModuleNotFoundError`
+for the new package until you re-run the install in that env.
 
 If you use `environment.yml` instead, `conda env update -f environment.yml --prune`
-(mentioned above) covers this the same way, since it re-runs `pip install -e .[dev]`
+(mentioned above) covers this the same way, since it re-runs both editable installs
 as part of the env update.
 
 ## Configuration

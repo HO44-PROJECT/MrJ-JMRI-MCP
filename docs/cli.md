@@ -1090,23 +1090,24 @@ throttle commands — a missing mandatory `--hold` outside the shell, or a
 missing locomotive argument to `stop` inside the shell. Errors go to
 stderr; normal output goes to stdout.
 
-## Development conventions for `cli/*.py`
+## Development conventions for `jmri_cli/*.py`
 
 These rules came out of the constants-extraction/i18n refactor and apply to
-every new `cli/*.py` command, not just the ones touched by that refactor.
+every new `jmri_cli/*.py` command, not just the ones touched by that refactor.
 See [architecture.md](architecture.md) for the underlying design
 (`constants/`, `jmri_errors.py`, `i18n/`); this section is the checklist to
 follow when writing or reviewing CLI code day to day.
 
 **No hardcoded literals.**
 - Magic strings/numbers (state codes, id prefixes, ranges, the sort
-  indicator, ...) belong in a `constants/` module (`constants/cli.py` for
-  CLI-facing ones), never inline in `cli/*.py`. If you need a new one,
-  check `constants/cli.py` first — it's probably already there.
+  indicator, ...) belong in a `constants/` module (`jmri_core`'s
+  `constants/cli.py` for CLI-facing ones), never inline in `jmri_cli/*.py`.
+  If you need a new one, check `constants/cli.py` first — it's probably
+  already there.
 - Every user-facing message goes through the hand-rolled i18n system
-  (`src/jmri_mcp/i18n/`), never a raw f-string. This is a project-specific
-  choice (explicitly not gettext or an external i18n library) — do not
-  introduce one.
+  (`packages/jmri-core/src/jmri_core/i18n/`), never a raw f-string. This is a
+  project-specific choice (explicitly not gettext or an external i18n
+  library) — do not introduce one.
 - The **only** exception is `key=value` diagnostic output (e.g.
   `f"address={address} speed={speed}"`): those labels stay English
   unconditionally, treated as machine/script-parseable logging output, not
@@ -1117,7 +1118,7 @@ follow when writing or reviewing CLI code day to day.
   `JmriError(code, **kwargs)` (the one shared class — do not reintroduce a
   second `JmriError`/aliased import; `except JmriError` must catch both
   HTTP- and WS-origin errors uniformly).
-- `cli/*.py` catch sites translate at the point they print:
+- `jmri_cli/*.py` catch sites translate at the point they print:
   `print(i18n.error(exc), file=sys.stderr)`. If a catch site needs to
   prepend domain-specific context (an address, a function number) instead
   of the generic "Error: {message}" shape, add a dedicated `cli.*` key
@@ -1138,14 +1139,14 @@ follow when writing or reviewing CLI code day to day.
   `headers[column] += SORT_INDICATOR` or `system_id += SORT_INDICATOR`
   inside the `_headers()` helper — not baked into an `en.json`/`fr.json`
   literal, not string-concatenated ad hoc at the call site.
-- `cli/parser.py`'s `build_parser()` runs fresh per invocation (after
+- `jmri_cli/parser.py`'s `build_parser()` runs fresh per invocation (after
   `JMRI_MCP_LANG` is already set), so every `help=` string is
   `i18n.t("help.<group>.<leaf>")` or `i18n.t("help.arg.<name>")` for a
   positional/optional argument. Check `i18n/en.json`'s `help.*` namespace
   for an existing key with matching English text before adding a new one
   — most argument-help strings are shared across groups (`help.arg.*`).
-- Front-page / group command-list rendering (`cli/__init__.py`,
-  `cli/shell.py`) builds its name → help-text mapping from
+- Front-page / group command-list rendering (`jmri_cli/__init__.py`,
+  `jmri_cli/shell.py`) builds its name → help-text mapping from
   `i18n.t(f"help.group.{name}")`, not a hardcoded dict.
 
 **Adding a new i18n string.** Add the key to **both** `i18n/en.json` and
@@ -1155,7 +1156,7 @@ which hides missing translations instead of surfacing them at review time.
 
 **Small helper functions still need docstrings.** `_row()`/`_label()`/
 `_headers()`-style one-liners are easy to skip, but every function in
-`cli/*.py` gets at least a one-line docstring — consistent with every
+`jmri_cli/*.py` gets at least a one-line docstring — consistent with every
 `async def <group>_<leaf>` command function, which already documents
 `Args`/`Returns`. A helper with an obvious name still benefits from a
 docstring stating what shape it returns or what it's used for (e.g. "the
@@ -1163,10 +1164,10 @@ name find_regex/find_glob match against").
 
 **Testing.** Tests must not hardcode an English literal that duplicates
 production text sourced from `en.json` — assert against
-`jmri_mcp.i18n.lookup("en", key, **kwargs)` (or the `expect_error()`
-helper in `tests/conftest.py` for `JmriError` codes) instead of a re-typed
-string, so a wording change in `en.json` doesn't silently desync the test
-suite. The autouse `JMRI_MCP_LANG=en` fixture in `conftest.py` keeps the
-suite deterministic regardless of the developer's shell environment —
-don't remove it, and don't add a test that depends on French output
-without explicitly setting the env var for that test.
+`jmri_core.i18n.lookup("en", key, **kwargs)` (or the `expect_error()`
+helper in `jmri_core.testing.plugin` for `JmriError` codes) instead of a
+re-typed string, so a wording change in `en.json` doesn't silently desync
+the test suite. The autouse `JMRI_MCP_LANG=en` fixture in that same plugin
+keeps the suite deterministic regardless of the developer's shell
+environment — don't remove it, and don't add a test that depends on
+French output without explicitly setting the env var for that test.

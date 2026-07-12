@@ -6,29 +6,33 @@ and an opt-in suite that talks to a real JMRI server.
 ## Mocked suite (default)
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv sync --all-packages --extra test
+uv run pytest
 ```
 
-Every test is pointed at a fake host (`tests/conftest.py`'s autouse `jmri_url`
-fixture). No real network calls, no hardware side effects. This is what runs
-in CI and what you should run after any code change.
+Every test is pointed at a fake host (an autouse `jmri_url` fixture in
+`jmri_core.testing.plugin`, a pytest plugin registered via the `pytest11` entry
+point — any package with `jmri-core[test]` installed gets it automatically).
+No real network calls, no hardware side effects. This is what runs in CI and
+what you should run after any code change.
 
 - HTTP calls (`jmri_client/`) are mocked with [`respx`](https://lundberg.github.io/respx/)
-  using fixtures captured from a real JMRI 5.4.0 server (`tests/fixtures/*.json`).
-- The WebSocket client (`jmri_ws/`, see `tests/test_jmri_ws.py`) is tested
-  against a real local `websockets` server fixture (`fake_jmri`) that speaks
-  the subset of JMRI's protocol needed to exercise connect/hello, ping/pong,
-  request-response, throttle acquire/release, and reconnect — `respx` only
-  mocks HTTP, so this can't reuse the same approach as `jmri_client/`.
+  using fixtures captured from a real JMRI 5.4.0 server
+  (`packages/jmri-core/src/jmri_core/testing/fixtures/*.json`).
+- The WebSocket client (`jmri_ws/`, see `packages/jmri-core/tests/test_jmri_ws.py`)
+  is tested against a real local `websockets` server fixture (`fake_jmri`) that
+  speaks the subset of JMRI's protocol needed to exercise connect/hello,
+  ping/pong, request-response, throttle acquire/release, and reconnect —
+  `respx` only mocks HTTP, so this can't reuse the same approach as `jmri_client/`.
 
 ## Live suite (opt-in)
 
-`tests/test_live.py` talks to a real, reachable JMRI server. It's excluded by
-default (`addopts = "-m 'not live'"` in `pyproject.toml`) — run it explicitly:
+`packages/jmri-core/tests/test_live.py` talks to a real, reachable JMRI
+server. It's excluded by default (`addopts = "-m 'not live'"` in the root
+`pyproject.toml`) — run it explicitly:
 
 ```bash
-pytest -m live
+uv run pytest -m live
 ```
 
 ### Configuring it

@@ -30,6 +30,7 @@ design notes.
 - **[docs/cli.md](docs/cli.md)** — `jmri-cli` command reference.
 - **[docs/llm-setup.md](docs/llm-setup.md)** — wiring the server into Claude Desktop, Claude Code, xiaozhi/Kira.
 - **[docs/testing.md](docs/testing.md)** — the mocked vs. live test suites, hardware-safety config.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — project conventions and hard rules before sending a PR.
 
 ## Configuration
 

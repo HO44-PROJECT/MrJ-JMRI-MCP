@@ -103,7 +103,8 @@ If you have a real JMRI server / DCC layout reachable, be deliberate about it:
 - Prefer testing and debugging against the mocked suite / `fake_jmri` fixture
   (see [docs/testing.md](docs/testing.md)) over a real server. The opt-in live
   suite (`pytest -m live`) exists for exactly this and has its own safety
-  knobs (`config/live.ini`: `enable_write_tests`, `min_toggle_interval_seconds`)
+  knobs (`packages/jmri-core/tests/config/live.ini`: `enable_write_tests`,
+  `min_toggle_interval_seconds`)
   for the rare cases that do need real hardware.
 - `DCC++` command stations drive real relays — rapid on/off cycling causes
   real wear. Don't write a test or debugging loop that toggles power/turnouts

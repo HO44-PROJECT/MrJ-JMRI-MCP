@@ -40,14 +40,16 @@ uv run pytest -m live
 The URL alone needs no extra setup: if you already have `JMRI_URL` exported
 (the same variable used everywhere else in this project — CLI, MCP server),
 the live suite picks it up automatically, in preference order `JMRI_URL_LIVE`
-env var → `config/live.ini`'s `url` → plain `JMRI_URL`. Set `JMRI_URL_LIVE`
-instead only if you want the live suite to point somewhere different from
-your normal `JMRI_URL`.
+env var → `packages/jmri-core/tests/config/live.ini`'s `url` → plain
+`JMRI_URL`. Set `JMRI_URL_LIVE` instead only if you want the live suite to
+point somewhere different from your normal `JMRI_URL`.
 
-Write tests need more than a URL — `config/live.ini` is where the safety
-knobs live (there's no equivalent env var for these elsewhere in the
-project). Copy `config/live.example.ini` to `config/live.ini` (gitignored —
-it names your private network address) and fill in the `[jmri]` section:
+Write tests need more than a URL — `packages/jmri-core/tests/config/live.ini`
+is where the safety knobs live (there's no equivalent env var for these
+elsewhere in the project). Copy
+`packages/jmri-core/tests/config/live.example.ini` to
+`packages/jmri-core/tests/config/live.ini` (gitignored — it names your
+private network address) and fill in the `[jmri]` section:
 
 ```ini
 [jmri]

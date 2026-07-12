@@ -2,7 +2,8 @@
 
 Skipped by default (the rest of the suite uses an autouse fixture that
 points JMRI_URL at a mock host, which this file overrides). Configure your
-layout in config/live.ini (copy from config/live.example.ini), then run:
+layout in config/live.ini (copy from config/live.example.ini, both next to
+this file), then run:
 
     pytest -m live
 
@@ -26,7 +27,7 @@ from jmri_core.jmri_client import get_systems, resolve_system, set_power
 
 pytestmark = pytest.mark.live
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "live.ini"
+_CONFIG_PATH = Path(__file__).parent / "config" / "live.ini"
 
 # Captured at import time, before conftest.py's autouse `jmri_url` fixture
 # overwrites JMRI_URL with the mock host for every test in the suite.
@@ -52,7 +53,8 @@ def real_jmri_url(monkeypatch):
     if not url:
         pytest.skip(
             "No live JMRI configured: set JMRI_URL, or copy "
-            "config/live.example.ini to config/live.ini, or set JMRI_URL_LIVE"
+            "config/live.example.ini to config/live.ini next to this file, "
+            "or set JMRI_URL_LIVE"
         )
     monkeypatch.setenv("JMRI_URL", url)
 
@@ -74,13 +76,13 @@ def write_test_system() -> str:
     if not _config_bool("JMRI_ENABLE_WRITE_TESTS", "enable_write_tests"):
         pytest.skip(
             "Write tests disabled: set enable_write_tests = true in "
-            "config/live.ini to opt in (this drives a real relay)"
+            "config/live.ini (next to this file) to opt in (this drives a real relay)"
         )
     system = _config_value("JMRI_WRITE_TEST_SYSTEM", "write_test_system")
     if not system:
         pytest.skip(
             "No write-test system configured: set write_test_system in "
-            "config/live.ini, or JMRI_WRITE_TEST_SYSTEM"
+            "config/live.ini (next to this file), or JMRI_WRITE_TEST_SYSTEM"
         )
     return system
 

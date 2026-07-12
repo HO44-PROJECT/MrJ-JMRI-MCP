@@ -123,7 +123,7 @@ async def _power_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         return 1
 
     if not matches:
-        print(f"No power systems match {args.pattern!r}")
+        print(i18n.t("cli.no_systems_match", pattern=args.pattern))
         return 0
     _print_systems_table(matches)
     return 0
@@ -207,7 +207,7 @@ async def _power_set(args: argparse.Namespace, turn_on: bool) -> int:
 
     _print_systems_table(results)
     if not all_confirmed:
-        print(f"WARNING: not every system confirmed {state_name} after re-read", file=sys.stderr)
+        print(i18n.t("cli.not_every_system_confirmed", state_name=state_name), file=sys.stderr)
         return 1
     return 0
 
@@ -263,7 +263,7 @@ async def system_status(args: argparse.Namespace) -> int:
         print(i18n.t("cli.jmri_unreachable", message=str(exc)), file=sys.stderr)
         return 1
 
-    print(f"JMRI reachable, version {version}")
+    print(i18n.t("cli.jmri_reachable", version=version))
     try:
         systems = await get_systems()
     except JmriError as exc:

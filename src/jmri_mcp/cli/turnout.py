@@ -92,7 +92,7 @@ async def _turnout_find_pattern(args: argparse.Namespace, *, regex: bool) -> int
         return 1
 
     if not matches:
-        print(f"No turnouts match {args.pattern!r}")
+        print(i18n.t("cli.no_entities_match", kind="turnout", pattern=args.pattern))
         return 0
     rows = [_row(t) for t in sorted(matches, key=lambda t: t.get("name", "?"))]
     print(tabulate(rows, headers=_headers()))
@@ -142,7 +142,7 @@ async def turnout_list(args: argparse.Namespace) -> int:
         return 1
 
     if not turnouts:
-        print("No turnouts found")
+        print(i18n.t("cli.no_entities_found", kind="turnout"))
         return 0
     rows = [_row(t) for t in sorted(turnouts, key=lambda t: t.get("name", "?"))]
     print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
@@ -186,13 +186,8 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
     print(tabulate(rows, headers=_headers()))
     if not all_confirmed:
         if unconfirmed_sensorless:
-            print(
-                "Note: command sent OK; some turnouts have no feedback sensor "
-                "wired up, so JMRI can't confirm their real position (this is "
-                "expected for those, not a fault) — see the Feedback column.",
-                file=sys.stderr,
-            )
-        print(f"WARNING: not every turnout confirmed {state_name} after re-read", file=sys.stderr)
+            print(i18n.t("cli.turnout_no_feedback_note"), file=sys.stderr)
+        print(i18n.t("cli.not_every_entity_confirmed", kind="turnout", state=state_name), file=sys.stderr)
         return 1
     return 0
 

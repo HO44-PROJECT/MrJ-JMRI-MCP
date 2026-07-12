@@ -231,6 +231,22 @@ an env var change. `cli/_doc.py` (the old `GROUP_HELP` dict) is deleted; `cli/__
 and `cli/shell.py`'s front-page command lists now build `{name: i18n.t(f"help.group.{name}")
 for name in _GROUP_NAMES}` instead of importing that dict.
 
+The remaining hardcoded `print()` calls across `cli/*.py` — success/status prose, empty-
+result messages, unconfirmed-state warnings, the welcome banner (`cli/banner.py`), and the
+shell's own welcome/exit/help text (`cli/shell.py`) — are now wired to `i18n.t("cli.*", ...)`
+the same way. The `no_entities_found`/`no_entities_match`/`not_every_entity_confirmed`
+templates are shared across `light.py`/`turnout.py`/`sensor.py`/`signal.py` via a `kind=`
+kwarg (e.g. `kind="signal mast"`, matching the `kinds` table's key exactly) — callers pass
+`kind=` directly and let `i18n.lookup()`'s `_expand_kind()` step derive `{kind}`/
+`{kind_plural}`/`{Kind}` from the `kinds.*` table; a call site must never pre-resolve
+`kind_plural` itself via a second `i18n.t("kinds.X.plural")` lookup, since that bypasses the
+same expansion `{kind}` still needs and produces an inconsistent pattern. One exception
+stays firmly out of scope, as decided from the start of this refactor: every `key=value`
+diagnostic line (e.g. `f"address={address} speed={speed} direction={direction}"`,
+throttle.py's `sniff` message dump) keeps its English label unconditionally — these are
+treated as machine/script-parseable logging output, not translated prose, so only the
+values interpolate, never the labels.
+
 ## Two JMRI clients, two different shapes
 
 JMRI exposes the same data over two transports, and this project uses both

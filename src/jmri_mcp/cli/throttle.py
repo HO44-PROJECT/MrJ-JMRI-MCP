@@ -56,12 +56,6 @@ from jmri_mcp.jmri_client import JmriError, get_roster, get_roster_function_labe
 from jmri_mcp.jmri_ws import JmriWsClient
 from jmri_mcp.jmri_ws.ramp import execute_speed_change as _execute_speed_change
 
-_SECONDS_REQUIRED_MESSAGE = (
-    "Error: --hold is required when setting a nonzero speed outside the "
-    "interactive shell (use the bare `jmri-cli` shell for an indefinite hold)."
-)
-
-
 async def _resolve_address(loco: str) -> int:
     """Resolve a CLI-typed locomotive reference to a DCC address.
 
@@ -134,7 +128,7 @@ async def throttle_list(args: argparse.Namespace) -> int:
     """
     cache = _state.load_state()
     if not cache:
-        print("No locomotives touched yet by this CLI. Run e.g. `jmri-cli throttle speed <loco> <value>` first.")
+        print(i18n.t("cli.throttle_no_locos_touched"))
         return 0
 
     rows = []
@@ -217,7 +211,7 @@ async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> in
         return 1
 
     if not matches:
-        print(f"No roster entries match {args.pattern!r}")
+        print(i18n.t("cli.no_roster_entries_match", pattern=args.pattern))
         return 0
     rows = [_cache_row(e["address"]) for e in sorted(matches, key=lambda e: _roster_label(e).casefold())]
     print(tabulate(rows, headers=_throttle_headers()))
@@ -365,7 +359,7 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
     if args.speed_percent is not None and one_shot:
         target_percent = abs(args.speed_percent)
         if target_percent > 0 and args.seconds is None:
-            print(_SECONDS_REQUIRED_MESSAGE, file=sys.stderr)
+            print(i18n.t("cli.throttle_hold_required"), file=sys.stderr)
             return 2
 
     try:
@@ -438,18 +432,12 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
             print(i18n.error(exc), file=sys.stderr)
             return 1
     elif client is not None:
-        print(
-            "Error: a locomotive is required for `stop` inside the shell "
-            "(e.g. `throttle stop 3`) — the CLI-wide cache of every "
-            "one-shot-touched address doesn't apply to the shell's own "
-            "held throttles.",
-            file=sys.stderr,
-        )
+        print(i18n.t("cli.throttle_shell_stop_needs_loco"), file=sys.stderr)
         return 2
     else:
         addresses = [int(a) for a in _state.load_state()]
         if not addresses:
-            print("No locomotives touched yet by this CLI, nothing to stop.", file=sys.stderr)
+            print(i18n.t("cli.throttle_no_locos_to_stop"), file=sys.stderr)
             return 0
 
     ok = True
@@ -561,7 +549,7 @@ async def throttle_direction(
             current_fraction = acquired.get("speed") or 0.0
 
             if one_shot and current_fraction > 0.0 and args.seconds is None:
-                print(_SECONDS_REQUIRED_MESSAGE, file=sys.stderr)
+                print(i18n.t("cli.throttle_hold_required"), file=sys.stderr)
                 return 2
 
             data = await _execute_speed_change(
@@ -713,7 +701,7 @@ async def throttle_function(args: argparse.Namespace) -> int:
 
     print(f"{entry['name']} (address={entry['address']})")
     if not labels:
-        print("  no labeled functions")
+        print(i18n.t("cli.no_labeled_functions"))
         return 0
     rows = [[f"F{n}", labels[n]] for n in sorted(labels)]
     print(tabulate(rows, headers=[i18n.t("headers.function"), i18n.t("headers.label")]))
@@ -782,11 +770,11 @@ async def throttle_sniff(args: argparse.Namespace) -> int:
         for address in args.address or []:
             try:
                 await client.acquire_throttle(f"{SNIFF_THROTTLE_ID_PREFIX}{address}", address)
-                print(f"(acquired address={address} for observation)")
+                print(i18n.t("cli.sniff_acquired_for_observation", address=address))
             except JmriError as exc:
                 print(i18n.t("cli.throttle_warning_could_not_acquire", address=address, message=str(exc)), file=sys.stderr)
 
-        print("Listening for JMRI messages, Ctrl-C to stop...", file=sys.stderr)
+        print(i18n.t("cli.sniff_listening"), file=sys.stderr)
         while True:
             await asyncio.sleep(IDLE_POLL_SECONDS)
     except JmriError as exc:

@@ -11,6 +11,8 @@ impressions.
 
 from importlib.metadata import PackageNotFoundError, version
 
+from jmri_mcp import i18n
+
 REPO_URL = "https://github.com/HO44-PROJECT/MrJ-JMRI-MCP"
 
 
@@ -24,7 +26,7 @@ def _version() -> str:
 def banner() -> str:
     """Build the CLI's welcome banner, with the installed package version."""
     return (
-        f"jmri-cli v{_version()} ({REPO_URL})\n"
-        "Control power, locomotives, lights, turnouts and signals on your JMRI layout.\n"
-        "Also reports roster and sensor info.\n"
+        f"{i18n.t('banner.title', version=_version(), url=REPO_URL)}\n"
+        f"{i18n.t('banner.line1')}\n"
+        f"{i18n.t('banner.line2')}\n"
     )

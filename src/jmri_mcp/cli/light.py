@@ -56,7 +56,7 @@ async def light_list(args: argparse.Namespace) -> int:
         return 1
 
     if not lights:
-        print("No lights found")
+        print(i18n.t("cli.no_entities_found", kind="light"))
         return 0
     rows = [_row(lt) for lt in sorted(lights, key=lambda lt: lt.get("name", "?"))]
     print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
@@ -102,7 +102,7 @@ async def _light_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         return 1
 
     if not matches:
-        print(f"No lights match {args.pattern!r}")
+        print(i18n.t("cli.no_entities_match", kind="light", pattern=args.pattern))
         return 0
     rows = [_row(lt) for lt in sorted(matches, key=lambda lt: lt.get("name", "?"))]
     print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
@@ -164,7 +164,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
 
     print(tabulate(rows, headers=_headers()))
     if not all_confirmed:
-        print(f"WARNING: not every light confirmed {state_name} after re-read", file=sys.stderr)
+        print(i18n.t("cli.not_every_entity_confirmed", kind="light", state=state_name), file=sys.stderr)
         return 1
     return 0
 

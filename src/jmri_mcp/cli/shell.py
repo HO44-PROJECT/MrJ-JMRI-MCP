@@ -97,11 +97,11 @@ def _command_list() -> str:
     """Render the top-level command list, shell-flavored (no `jmri-cli` prefix)."""
     group_help = {name: i18n.t(f"help.group.{name}") for name in _GROUP_NAMES}
     width = max(len(name) for name in group_help)
-    lines = ["commands:"]
+    lines = [i18n.t("cli.commands_header")]
     lines += [f"  {name:<{width}}  {help_text}" for name, help_text in group_help.items()]
     lines.append("")
-    lines.append("Run `<command> -h` for its subcommands, or")
-    lines.append("`<command> <subcommand> -h` for a runnable example.")
+    lines.append(i18n.t("cli.help_hint_shell_group"))
+    lines.append(i18n.t("cli.help_hint_shell_example"))
     return "\n".join(lines)
 
 
@@ -146,8 +146,7 @@ async def _confirm_exit(client: JmriWsClient) -> bool:
     addresses = ", ".join(str(a) for a in moving)
     reply = await asyncio.to_thread(
         input,
-        f"{len(moving)} loco(s) in motion (address(es) {addresses}). "
-        "Stop them all before exiting? [Y/n] ",
+        i18n.t("cli.shell_stop_prompt", n=len(moving), addrs=addresses),
     )
     if reply.strip().lower() in ("", "y", "yes"):
         for address in moving:
@@ -161,7 +160,7 @@ async def _confirm_exit(client: JmriWsClient) -> bool:
             except JmriError as exc:
                 print(i18n.t("cli.throttle_error_stopping_address", address=address, message=str(exc)), file=sys.stderr)
     else:
-        print("Exiting without stopping — locomotives left in their current state.", file=sys.stderr)
+        print(i18n.t("cli.shell_exit_no_stop"), file=sys.stderr)
     return True
 
 
@@ -177,7 +176,7 @@ async def run_shell() -> None:
     client = JmriWsClient()
     _load_history()
     print(banner())
-    print("jmri-cli interactive shell. Type `exit`, `quit`, or Ctrl-D to leave.")
+    print(i18n.t("cli.shell_welcome"))
 
     try:
         while True:
@@ -221,12 +220,7 @@ async def run_shell() -> None:
             argv = ["-h" if token == "help" else token for token in argv]
 
             if argv[:2] == ["throttle", "sniff"]:
-                print(
-                    "Error: `throttle sniff` needs its own connection and its own "
-                    "indefinite Ctrl-C loop — run it in a separate terminal instead: "
-                    "`jmri-cli throttle sniff ...`",
-                    file=sys.stderr,
-                )
+                print(i18n.t("cli.shell_sniff_needs_own_terminal"), file=sys.stderr)
                 continue
 
             try:

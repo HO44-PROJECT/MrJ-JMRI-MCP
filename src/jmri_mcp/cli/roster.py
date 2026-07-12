@@ -112,7 +112,7 @@ async def roster_list(args: argparse.Namespace) -> int:
         return 1
 
     if not roster:
-        print("Roster is empty")
+        print(i18n.t("cli.roster_empty"))
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
     rows = [_row(e) for e in _sort_roster(roster, sort_by)]
@@ -139,7 +139,7 @@ async def _roster_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         return 1
 
     if not matches:
-        print(f"No roster entries match {args.pattern!r}")
+        print(i18n.t("cli.no_roster_entries_match", pattern=args.pattern))
         return 0
     rows = [_row(e) for e in sorted(matches, key=lambda e: str(e["name"]).casefold())]
     headers = _headers()
@@ -234,7 +234,7 @@ async def roster_functions(args: argparse.Namespace) -> int:
 
     print(f"{entry['name']} (address={entry['address']})")
     if not labels:
-        print("  no labeled functions")
+        print(i18n.t("cli.no_labeled_functions"))
         return 0
     rows = [[f"F{n}", labels[n]] for n in sorted(labels)]
     print(tabulate(rows, headers=[i18n.t("headers.function"), i18n.t("headers.label")]))

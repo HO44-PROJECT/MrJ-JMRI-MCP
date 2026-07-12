@@ -51,7 +51,7 @@ async def signal_list(args: argparse.Namespace) -> int:
         return 1
 
     if not signals:
-        print("No signal masts found")
+        print(i18n.t("cli.no_entities_found", kind="signal mast"))
         return 0
     rows = [_row(s) for s in sorted(signals, key=lambda s: _row(s)[0].casefold())]
     print(tabulate(rows, headers=_headers()))
@@ -116,7 +116,7 @@ async def _signal_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         return 1
 
     if not matches:
-        print(f"No signal masts match {args.pattern!r}")
+        print(i18n.t("cli.no_entities_match", kind="signal mast", pattern=args.pattern))
         return 0
     rows = [_row(s) for s in sorted(matches, key=lambda s: _row(s)[0].casefold())]
     print(tabulate(rows, headers=_headers()))
@@ -175,7 +175,6 @@ async def signal_set(args: argparse.Namespace) -> int:
     label, system_id, aspect = _row(result)
     print(f"name={label} system_id={system_id} aspect={aspect}")
     if not result["confirmed"]:
-        print(f"WARNING: requested aspect {args.aspect!r} but observed aspect "
-              f"did not confirm after re-read", file=sys.stderr)
+        print(i18n.t("cli.signal_aspect_not_confirmed", aspect=args.aspect), file=sys.stderr)
         return 1
     return 0

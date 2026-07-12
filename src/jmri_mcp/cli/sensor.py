@@ -51,7 +51,7 @@ async def sensor_list(args: argparse.Namespace) -> int:
         return 1
 
     if not sensors:
-        print("No sensors found")
+        print(i18n.t("cli.no_entities_found", kind="sensor"))
         return 0
     rows = [_row(s) for s in sorted(sensors, key=lambda s: _row(s)[0].casefold())]
     print(tabulate(rows, headers=_headers()))
@@ -116,7 +116,7 @@ async def _sensor_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         return 1
 
     if not matches:
-        print(f"No sensors match {args.pattern!r}")
+        print(i18n.t("cli.no_entities_match", kind="sensor", pattern=args.pattern))
         return 0
     rows = [_row(s) for s in sorted(matches, key=lambda s: _row(s)[0].casefold())]
     print(tabulate(rows, headers=_headers()))

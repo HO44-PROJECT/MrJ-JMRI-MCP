@@ -111,9 +111,10 @@ If you have a real JMRI server / DCC layout reachable, be deliberate about it:
 
 ## Testing
 
-- `pip install -e ".[dev]"` then `pytest` runs the full mocked suite (no
-  network calls, no hardware side effects) — this is what CI runs and what
-  you should run after any change.
+- `uv sync --all-packages --extra test` then `uv run pytest` runs the full
+  mocked suite across all three packages (no network calls, no hardware side
+  effects) — this is what CI runs and what you should run after any change.
+  See [docs/testing.md](docs/testing.md) for the full breakdown.
 - Don't hardcode an English literal in a test that duplicates production text
   sourced from `i18n/en.json`. Assert against
   `jmri_mcp.i18n.lookup("en", key, **kwargs)` (or the `expect_error()` helper

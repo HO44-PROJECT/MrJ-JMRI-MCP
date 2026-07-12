@@ -14,7 +14,7 @@ the fastest path.
 
 ```bash
 conda env create -f environment.yml
-conda activate jmri-mcp
+conda activate jmri-mcp-cli
 ```
 
 No conda? `pip install -e ./packages/jmri-core -e ./packages/jmri-cli -e ./packages/jmri-mcp`

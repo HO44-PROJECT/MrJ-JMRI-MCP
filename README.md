@@ -19,7 +19,7 @@ design notes.
 
 ## Requirements
 
-- Python ≥ 3.10 (developed on 3.12 — see [docs/install.md](docs/install.md#tested-with) for tested versions and `environment.yml`)
+- Python ≥ 3.10 (developed on 3.12) — see [docs/install.md](docs/install.md) for install instructions and `environment.yml`
 - A running JMRI Web Server (tested against JMRI 5.4)
 
 ## Documentation

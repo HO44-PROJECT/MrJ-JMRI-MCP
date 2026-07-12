@@ -3,8 +3,9 @@
 Wires the command functions from power.py/roster.py/throttle.py into a
 single argparse.ArgumentParser, matching jmri-cli's documented command
 tree (see the package docstring in jmri_mcp/cli/__init__.py). Every
-top-level group gets a short, inviting one-liner (see _doc.GROUP_HELP)
-instead of a technical description, and every leaf subcommand (the ones
+top-level group gets a short, inviting one-liner (see the
+`help.group.*` keys in jmri_mcp/i18n/en.json) instead of a technical
+description, and every leaf subcommand (the ones
 that actually run against JMRI) gets an `epilog` with a copy-pasteable
 example - `jmri-cli <group> <leaf> -h` is meant to be self-sufficient,
 no separate "examples" command needed.
@@ -23,8 +24,8 @@ on`/`light off`, `turnout close`/`turnout throw`, `throttle on`/`off`.
 import argparse
 import functools
 
+from jmri_mcp import i18n
 from jmri_mcp.cli import light, power, roster, sensor, signal, throttle, turnout
-from jmri_mcp.cli._doc import GROUP_HELP
 
 
 def _leaf(subparsers, name: str, *, help: str, example: str, func) -> argparse.ArgumentParser:
@@ -64,17 +65,16 @@ def _add_ramp_args(leaf: argparse.ArgumentParser, *, rampup: bool, seconds: bool
     if rampup:
         leaf.add_argument(
             "--rampup", type=float, default=None, metavar="SECONDS",
-            help="Ramp up to the target speed over this many seconds, instead of jumping instantly",
+            help=i18n.t("help.arg.ramp_up"),
         )
     leaf.add_argument(
         "--rampdown", type=float, default=None, metavar="SECONDS",
-        help="Ramp down to the target speed over this many seconds, instead of jumping instantly",
+        help=i18n.t("help.arg.ramp_down"),
     )
     if seconds:
         leaf.add_argument(
             "--hold", type=float, default=None, metavar="SECONDS", dest="seconds",
-            help="Hold the resulting nonzero speed this long, then auto-stop "
-                 "(mandatory outside the shell whenever the target speed is nonzero)",
+            help=i18n.t("help.arg.hold_seconds"),
         )
 
 
@@ -90,7 +90,7 @@ def _group(subparsers, name: str, *, default_func=None):
     Returns:
         (group_parser, its own subparsers action).
     """
-    group_cmd = subparsers.add_parser(name, help=GROUP_HELP[name])
+    group_cmd = subparsers.add_parser(name, help=i18n.t(f"help.group.{name}"))
     if default_func is not None:
         group_cmd.set_defaults(func=default_func)
     group_sub = group_cmd.add_subparsers(dest=f"{name}_command", required=default_func is None)
@@ -113,59 +113,60 @@ def build_parser() -> argparse.ArgumentParser:
     power_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        power_sub, "status", help="Show power state of every system",
+        power_sub, "status", help=i18n.t("help.power.status"),
         example="jmri-cli power status", func=power.power_status,
     )
 
     on_ = _leaf(
-        power_sub, "on", help="Turn a system on, or every system if none is given",
+        power_sub, "on", help=i18n.t("help.power.on"),
         example="jmri-cli power on ohara", func=power.power_on,
     )
     on_.add_argument("system", nargs="?", default=None,
-                      help="System name/prefix/fragment (omit for every system)")
+                      help=i18n.t("help.arg.system_ref_or_every"))
 
     off_ = _leaf(
         power_sub, "off",
-        help="Turn a system off, or every system if none is given (layout-wide stop)",
+        help=i18n.t("help.power.off"),
         example="jmri-cli power off", func=power.power_off,
     )
     off_.add_argument("system", nargs="?", default=None,
-                       help="System name/prefix/fragment (omit for every system)")
+                       help=i18n.t("help.arg.system_ref_or_every"))
 
     get_ = _leaf(
-        power_sub, "get", help="Print one system's power state as a bare ON/OFF",
+        power_sub, "get", help=i18n.t("help.power.get"),
         example="jmri-cli power get ohara", func=power.power_get,
     )
     get_.add_argument("system", nargs="?", default=None,
-                       help="System name/prefix/fragment (omit for the default system)")
+                       help=i18n.t("help.arg.system_ref_or_default"))
 
     power_find_cmd = _leaf(
-        power_sub, "find", help="Resolve a power system name/prefix/fragment to its full state",
+        power_sub, "find", help=i18n.t("help.power.find"),
         example="jmri-cli power find ohara", func=power.power_find,
     )
     power_find_cmd.add_argument("system", nargs="?", default=None,
-                                 help="System name/prefix/fragment (omit for the default system)")
+                                 help=i18n.t("help.arg.system_ref_or_default"))
 
     power_findr_cmd = _leaf(
-        power_sub, "findr", help="List every power system whose name matches a regex",
+        power_sub, "findr", help=i18n.t("help.power.findr"),
         example="jmri-cli power findr '^DCC'", func=power.power_findr,
     )
-    power_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+    power_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     power_findg_cmd = _leaf(
-        power_sub, "findg", help="List every power system whose name matches a shell glob",
+        power_sub, "findg", help=i18n.t("help.power.findg"),
         example="jmri-cli power findg 'DCC*'", func=power.power_findg,
     )
-    power_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+    power_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     _leaf(
-        power_sub, "default", help="Print which power system JMRI treats as the default",
+        power_sub, "default", help=i18n.t("help.power.default"),
         example="jmri-cli power default", func=power.power_default,
     )
 
+    status_help = i18n.t("help.group.status")
     status_cmd = subparsers.add_parser(
-        "status", help=GROUP_HELP["status"],
-        description=GROUP_HELP["status"],
+        "status", help=status_help,
+        description=status_help,
         epilog="example:\n  jmri-cli status",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -177,38 +178,38 @@ def build_parser() -> argparse.ArgumentParser:
     roster_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     list_cmd = _leaf(
-        roster_sub, "list", help="Show every locomotive in the roster",
+        roster_sub, "list", help=i18n.t("help.roster.list"),
         example="jmri-cli roster list bydcc", func=roster.roster_list,
     )
     list_cmd.add_argument(
         "sort_by", nargs="?", default="byname",
         choices=roster.SORT_CHOICES,
-        help="Sort order (default: byname)",
+        help=i18n.t("help.roster.sort_by"),
     )
 
     roster_find_cmd = _leaf(
-        roster_sub, "find", help="Resolve a locomotive name or DCC address to its roster entry",
+        roster_sub, "find", help=i18n.t("help.roster.find"),
         example="jmri-cli roster find autorail", func=roster.roster_find,
     )
-    roster_find_cmd.add_argument("name", help="Locomotive name, a fragment of it, or a DCC address")
+    roster_find_cmd.add_argument("name", help=i18n.t("help.arg.loco_ref"))
 
     roster_findr_cmd = _leaf(
-        roster_sub, "findr", help="List every roster entry whose name matches a regex",
+        roster_sub, "findr", help=i18n.t("help.roster.findr"),
         example="jmri-cli roster findr '^auto'", func=roster.roster_findr,
     )
-    roster_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+    roster_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     roster_findg_cmd = _leaf(
-        roster_sub, "findg", help="List every roster entry whose name matches a shell glob",
+        roster_sub, "findg", help=i18n.t("help.roster.findg"),
         example="jmri-cli roster findg 'boite*'", func=roster.roster_findg,
     )
-    roster_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+    roster_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     roster_functions_cmd = _leaf(
-        roster_sub, "functions", help="List a locomotive's user-labeled decoder functions",
+        roster_sub, "functions", help=i18n.t("help.arg.function_labels"),
         example="jmri-cli roster functions autorail", func=roster.roster_functions,
     )
-    roster_functions_cmd.add_argument("name", help="Locomotive name, a fragment of it, or a DCC address")
+    roster_functions_cmd.add_argument("name", help=i18n.t("help.arg.loco_ref"))
 
     # -- throttle: bare = list acquired (from local cache) ------------
     throttle_cmd, throttle_sub = _group(subparsers, "throttle", default_func=throttle.throttle_list)
@@ -216,50 +217,49 @@ def build_parser() -> argparse.ArgumentParser:
     throttle_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        throttle_sub, "list", help="Show last-known speed/direction/functions per locomotive",
+        throttle_sub, "list", help=i18n.t("help.throttle.list"),
         example="jmri-cli throttle list", func=throttle.throttle_list,
     )
 
     throttle_find_cmd = _leaf(
-        throttle_sub, "find", help="Resolve a locomotive name/fragment/address to its roster identity and cached state",
+        throttle_sub, "find", help=i18n.t("help.throttle.find"),
         example="jmri-cli throttle find autorail", func=throttle.throttle_find,
     )
-    throttle_find_cmd.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    throttle_find_cmd.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
 
     throttle_findr_cmd = _leaf(
-        throttle_sub, "findr", help="List every roster locomotive whose name matches a regex",
+        throttle_sub, "findr", help=i18n.t("help.throttle.findr"),
         example="jmri-cli throttle findr '^auto'", func=throttle.throttle_findr,
     )
-    throttle_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+    throttle_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     throttle_findg_cmd = _leaf(
-        throttle_sub, "findg", help="List every roster locomotive whose name matches a shell glob",
+        throttle_sub, "findg", help=i18n.t("help.throttle.findg"),
         example="jmri-cli throttle findg 'Auto*'", func=throttle.throttle_findg,
     )
-    throttle_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+    throttle_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     acquire = _leaf(
-        throttle_sub, "acquire", help="Acquire a locomotive by name/fragment/address",
+        throttle_sub, "acquire", help=i18n.t("help.throttle.acquire"),
         example="jmri-cli throttle acquire 3", func=throttle.throttle_acquire,
     )
-    acquire.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    acquire.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     acquire.add_argument("--prefix", default=None,
-                          help="Command station prefix (e.g. O, Z, R) to target")
+                          help=i18n.t("help.throttle.acquire_prefix"))
 
     release = _leaf(
-        throttle_sub, "release", help="Release a locomotive by name/fragment/address",
+        throttle_sub, "release", help=i18n.t("help.throttle.release"),
         example="jmri-cli throttle release 3", func=throttle.throttle_release,
     )
-    release.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    release.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
 
     speed = _leaf(
-        throttle_sub, "speed", help="Get or set a locomotive's speed (0-100%%)",
+        throttle_sub, "speed", help=i18n.t("help.throttle.speed"),
         example="jmri-cli throttle speed 3 40", func=throttle.throttle_speed,
     )
-    speed.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    speed.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     speed.add_argument("speed_percent", type=float, nargs="?", default=None,
-                        help="Speed, 0-100 (omit to just read the current speed); a NEGATIVE "
-                             "value is shorthand for reverse at that magnitude, e.g. -40")
+                        help=i18n.t("help.throttle.speed_percent"))
     _add_ramp_args(speed, rampup=True, seconds=True)
     speed.epilog = (
         "example:\n"
@@ -269,12 +269,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     stop_cmd = _leaf(
         throttle_sub, "stop",
-        help="Controlled stop of one locomotive, or every touched one if none is given",
+        help=i18n.t("help.throttle.stop"),
         example="jmri-cli throttle stop", func=throttle.throttle_stop,
     )
     stop_cmd.add_argument("loco", nargs="?", default=None,
-                           help="Locomotive name, fragment, or DCC address (omit to stop every "
-                                "locomotive this CLI has touched; required inside the shell)")
+                           help=i18n.t("help.throttle.stop_loco"))
     _add_ramp_args(stop_cmd, rampup=False, seconds=False)
     stop_cmd.epilog = (
         "example:\n"
@@ -283,16 +282,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     estop = _leaf(
-        throttle_sub, "estop", help="Emergency stop (JMRI decoder e-stop)",
+        throttle_sub, "estop", help=i18n.t("help.throttle.estop"),
         example="jmri-cli throttle estop 3", func=throttle.throttle_estop,
     )
-    estop.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    estop.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
 
     forward = _leaf(
-        throttle_sub, "forward", help="Set direction forward",
+        throttle_sub, "forward", help=i18n.t("help.throttle.forward"),
         example="jmri-cli throttle forward 3", func=functools.partial(throttle.throttle_direction, forward=True),
     )
-    forward.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    forward.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     _add_ramp_args(forward, rampup=True, seconds=True)
     forward.epilog = (
         "example:\n"
@@ -301,10 +300,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     reverse = _leaf(
-        throttle_sub, "reverse", help="Set direction reverse",
+        throttle_sub, "reverse", help=i18n.t("help.throttle.reverse"),
         example="jmri-cli throttle reverse 3", func=functools.partial(throttle.throttle_direction, forward=False),
     )
-    reverse.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    reverse.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     _add_ramp_args(reverse, rampup=True, seconds=True)
     reverse.epilog = (
         "example:\n"
@@ -314,43 +313,40 @@ def build_parser() -> argparse.ArgumentParser:
 
     on_fn = _leaf(
         throttle_sub, "on",
-        help="Turn a decoder function on (by number or label), or every labeled one",
+        help=i18n.t("help.throttle.on"),
         example="jmri-cli throttle on 3 1", func=throttle.throttle_on,
     )
-    on_fn.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    on_fn.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     on_fn.add_argument("function", nargs="?", default=None,
-                        help="Function number (0-28) or a fragment of its roster label "
-                             "(omit for every labeled function)")
+                        help=i18n.t("help.arg.function_ref_or_every"))
 
     off_fn = _leaf(
         throttle_sub, "off",
-        help="Turn a decoder function off (by number or label), or every labeled one",
+        help=i18n.t("help.throttle.off"),
         example="jmri-cli throttle off 3 1", func=throttle.throttle_off,
     )
-    off_fn.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    off_fn.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     off_fn.add_argument("function", nargs="?", default=None,
-                         help="Function number (0-28) or a fragment of its roster label "
-                              "(omit for every labeled function)")
+                         help=i18n.t("help.arg.function_ref_or_every"))
 
     function_cmd = _leaf(
         throttle_sub, "function",
-        help="List a locomotive's user-labeled decoder functions",
+        help=i18n.t("help.throttle.function"),
         example="jmri-cli throttle function 3", func=throttle.throttle_function,
     )
-    function_cmd.add_argument("loco", help="Locomotive name, a fragment of it, or a DCC address")
+    function_cmd.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
 
     sniff = _leaf(
-        throttle_sub, "sniff", help="Dump every JMRI WebSocket message live, until Ctrl-C",
+        throttle_sub, "sniff", help=i18n.t("help.throttle.sniff"),
         example="jmri-cli throttle sniff -a 3 -a 7", func=throttle.throttle_sniff,
     )
     sniff.add_argument(
         "-a", "--address", type=int, action="append", default=None,
-        help="DCC address to acquire first (repeatable) so its pushes from "
-             "OTHER clients show up too; omit to just watch this connection",
+        help=i18n.t("help.throttle.sniff_address"),
     )
     sniff.add_argument(
         "--show-pong", action="store_true",
-        help="Include keepalive pong messages (hidden by default, no info)",
+        help=i18n.t("help.throttle.sniff_show_pong"),
     )
 
     # -- light: bare = list; on/off take an optional fuzzy target -----
@@ -359,41 +355,41 @@ def build_parser() -> argparse.ArgumentParser:
     light_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        light_sub, "list", help="Show every light's state",
+        light_sub, "list", help=i18n.t("help.light.list"),
         example="jmri-cli light list", func=light.light_list,
     )
 
     light_find_cmd = _leaf(
-        light_sub, "find", help="Resolve a light name/fragment/system ID to its full state",
+        light_sub, "find", help=i18n.t("help.light.find"),
         example='jmri-cli light find "Depot Lighting"', func=light.light_find,
     )
-    light_find_cmd.add_argument("name", help="Light userName, a fragment of it, or JMRI's system ID (e.g. IL1)")
+    light_find_cmd.add_argument("name", help=i18n.t("help.light.find_name"))
 
     light_findr_cmd = _leaf(
-        light_sub, "findr", help="List every light whose name matches a regex",
+        light_sub, "findr", help=i18n.t("help.light.findr"),
         example="jmri-cli light findr '^Depot'", func=light.light_findr,
     )
-    light_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+    light_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     light_findg_cmd = _leaf(
-        light_sub, "findg", help="List every light whose name matches a shell glob",
+        light_sub, "findg", help=i18n.t("help.light.findg"),
         example="jmri-cli light findg 'Depot*'", func=light.light_findg,
     )
-    light_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+    light_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     light_on_cmd = _leaf(
-        light_sub, "on", help="Turn a light on, or every light if none is given",
+        light_sub, "on", help=i18n.t("help.light.on"),
         example='jmri-cli light on "Depot Lighting"', func=light.light_on,
     )
     light_on_cmd.add_argument("name", nargs="?", default=None,
-                               help="Light name/userName/fragment (omit for every light)")
+                               help=i18n.t("help.arg.light_ref_or_every"))
 
     light_off_cmd = _leaf(
-        light_sub, "off", help="Turn a light off, or every light if none is given",
+        light_sub, "off", help=i18n.t("help.light.off"),
         example='jmri-cli light off "Depot Lighting"', func=light.light_off,
     )
     light_off_cmd.add_argument("name", nargs="?", default=None,
-                                help="Light name/userName/fragment (omit for every light)")
+                                help=i18n.t("help.arg.light_ref_or_every"))
 
     # -- turnout: bare = list; close/throw take an optional fuzzy target
     turnout_cmd, turnout_sub = _group(subparsers, "turnout", default_func=turnout.turnout_list)
@@ -401,41 +397,41 @@ def build_parser() -> argparse.ArgumentParser:
     turnout_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        turnout_sub, "list", help="Show every turnout's state",
+        turnout_sub, "list", help=i18n.t("help.turnout.list"),
         example="jmri-cli turnout list", func=turnout.turnout_list,
     )
 
     turnout_find_cmd = _leaf(
-        turnout_sub, "find", help="Resolve a turnout name or system ID to its full state",
+        turnout_sub, "find", help=i18n.t("help.turnout.find"),
         example="jmri-cli turnout find IT100", func=turnout.turnout_find,
     )
-    turnout_find_cmd.add_argument("name", help="Turnout name/userName/fragment/system ID")
+    turnout_find_cmd.add_argument("name", help=i18n.t("help.turnout.find_name"))
 
     turnout_findr_cmd = _leaf(
-        turnout_sub, "findr", help="List every turnout whose name matches a regex",
+        turnout_sub, "findr", help=i18n.t("help.turnout.findr"),
         example="jmri-cli turnout findr '^Mountain'", func=turnout.turnout_findr,
     )
-    turnout_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+    turnout_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     turnout_findg_cmd = _leaf(
-        turnout_sub, "findg", help="List every turnout whose name matches a shell glob",
+        turnout_sub, "findg", help=i18n.t("help.turnout.findg"),
         example="jmri-cli turnout findg 'Layout*'", func=turnout.turnout_findg,
     )
-    turnout_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+    turnout_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     turnout_close_cmd = _leaf(
-        turnout_sub, "close", help="Close a turnout, or every turnout if none is given",
+        turnout_sub, "close", help=i18n.t("help.turnout.close"),
         example='jmri-cli turnout close "Layout Turnout A"', func=turnout.turnout_closed,
     )
     turnout_close_cmd.add_argument("name", nargs="?", default=None,
-                                    help="Turnout name/userName/fragment (omit for every turnout)")
+                                    help=i18n.t("help.arg.turnout_ref_or_every"))
 
     turnout_throw_cmd = _leaf(
-        turnout_sub, "throw", help="Throw a turnout, or every turnout if none is given",
+        turnout_sub, "throw", help=i18n.t("help.turnout.throw"),
         example='jmri-cli turnout throw "Layout Turnout A"', func=turnout.turnout_thrown,
     )
     turnout_throw_cmd.add_argument("name", nargs="?", default=None,
-                                    help="Turnout name/userName/fragment (omit for every turnout)")
+                                    help=i18n.t("help.arg.turnout_ref_or_every"))
 
     # -- sensor: bare = list; read-only ---------------------------------
     sensor_cmd, sensor_sub = _group(subparsers, "sensor", default_func=sensor.sensor_list)
@@ -443,33 +439,33 @@ def build_parser() -> argparse.ArgumentParser:
     sensor_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        sensor_sub, "list", help="Show every sensor's state",
+        sensor_sub, "list", help=i18n.t("help.sensor.list"),
         example="jmri-cli sensor list", func=sensor.sensor_list,
     )
 
     sensor_status_cmd = _leaf(
-        sensor_sub, "status", help="Show one sensor's state",
+        sensor_sub, "status", help=i18n.t("help.sensor.status"),
         example='jmri-cli sensor status "Montagne B"', func=sensor.sensor_status,
     )
-    sensor_status_cmd.add_argument("name", help="Sensor system name, userName, or fragment")
+    sensor_status_cmd.add_argument("name", help=i18n.t("help.arg.sensor_ref"))
 
     sensor_find_cmd = _leaf(
-        sensor_sub, "find", help="Resolve a sensor name/fragment/system ID to its full state",
+        sensor_sub, "find", help=i18n.t("help.sensor.find"),
         example='jmri-cli sensor find "Montagne B"', func=sensor.sensor_find,
     )
-    sensor_find_cmd.add_argument("name", help="Sensor system name, userName, or fragment")
+    sensor_find_cmd.add_argument("name", help=i18n.t("help.arg.sensor_ref"))
 
     sensor_findr_cmd = _leaf(
-        sensor_sub, "findr", help="List every sensor whose name matches a regex",
+        sensor_sub, "findr", help=i18n.t("help.sensor.findr"),
         example="jmri-cli sensor findr '^Montagne'", func=sensor.sensor_findr,
     )
-    sensor_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+    sensor_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     sensor_findg_cmd = _leaf(
-        sensor_sub, "findg", help="List every sensor whose name matches a shell glob",
+        sensor_sub, "findg", help=i18n.t("help.sensor.findg"),
         example="jmri-cli sensor findg 'Montagne*'", func=sensor.sensor_findg,
     )
-    sensor_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+    sensor_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     # -- signal: bare = list ---------------------------------------------
     signal_cmd, signal_sub = _group(subparsers, "signal", default_func=signal.signal_list)
@@ -477,39 +473,39 @@ def build_parser() -> argparse.ArgumentParser:
     signal_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        signal_sub, "list", help="Show every signal mast's aspect",
+        signal_sub, "list", help=i18n.t("help.signal.list"),
         example="jmri-cli signal list", func=signal.signal_list,
     )
 
     signal_status_cmd = _leaf(
-        signal_sub, "status", help="Show one signal mast's aspect",
+        signal_sub, "status", help=i18n.t("help.signal.status"),
         example='jmri-cli signal status "Entry Signal A"', func=signal.signal_status,
     )
-    signal_status_cmd.add_argument("name", help="Signal mast system name, userName, or fragment")
+    signal_status_cmd.add_argument("name", help=i18n.t("help.arg.signal_ref"))
 
     signal_find_cmd = _leaf(
-        signal_sub, "find", help="Resolve a signal mast name/fragment/system ID to its full state",
+        signal_sub, "find", help=i18n.t("help.signal.find"),
         example='jmri-cli signal find "Entry Signal A"', func=signal.signal_find,
     )
-    signal_find_cmd.add_argument("name", help="Signal mast system name, userName, or fragment")
+    signal_find_cmd.add_argument("name", help=i18n.t("help.arg.signal_ref"))
 
     signal_findr_cmd = _leaf(
-        signal_sub, "findr", help="List every signal mast whose name matches a regex",
+        signal_sub, "findr", help=i18n.t("help.signal.findr"),
         example="jmri-cli signal findr '^Entry'", func=signal.signal_findr,
     )
-    signal_findr_cmd.add_argument("pattern", help="Python regular expression (case-insensitive)")
+    signal_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     signal_findg_cmd = _leaf(
-        signal_sub, "findg", help="List every signal mast whose name matches a shell glob",
+        signal_sub, "findg", help=i18n.t("help.signal.findg"),
         example="jmri-cli signal findg 'Entry*'", func=signal.signal_findg,
     )
-    signal_findg_cmd.add_argument("pattern", help="Shell-style glob: *, ?, [...] (case-insensitive)")
+    signal_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     signal_set_cmd = _leaf(
-        signal_sub, "set", help="Set a signal mast's aspect (writes to JMRI)",
+        signal_sub, "set", help=i18n.t("help.signal.set"),
         example='jmri-cli signal set "Entry Signal A" Hp1', func=signal.signal_set,
     )
-    signal_set_cmd.add_argument("name", help="Signal mast system name, userName, or fragment")
-    signal_set_cmd.add_argument("aspect", help="Aspect name, e.g. Hp0/Hp1/Hp2 (not validated locally)")
+    signal_set_cmd.add_argument("name", help=i18n.t("help.arg.signal_ref"))
+    signal_set_cmd.add_argument("aspect", help=i18n.t("help.signal.set_aspect"))
 
     return parser

@@ -13,13 +13,22 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.constants.cli import LIGHT_STATE_NAMES
+from jmri_mcp.constants.cli import SORT_INDICATOR, LIGHT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_lights, resolve_light
 from jmri_mcp.jmri_client import set_light as _set_light
 from jmri_mcp.jmri_client.light import LIGHT_ON, LIGHT_OFF
 
 
+def _headers(*, sorted_by_system_id: bool = False) -> list[str]:
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
+    system_id = i18n.t("headers.system_id")
+    if sorted_by_system_id:
+        system_id += SORT_INDICATOR
+    return [system_id, i18n.t("headers.light"), i18n.t("headers.state")]
+
+
 def _row(light: dict) -> list:
+    """Flatten one JMRI light object into a `[system_id, label, state]` table row."""
     state = LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN")
     label = light.get("userName") or light.get("name", "?")
     system_id = light.get("name", "?")
@@ -27,6 +36,7 @@ def _row(light: dict) -> list:
 
 
 def _label(light: dict) -> str:
+    """The name find_regex/find_glob match against: userName if set, else system name."""
     return str(light.get("userName") or light.get("name", ""))
 
 
@@ -49,7 +59,7 @@ async def light_list(args: argparse.Namespace) -> int:
         print("No lights found")
         return 0
     rows = [_row(lt) for lt in sorted(lights, key=lambda lt: lt.get("name", "?"))]
-    print(tabulate(rows, headers=["System ID ▼", "Light", "State"]))
+    print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
     return 0
 
 
@@ -95,7 +105,7 @@ async def _light_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(f"No lights match {args.pattern!r}")
         return 0
     rows = [_row(lt) for lt in sorted(matches, key=lambda lt: lt.get("name", "?"))]
-    print(tabulate(rows, headers=["System ID ▼", "Light", "State"]))
+    print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
     return 0
 
 
@@ -152,7 +162,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    print(tabulate(rows, headers=["System ID", "Light", "State"]))
+    print(tabulate(rows, headers=_headers()))
     if not all_confirmed:
         print(f"WARNING: not every light confirmed {state_name} after re-read", file=sys.stderr)
         return 1

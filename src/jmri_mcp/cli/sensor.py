@@ -13,11 +13,17 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.constants.cli import SENSOR_STATE_NAMES
+from jmri_mcp.constants.cli import SORT_INDICATOR, SENSOR_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_sensors, resolve_sensor
 
 
+def _headers() -> list[str]:
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG. Sensor listings are always sorted by name, so the sort indicator is unconditional."""
+    return [i18n.t("headers.sensor") + SORT_INDICATOR, i18n.t("headers.system_id"), i18n.t("headers.state")]
+
+
 def _row(sensor: dict) -> list:
+    """Flatten one JMRI sensor object into a `[label, system_id, state]` table row."""
     state = SENSOR_STATE_NAMES.get(sensor.get("state"), "UNKNOWN")
     label = sensor.get("userName") or sensor.get("name", "?")
     system_id = sensor.get("name", "?")
@@ -25,6 +31,7 @@ def _row(sensor: dict) -> list:
 
 
 def _label(sensor: dict) -> str:
+    """The name find_regex/find_glob match against: userName if set, else system name."""
     return str(sensor.get("userName") or sensor.get("name", ""))
 
 
@@ -47,7 +54,7 @@ async def sensor_list(args: argparse.Namespace) -> int:
         print("No sensors found")
         return 0
     rows = [_row(s) for s in sorted(sensors, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=["Sensor ▼", "System ID", "State"]))
+    print(tabulate(rows, headers=_headers()))
     return 0
 
 
@@ -112,7 +119,7 @@ async def _sensor_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(f"No sensors match {args.pattern!r}")
         return 0
     rows = [_row(s) for s in sorted(matches, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=["Sensor ▼", "System ID", "State"]))
+    print(tabulate(rows, headers=_headers()))
     return 0
 
 

@@ -62,7 +62,6 @@ src/jmri_mcp/
     ├── __main__.py    #   enables `python -m jmri_mcp.cli`
     ├── banner.py      #   the welcome banner (name, version, repo link, command list)
     ├── _common.py     #   cross-module helpers (cli_throttle_id)
-    ├── _doc.py        #   GROUP_HELP: short one-liner per top-level command group
     ├── _match.py      #   find_regex/find_glob: shared matching for findr/findg leaves
     ├── state.py       #   local throttle-state cache (~/.jmri-cli/throttle_state.json)
     ├── power.py       #   power [status|on|off|get|find|findr|findg|default] (jmri_client)
@@ -215,6 +214,22 @@ The two independent `JmriError` classes noted above are now fully unified: `cli/
 `cli/shell.py`, and `tools/throttle.py` no longer alias `jmri_ws`'s class as `JmriWsError`
 (or `jmri_client`'s as `JmriHttpError`) — every catch site imports and matches on the one
 shared `JmriError`.
+
+`tabulate()` table headers and argparse `help=` strings are translated the same way.
+Each `cli/*.py` file with a table gets a small `_headers()` (or, for `throttle.py`,
+`_throttle_headers()`) helper building `[i18n.t("headers.x"), ...]` at *call* time, not
+import time — `i18n.active_lang()` reads `JMRI_MCP_LANG` dynamically, so headers must
+reflect whatever language is active when the command actually runs. The `▼` sort-indicator
+is never baked into a translated string: it's the shared `SORT_INDICATOR` constant
+(`constants/cli.py`) appended to the plain translated header at the sorted-view call site
+only (`headers[column] += SORT_INDICATOR`), replacing the old mix of hardcoded `"System ID
+▼"` literals and ad hoc `f"{header} ▼"` concatenation. `cli/parser.py`'s `build_parser()`
+runs fresh per invocation, after `JMRI_MCP_LANG` is already in the environment, so every
+`help=i18n.t("help.<group>.<leaf>")` / `help=i18n.t("help.arg.<name>")` call resolves
+correctly with no special-casing — there's no long-lived parser instance that could outlive
+an env var change. `cli/_doc.py` (the old `GROUP_HELP` dict) is deleted; `cli/__init__.py`'s
+and `cli/shell.py`'s front-page command lists now build `{name: i18n.t(f"help.group.{name}")
+for name in _GROUP_NAMES}` instead of importing that dict.
 
 ## Two JMRI clients, two different shapes
 
@@ -482,12 +497,12 @@ first reported) — requesting `Hp0` now confirms correctly.
 maintainer feedback on the real terminal output, not speculative design:
 
 **Welcome banner + per-leaf epilogs** (`cli/banner.py`, `cli/__init__.py`,
-`cli/_doc.py`'s `GROUP_HELP`). Bare `jmri-cli`, `jmri-cli -h`, and
+`i18n/en.json`'s `help.group.*` keys). Bare `jmri-cli`, `jmri-cli -h`, and
 `jmri-cli --help` all print a byte-identical, non-technical welcome banner
 (name, version via `importlib.metadata`, repo link, one-line purpose,
 command list) instead of argparse's default technical help — no
 implementation detail (`JMRI_URL`, "no MCP client" framing) belongs there.
-Each top-level group gets a short, inviting one-liner in `GROUP_HELP`
+Each top-level group gets a short, inviting one-liner via `i18n.t("help.group.<name>")`
 instead of a dry description. There used to be a separate `jmri-cli
 examples` subcommand collecting every runnable example in one place; it was
 removed in favor of putting each leaf subcommand's own example directly in

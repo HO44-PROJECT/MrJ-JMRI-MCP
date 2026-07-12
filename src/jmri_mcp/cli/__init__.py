@@ -26,7 +26,6 @@ full rationale.
 Package layout:
     constants.py  Shared constants (state names, id prefixes, ranges).
     _common.py    Small cross-module helpers (cli_throttle_id).
-    _doc.py       Short per-group help text (GROUP_HELP), shared with parser.py.
     _match.py     find_regex/find_glob: shared matching for findr/findg leaves.
     banner.py     Welcome banner shown by -h / --help.
     power.py      power [status|on|off|get|find|findr|findg|default]
@@ -60,19 +59,22 @@ Package layout:
 import asyncio
 import sys
 
+from jmri_mcp import i18n
 from jmri_mcp.cli import shell as _shell
-from jmri_mcp.cli._doc import GROUP_HELP
 from jmri_mcp.cli.banner import banner
 from jmri_mcp.cli.parser import build_parser
 
 __all__ = ["build_parser", "main"]
 
+_GROUP_NAMES = ["light", "power", "roster", "sensor", "signal", "status", "throttle", "turnout"]
+
 
 def _command_list() -> str:
     """Render the "front page" list of top-level commands and their one-liners."""
-    width = max(len(name) for name in GROUP_HELP)
+    group_help = {name: i18n.t(f"help.group.{name}") for name in _GROUP_NAMES}
+    width = max(len(name) for name in group_help)
     lines = ["commands:"]
-    lines += [f"  {name:<{width}}  {help_text}" for name, help_text in GROUP_HELP.items()]
+    lines += [f"  {name:<{width}}  {help_text}" for name, help_text in group_help.items()]
     lines.append("")
     lines.append("Run `jmri-cli <command> -h` for its subcommands, or")
     lines.append("`jmri-cli <command> <subcommand> -h` for a runnable example.")

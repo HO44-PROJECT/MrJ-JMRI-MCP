@@ -58,7 +58,6 @@ except ImportError:
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._common import cli_throttle_id
-from jmri_mcp.cli._doc import GROUP_HELP
 from jmri_mcp.cli.banner import banner
 from jmri_mcp.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_mcp.cli.parser import build_parser
@@ -91,11 +90,15 @@ def _save_history() -> None:
         readline.write_history_file(_HISTORY_FILE)
 
 
+_GROUP_NAMES = ["light", "power", "roster", "sensor", "signal", "status", "throttle", "turnout"]
+
+
 def _command_list() -> str:
     """Render the top-level command list, shell-flavored (no `jmri-cli` prefix)."""
-    width = max(len(name) for name in GROUP_HELP)
+    group_help = {name: i18n.t(f"help.group.{name}") for name in _GROUP_NAMES}
+    width = max(len(name) for name in group_help)
     lines = ["commands:"]
-    lines += [f"  {name:<{width}}  {help_text}" for name, help_text in GROUP_HELP.items()]
+    lines += [f"  {name:<{width}}  {help_text}" for name, help_text in group_help.items()]
     lines.append("")
     lines.append("Run `<command> -h` for its subcommands, or")
     lines.append("`<command> <subcommand> -h` for a runnable example.")

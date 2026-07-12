@@ -14,13 +14,28 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
-from jmri_mcp.constants.cli import TURNOUT_STATE_NAMES
+from jmri_mcp.constants.cli import SORT_INDICATOR, TURNOUT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_turnouts, resolve_turnout
 from jmri_mcp.jmri_client import set_turnout as _set_turnout
 from jmri_mcp.jmri_client.turnout import TURNOUT_CLOSED, TURNOUT_THROWN
 
 
+def _headers(*, sorted_by_system_id: bool = False) -> list[str]:
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
+    system_id = i18n.t("headers.system_id")
+    if sorted_by_system_id:
+        system_id += SORT_INDICATOR
+    return [
+        system_id,
+        i18n.t("headers.turnout"),
+        i18n.t("headers.state"),
+        i18n.t("headers.feedback"),
+        i18n.t("headers.comment"),
+    ]
+
+
 def _row(turnout: dict) -> list:
+    """Flatten one JMRI turnout object into a `[system_id, label, state, feedback, comment]` table row."""
     state = TURNOUT_STATE_NAMES.get(turnout.get("state"), "UNKNOWN")
     label = turnout.get("userName") or turnout.get("name", "?")
     system_id = turnout.get("name", "?")
@@ -31,6 +46,7 @@ def _row(turnout: dict) -> list:
 
 
 def _label(turnout: dict) -> str:
+    """The name find_regex/find_glob match against: userName if set, else system name."""
     return str(turnout.get("userName") or turnout.get("name", ""))
 
 
@@ -79,7 +95,7 @@ async def _turnout_find_pattern(args: argparse.Namespace, *, regex: bool) -> int
         print(f"No turnouts match {args.pattern!r}")
         return 0
     rows = [_row(t) for t in sorted(matches, key=lambda t: t.get("name", "?"))]
-    print(tabulate(rows, headers=["System ID", "Turnout", "State", "Feedback", "Comment"]))
+    print(tabulate(rows, headers=_headers()))
     return 0
 
 
@@ -129,7 +145,7 @@ async def turnout_list(args: argparse.Namespace) -> int:
         print("No turnouts found")
         return 0
     rows = [_row(t) for t in sorted(turnouts, key=lambda t: t.get("name", "?"))]
-    print(tabulate(rows, headers=["System ID ▼", "Turnout", "State", "Feedback", "Comment"]))
+    print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
     return 0
 
 
@@ -167,7 +183,7 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    print(tabulate(rows, headers=["System ID", "Turnout", "State", "Feedback", "Comment"]))
+    print(tabulate(rows, headers=_headers()))
     if not all_confirmed:
         if unconfirmed_sensorless:
             print(

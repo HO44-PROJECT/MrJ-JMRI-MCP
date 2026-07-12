@@ -84,7 +84,18 @@ async def _resolve_address(loco: str) -> int:
 
 
 def _direction_name(forward: bool) -> str:
+    """Readable "forward"/"reverse" for JMRI's raw boolean direction field."""
     return "forward" if forward else "reverse"
+
+
+def _throttle_headers() -> list[str]:
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
+    return [
+        i18n.t("headers.address"),
+        i18n.t("headers.speed"),
+        i18n.t("headers.direction"),
+        i18n.t("headers.functions_on"),
+    ]
 
 
 @contextlib.asynccontextmanager
@@ -136,7 +147,7 @@ async def throttle_list(args: argparse.Namespace) -> int:
         on_functions = sorted(int(n) for n, v in functions.items() if v)
         functions_display = ", ".join(f"F{n}" for n in on_functions) or "-"
         rows.append([address, speed_display, direction_display, functions_display])
-    print(tabulate(rows, headers=["Address", "Speed", "Direction", "Functions on"]))
+    print(tabulate(rows, headers=_throttle_headers()))
     return 0
 
 
@@ -185,6 +196,7 @@ async def throttle_find(args: argparse.Namespace) -> int:
 
 
 def _roster_label(entry: dict) -> str:
+    """The name find_regex/find_glob match against: the roster entry's name."""
     return str(entry.get("name", ""))
 
 
@@ -208,7 +220,7 @@ async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> in
         print(f"No roster entries match {args.pattern!r}")
         return 0
     rows = [_cache_row(e["address"]) for e in sorted(matches, key=lambda e: _roster_label(e).casefold())]
-    print(tabulate(rows, headers=["Address", "Speed", "Direction", "Functions on"]))
+    print(tabulate(rows, headers=_throttle_headers()))
     return 0
 
 
@@ -704,7 +716,7 @@ async def throttle_function(args: argparse.Namespace) -> int:
         print("  no labeled functions")
         return 0
     rows = [[f"F{n}", labels[n]] for n in sorted(labels)]
-    print(tabulate(rows, headers=["Function", "Label"]))
+    print(tabulate(rows, headers=[i18n.t("headers.function"), i18n.t("headers.label")]))
     return 0
 
 

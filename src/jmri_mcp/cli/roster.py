@@ -10,6 +10,7 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
+from jmri_mcp.constants.cli import SORT_INDICATOR
 from jmri_mcp.jmri_client import (
     JmriError,
     get_roster,
@@ -42,7 +43,19 @@ SORT_CHOICES: list[str] = [*_SORT_FIELDS, "bygroup"]
 # sort_by choice -> index into the headers list below, so roster_list can
 # mark the active sort column with a chevron instead of the user having to
 # infer it from the row order.
-_HEADERS = ["Address", "Name", "Road", "Road #", "Manufacturer", "Model", "Owner", "Modified", "Groups"]
+def _headers() -> list[str]:
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
+    return [
+        i18n.t("headers.address"),
+        i18n.t("headers.name"),
+        i18n.t("headers.road"),
+        i18n.t("headers.road_number"),
+        i18n.t("headers.manufacturer"),
+        i18n.t("headers.model"),
+        i18n.t("headers.owner"),
+        i18n.t("headers.modified"),
+        i18n.t("headers.groups"),
+    ]
 _SORT_COLUMN_INDEX: dict[str, int] = {
     "byname": 1, "bydcc": 0, "byroad": 2, "byroadnumber": 3, "bymanufacturer": 4,
     "bymodel": 5, "byowner": 6, "bydate": 7, "bygroup": 8,
@@ -60,6 +73,7 @@ def _sort_roster(roster: list[dict], sort_by: str) -> list[dict]:
 
 
 def _row(e: dict) -> list:
+    """Flatten one roster entry (get_roster()'s compact shape) into a table row matching _headers()'s column order."""
     return [
         e["address"],
         e["name"],
@@ -74,6 +88,7 @@ def _row(e: dict) -> list:
 
 
 def _label(e: dict) -> str:
+    """The name find_regex/find_glob match against: the roster entry's name."""
     return str(e.get("name", ""))
 
 
@@ -101,9 +116,9 @@ async def roster_list(args: argparse.Namespace) -> int:
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
     rows = [_row(e) for e in _sort_roster(roster, sort_by)]
-    headers = list(_HEADERS)
+    headers = _headers()
     column = _SORT_COLUMN_INDEX[sort_by]
-    headers[column] = f"{headers[column]} ▼"
+    headers[column] += SORT_INDICATOR
     print(tabulate(rows, headers=headers))
     return 0
 
@@ -127,8 +142,8 @@ async def _roster_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(f"No roster entries match {args.pattern!r}")
         return 0
     rows = [_row(e) for e in sorted(matches, key=lambda e: str(e["name"]).casefold())]
-    headers = list(_HEADERS)
-    headers[1] = f"{headers[1]} ▼"
+    headers = _headers()
+    headers[1] += SORT_INDICATOR
     print(tabulate(rows, headers=headers))
     return 0
 
@@ -222,5 +237,5 @@ async def roster_functions(args: argparse.Namespace) -> int:
         print("  no labeled functions")
         return 0
     rows = [[f"F{n}", labels[n]] for n in sorted(labels)]
-    print(tabulate(rows, headers=["Function", "Label"]))
+    print(tabulate(rows, headers=[i18n.t("headers.function"), i18n.t("headers.label")]))
     return 0

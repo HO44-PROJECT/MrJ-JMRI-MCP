@@ -25,15 +25,18 @@ from jmri_mcp.jmri_client.power import POWER_ON, POWER_OFF
 
 
 def _state_name(system: dict) -> str:
+    """Readable ON/OFF/UNKNOWN/IDLE for one system's raw numeric power state."""
     return POWER_STATE_NAMES.get(system.get("state"), "UNKNOWN")
 
 
 def _print_systems_table(systems: list[dict]) -> None:
+    """Print every system's state as a `tabulate()` table, sorted alphabetically by name."""
     rows = [
         [s.get("name", "?"), _state_name(s), "yes" if s.get("default") else ""]
         for s in sorted(systems, key=lambda s: str(s.get("name", "")).casefold())
     ]
-    print(tabulate(rows, headers=["System", "State", "Default"]))
+    headers = [i18n.t("headers.system"), i18n.t("headers.state"), i18n.t("headers.default")]
+    print(tabulate(rows, headers=headers))
 
 
 async def power_status(args: argparse.Namespace) -> int:
@@ -100,6 +103,7 @@ async def power_find(args: argparse.Namespace) -> int:
 
 
 def _system_label(system: dict) -> str:
+    """The name find_regex/find_glob match against: the power system's name."""
     return str(system.get("name", ""))
 
 

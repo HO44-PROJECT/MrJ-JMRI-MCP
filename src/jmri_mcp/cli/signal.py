@@ -12,11 +12,18 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
+from jmri_mcp.constants.cli import SORT_INDICATOR
 from jmri_mcp.jmri_client import JmriError, get_signals, resolve_signal
 from jmri_mcp.jmri_client import set_signal as _set_signal
 
 
+def _headers() -> list[str]:
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG. Signal listings are always sorted by name, so the sort indicator is unconditional."""
+    return [i18n.t("headers.signal") + SORT_INDICATOR, i18n.t("headers.system_id"), i18n.t("headers.aspect")]
+
+
 def _row(signal: dict) -> list:
+    """Flatten one JMRI signal mast object into a `[label, system_id, aspect]` table row."""
     aspect = signal.get("aspect") or "UNKNOWN"
     label = signal.get("userName") or signal.get("name", "?")
     system_id = signal.get("name", "?")
@@ -24,6 +31,7 @@ def _row(signal: dict) -> list:
 
 
 def _label(signal: dict) -> str:
+    """The name find_regex/find_glob match against: userName if set, else system name."""
     return str(signal.get("userName") or signal.get("name", ""))
 
 
@@ -46,7 +54,7 @@ async def signal_list(args: argparse.Namespace) -> int:
         print("No signal masts found")
         return 0
     rows = [_row(s) for s in sorted(signals, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=["Signal ▼", "System ID", "Aspect"]))
+    print(tabulate(rows, headers=_headers()))
     return 0
 
 
@@ -111,7 +119,7 @@ async def _signal_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(f"No signal masts match {args.pattern!r}")
         return 0
     rows = [_row(s) for s in sorted(matches, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=["Signal ▼", "System ID", "Aspect"]))
+    print(tabulate(rows, headers=_headers()))
     return 0
 
 

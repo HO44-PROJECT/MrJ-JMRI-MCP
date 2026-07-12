@@ -91,6 +91,22 @@ _SERVER_INSTRUCTIONS = (
     "the user the action has begun, don't retry the call, and don't say it "
     "failed or timed out. Plain set_speed is only for a duration-less "
     "speed change (\"speed up the 3\", \"mets la 3 à 40%\")."
+    "\n\n"
+    "Starting/stopping a locomotive for the session (not a normal moving "
+    "stop): \"allume la loco\"/\"start up the 3\"/\"wake up the autorail\" "
+    "routes to start_locomotive(address) — acquires the throttle, sets "
+    "forward, turns its lights on, in one call. \"éteins la loco\"/\"put "
+    "the 3 to bed\"/\"shut down the autorail\" routes to "
+    "stop_locomotive(address) — ramps down to a stop (duration scaled to "
+    "its current speed), sets forward, turns its lights off, and releases "
+    "the throttle, in one call. \"éteins toutes les locos\"/\"shut down "
+    "every locomotive\"/\"put everything to bed\" routes to "
+    "stop_all_locomotives() — the bulk counterpart, looping the same "
+    "sequence server-side over every locomotive this session has acquired; "
+    "never loop stop_locomotive yourself for a bulk shutdown request. For "
+    "any of these three, never call acquire_throttle/set_direction/"
+    "set_loco_lights/set_speed(_ramped)/release_throttle yourself in "
+    "sequence — each request already has one native tool."
 )
 
 mcp = FastMCP("JMRI", instructions=_SERVER_INSTRUCTIONS)

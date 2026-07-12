@@ -982,6 +982,41 @@ async def test_throttle_reverse_while_moving_requires_seconds(fake_jmri, capsys)
     assert "--hold is required" in err
 
 
+async def test_throttle_forward_no_loco_covers_every_touched_locomotive(fake_jmri, capsys):
+    await run(capsys, "throttle", "reverse", "3")
+    await run(capsys, "throttle", "reverse", "7")
+
+    code, out, _ = await run(capsys, "throttle", "forward")
+    assert code == 0
+    assert "address=3 direction=forward" in out
+    assert "address=7 direction=forward" in out
+
+
+async def test_throttle_forward_no_loco_and_empty_cache(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "throttle", "forward")
+    assert code == 0
+    assert out.strip() != ""
+
+
+async def test_throttle_forward_inside_shell_with_no_loco_uses_touched_cache(fake_jmri, capsys):
+    from jmri_cli.throttle import throttle_direction
+    from jmri_core.jmri_ws import JmriWsClient
+
+    await run(capsys, "throttle", "reverse", "3")
+    await run(capsys, "throttle", "reverse", "7")
+
+    client = JmriWsClient()
+    try:
+        args = build_parser().parse_args(["throttle", "forward"])
+        code = await throttle_direction(args, forward=True, client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=3 direction=forward" in out
+        assert "address=7 direction=forward" in out
+    finally:
+        await client.close()
+
+
 async def test_throttle_speed_negative_is_reverse_shorthand(fake_jmri, capsys, monkeypatch):
     """`speed <loco> -40` must set direction=reverse, speed=40% at the peak
     of the hold, and never send JMRI's real -1.0 emergency-stop sentinel
@@ -1063,20 +1098,66 @@ async def test_throttle_stop_with_rampdown(fake_jmri, capsys, monkeypatch):
     assert "address=3 stopped" in out
 
 
-async def test_throttle_stop_inside_shell_requires_loco(fake_jmri, capsys):
-    """Per the plan: stop's "every cached address" fallback only makes
-    sense one-shot; inside the shell, an omitted loco is a hard error
-    rather than silently doing nothing meaningful."""
+async def test_throttle_stop_inside_shell_with_no_loco_uses_touched_cache(fake_jmri, capsys):
+    """`stop` with no loco falls back to state.py's local touched-address
+    cache the same way one-shot or from the shell — not mandatory in the
+    shell, same "loco optional" pattern as engine-start/engine-stop/on/off/
+    forward/reverse."""
     from jmri_cli.throttle import throttle_stop
     from jmri_core.jmri_ws import JmriWsClient
+
+    await run(capsys, "throttle", "speed", "3", "40", "--hold", "1")
 
     client = JmriWsClient()
     try:
         args = build_parser().parse_args(["throttle", "stop"])
         code = await throttle_stop(args, client=client)
-        assert code == 2
-        _, err = capsys.readouterr()
-        assert "required" in err
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=3 stopped" in out
+    finally:
+        await client.close()
+
+
+async def test_throttle_estop_one_address(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "throttle", "estop", "3")
+    assert code == 0
+    assert "address=3 emergency-stopped" in out
+
+
+async def test_throttle_estop_no_loco_covers_every_cached_address(fake_jmri, capsys):
+    await run(capsys, "throttle", "speed", "3", "40", "--hold", "1")
+    await run(capsys, "throttle", "speed", "7", "40", "--hold", "1")
+
+    code, out, _ = await run(capsys, "throttle", "estop")
+    assert code == 0
+    assert "address=3 emergency-stopped" in out
+    assert "address=7 emergency-stopped" in out
+
+
+async def test_throttle_estop_no_loco_and_empty_cache(fake_jmri, capsys):
+    code, out, err = await run(capsys, "throttle", "estop")
+    assert code == 0
+    assert out.strip() != "" or err.strip() != ""
+
+
+async def test_throttle_estop_inside_shell_with_no_loco_uses_touched_cache(fake_jmri, capsys):
+    """`estop` with no loco falls back to state.py's local touched-address
+    cache the same way one-shot or from the shell — not mandatory in the
+    shell, same "loco optional" pattern as stop/engine-start/engine-stop/
+    on/off/forward/reverse."""
+    from jmri_cli.throttle import throttle_estop
+    from jmri_core.jmri_ws import JmriWsClient
+
+    await run(capsys, "throttle", "speed", "3", "40", "--hold", "1")
+
+    client = JmriWsClient()
+    try:
+        args = build_parser().parse_args(["throttle", "estop"])
+        code = await throttle_estop(args, client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=3 emergency-stopped" in out
     finally:
         await client.close()
 
@@ -1180,6 +1261,7 @@ def _patch_autorail_roster(monkeypatch):
     async def fake_get_labels(name):
         return {
             "Autorail": {0: "Lumières avant", 1: "Lumières cabine", 2: "Lumières arrière", 3: "Klaxon"},
+            "141R": {0: "Phares"},
             "Boite à Sel": {},
         }.get(name, {})
 
@@ -1224,23 +1306,224 @@ async def test_throttle_on_lights_only_no_light_labels_is_explicit_error(fake_jm
     assert "no light-labeled functions" in err
 
 
-async def test_throttle_lights_all_covers_every_touched_locomotive(fake_jmri, monkeypatch, capsys):
+async def test_throttle_on_no_loco_covers_every_touched_locomotive(fake_jmri, monkeypatch, capsys):
+    # Touch addresses 4/2 via `speed` (not `on`) to populate state.py's
+    # cache without pre-setting any function state — the follow-up bare
+    # `on` (no loco) then genuinely turns each labeled function on for the
+    # first time. Pre-touching via `on`/`off` itself would risk hitting
+    # JMRI's real silent-no-op-drop behavior on a same-value repeat across
+    # two separate one-shot connections (see CLAUDE.md) — not what this
+    # test is exercising.
+    _patch_autorail_roster(monkeypatch)
+    from jmri_cli.throttle import throttle_on
+
+    await run(capsys, "throttle", "speed", "4", "0", "--hold", "1")
+    await run(capsys, "throttle", "speed", "2", "0", "--hold", "1")
+
+    code = await throttle_on(build_parser().parse_args(["throttle", "on"]))
+    out, err = capsys.readouterr()
+    assert code == 0, f"out={out!r} err={err!r}"
+    assert "address=4" in out
+    assert "address=2" in out
+
+
+async def test_throttle_off_no_loco_and_empty_cache(fake_jmri, capsys):
+    from jmri_cli.throttle import throttle_off
+
+    code = await throttle_off(build_parser().parse_args(["throttle", "off"]))
+    out, _ = capsys.readouterr()
+    assert code == 0
+    assert out.strip() != ""
+
+
+async def test_throttle_on_inside_shell_with_no_loco_uses_touched_cache(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+    from jmri_cli.throttle import throttle_on
+    from jmri_core.jmri_ws import JmriWsClient
+
+    await run(capsys, "throttle", "speed", "4", "0", "--hold", "1")
+    await run(capsys, "throttle", "speed", "2", "0", "--hold", "1")
+
+    client = JmriWsClient()
+    try:
+        args = build_parser().parse_args(["throttle", "on"])
+        code = await throttle_on(args, client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=4" in out
+        assert "address=2" in out
+    finally:
+        await client.close()
+
+
+async def test_throttle_on_lights_only_no_loco_covers_every_touched_locomotive(fake_jmri, monkeypatch, capsys):
+    # `on --lights-only` with no loco replaces the old dedicated `lights-all`
+    # verb now that `on`/`off` themselves fall back to the touched-address
+    # cache when no loco is given.
     _patch_autorail_roster(monkeypatch)
 
     await run(capsys, "throttle", "speed", "4", "0")
     await run(capsys, "throttle", "speed", "8", "0")
 
-    code, out, _ = await run(capsys, "throttle", "lights-all", "on")
-    assert code == 0
+    code, out, err = await run(capsys, "throttle", "on", "--lights-only")
+    assert code == 0, f"out={out!r} err={err!r}"
     assert "address=4 F0=on" in out
     assert "address=4 F1=on" in out
     assert "address=4 F2=on" in out
 
 
-async def test_throttle_lights_all_with_empty_cache(fake_jmri, capsys):
-    code, out, _ = await run(capsys, "throttle", "lights-all", "on")
+async def test_throttle_on_lights_only_no_loco_and_empty_cache(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "throttle", "on", "--lights-only")
     assert code == 0
     assert "no locomotives" in out.lower() or out.strip() != ""
+
+
+async def test_throttle_engine_start_acquires_faces_forward_and_lights_on(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    code, out, _ = await run(capsys, "throttle", "engine-start", "4")
+    assert code == 0
+    assert "address=4 started" in out
+    assert "forward" in out
+    assert "3 light function(s) on" in out
+
+
+async def test_throttle_engine_start_reports_error_honestly(monkeypatch, capsys):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    code, _, err = await run(capsys, "throttle", "engine-start", "3")
+    assert code == 1
+    assert err.strip() != ""
+
+
+async def test_throttle_engine_start_with_no_loco_covers_every_touched_locomotive(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    await run(capsys, "throttle", "engine-stop", "4")
+    await run(capsys, "throttle", "engine-stop", "8")
+
+    code, out, _ = await run(capsys, "throttle", "engine-start")
+    assert code == 0
+    assert "address=4 started" in out
+    assert "address=8 started" in out
+
+
+async def test_throttle_engine_start_with_no_loco_and_empty_cache(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "throttle", "engine-start")
+    assert code == 0
+    assert out.strip() != ""
+
+
+async def test_throttle_engine_start_inside_shell_with_no_loco_uses_touched_cache(
+    fake_jmri, monkeypatch, capsys
+):
+    """Unlike `throttle stop`, `engine-start` with no loco is NOT an error
+    inside the shell: it falls back to state.py's local touched-address
+    cache, same as engine-stop, not the shell's own in-memory throttles."""
+    _patch_autorail_roster(monkeypatch)
+    from jmri_cli.throttle import throttle_engine_start
+    from jmri_core.jmri_ws import JmriWsClient
+
+    await run(capsys, "throttle", "engine-stop", "4")
+    await run(capsys, "throttle", "engine-stop", "8")
+
+    client = JmriWsClient()
+    try:
+        code = await throttle_engine_start(build_parser().parse_args(["throttle", "engine-start"]), client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=4 started" in out
+        assert "address=8 started" in out
+    finally:
+        await client.close()
+
+
+async def test_throttle_engine_stop_ramps_faces_forward_lights_off_and_releases(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    await run(capsys, "throttle", "engine-start", "4")
+    await run(capsys, "throttle", "speed", "4", "40", "--hold", "0")
+
+    code, out, _ = await run(capsys, "throttle", "engine-stop", "4")
+    assert code == 0
+    assert "address=4 stopped" in out
+    assert "forward" in out
+    assert "lights off" in out
+    assert "released" in out
+
+
+async def test_throttle_engine_stop_never_acquired_still_turns_off_lights_and_releases(
+    fake_jmri, monkeypatch, capsys
+):
+    _patch_autorail_roster(monkeypatch)
+
+    code, out, _ = await run(capsys, "throttle", "engine-stop", "4")
+    assert code == 0
+    assert "address=4 stopped" in out
+
+
+async def test_throttle_engine_stop_reports_error_honestly(monkeypatch, capsys):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    code, _, err = await run(capsys, "throttle", "engine-stop", "3")
+    assert code == 1
+    assert err.strip() != ""
+
+
+async def test_throttle_engine_stop_with_no_loco_covers_every_touched_locomotive(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    await run(capsys, "throttle", "engine-start", "4")
+    await run(capsys, "throttle", "engine-start", "8")
+
+    code, out, _ = await run(capsys, "throttle", "engine-stop")
+    assert code == 0
+    assert "address=4 stopped" in out
+    assert "address=8 stopped" in out
+
+
+async def test_throttle_engine_stop_with_no_loco_and_empty_cache(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "throttle", "engine-stop")
+    assert code == 0
+    assert out.strip() != ""
+
+
+async def test_throttle_engine_stop_inside_shell_with_no_loco_uses_touched_cache(
+    fake_jmri, monkeypatch, capsys
+):
+    """Unlike `throttle stop`, `engine-stop` with no loco is NOT an error
+    inside the shell: it falls back to state.py's local touched-address
+    cache (the same list `throttle` bare prints), not the shell's own
+    in-memory acquired throttles — the cache is what "every known
+    locomotive" means to the user, disk-persisted and shell-restart-safe."""
+    _patch_autorail_roster(monkeypatch)
+    from jmri_cli.throttle import throttle_engine_start, throttle_engine_stop
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        await throttle_engine_start(build_parser().parse_args(["throttle", "engine-start", "4"]), client=client)
+        await throttle_engine_start(build_parser().parse_args(["throttle", "engine-start", "8"]), client=client)
+
+        code = await throttle_engine_stop(build_parser().parse_args(["throttle", "engine-stop"]), client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=4 stopped" in out
+        assert "address=8 stopped" in out
+    finally:
+        await client.close()
+
+
+async def test_throttle_engine_stop_inside_shell_with_no_loco_and_empty_cache(fake_jmri, capsys):
+    from jmri_cli.throttle import throttle_engine_stop
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        code = await throttle_engine_stop(build_parser().parse_args(["throttle", "engine-stop"]), client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert out.strip() != ""
+    finally:
+        await client.close()
 
 
 async def test_throttle_find_resolves_fuzzy_name(mock_roster, capsys):

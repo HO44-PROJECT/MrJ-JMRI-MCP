@@ -247,6 +247,39 @@ package version stays `0.1.0` during active milestone development).
   preference. Live-verified against the real JMRI server: `ohara
   (turnouts)`, `zou (test)`, `taya (accessories)`, `raijin (tracks)`.
 
+- `start_locomotive`/`stop_locomotive`/`stop_all_locomotives` MCP tools (#43):
+  single-call session on/off for a locomotive. `start_locomotive` acquires
+  the throttle, sets forward, and turns on every light-labeled function in
+  one call; `stop_locomotive` ramps down to speed 0 (duration scaled to the
+  loco's current speed), sets forward, turns lights off, and releases the
+  throttle, in one call; `stop_all_locomotives` is the bulk counterpart,
+  looping the same shutdown sequence server-side over every locomotive this
+  session has acquired. `_SERVER_INSTRUCTIONS` routes "start up"/"wake up"/
+  "shut down"/"put to bed" phrasing to these tools instead of the LLM
+  chaining acquire_throttle/set_direction/set_loco_lights/set_speed/
+  release_throttle itself.
+
+- CLI throttle: unified "loco optional" cache-fallback behavior (#44).
+  `throttle on`/`off`/`stop`/`estop`/`forward`/`reverse` now all fall back
+  to `state.py`'s local touched-address cache when `loco` is omitted,
+  applying the action to every cached address instead of erroring —
+  extending the pattern `engine-start`/`engine-stop` already had. Works
+  identically one-shot or inside the interactive shell; `throttle stop`
+  previously required an explicit `loco` inside the shell specifically,
+  now dropped. `throttle speed` remains the sole exception, since a bare
+  speed percentage has no unambiguous "apply to everything" reading.
+  `forward`/`reverse --hold` is now required per-address only if that
+  specific address is moving; a moving loco missing `--hold` is reported
+  and skipped without aborting the rest.
+  - **Removed** `throttle lights-all <on|off>`, made redundant by the
+    above: `throttle on --lights-only` (no loco) now covers the same
+    ground. Fixed a real behavior gap surfaced while removing it — the
+    generic `on`/`off` path treated "no light-labeled functions" as a
+    per-address failure, while the old `lights-all` treated it as a
+    skip-with-note; the bulk (no-loco) path now skips instead of failing,
+    matching `lights-all`'s prior behavior, while a single named `loco`
+    with no light-labeled functions is still a clear error.
+
 - **Fixed** (#25): re-POSTing a power state JMRI/DCC++ already reports
   (e.g. `ON` on a system already `ON`) doesn't no-op — it's a real bug on
   the user's installation that knocks the system into state `UNKNOWN`,

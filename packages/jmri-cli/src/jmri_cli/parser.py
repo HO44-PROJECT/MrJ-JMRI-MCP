@@ -364,17 +364,25 @@ def build_parser() -> argparse.ArgumentParser:
         throttle_sub, "estop", help=i18n.t("help.throttle.estop"),
         example="jmri-cli throttle estop 3", func=throttle.throttle_estop,
     )
-    estop.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    estop.add_argument("loco", nargs="?", default=None,
+                        help=i18n.t("help.throttle.estop_loco"))
+    estop.epilog = (
+        "example:\n"
+        "  jmri-cli throttle estop\n"
+        "  jmri-cli throttle estop 3"
+    )
 
     forward = _leaf(
         throttle_sub, "forward", help=i18n.t("help.throttle.forward"),
         example="jmri-cli throttle forward 3", func=functools.partial(throttle.throttle_direction, forward=True),
     )
-    forward.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    forward.add_argument("loco", nargs="?", default=None,
+                          help=i18n.t("help.throttle.direction_loco"))
     _add_ramp_args(forward, rampup=True, seconds=True)
     forward.epilog = (
         "example:\n"
         "  jmri-cli throttle forward 3\n"
+        "  jmri-cli throttle forward\n"
         "  jmri-cli throttle forward 3 --rampdown 3 --rampup 3 --hold 30"
     )
 
@@ -382,11 +390,13 @@ def build_parser() -> argparse.ArgumentParser:
         throttle_sub, "reverse", help=i18n.t("help.throttle.reverse"),
         example="jmri-cli throttle reverse 3", func=functools.partial(throttle.throttle_direction, forward=False),
     )
-    reverse.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    reverse.add_argument("loco", nargs="?", default=None,
+                          help=i18n.t("help.throttle.direction_loco"))
     _add_ramp_args(reverse, rampup=True, seconds=True)
     reverse.epilog = (
         "example:\n"
         "  jmri-cli throttle reverse 3\n"
+        "  jmri-cli throttle reverse\n"
         "  jmri-cli throttle reverse 3 --rampdown 3 --rampup 3 --hold 30"
     )
 
@@ -395,30 +405,52 @@ def build_parser() -> argparse.ArgumentParser:
         help=i18n.t("help.throttle.on"),
         example="jmri-cli throttle on 3 1", func=throttle.throttle_on,
     )
-    on_fn.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    on_fn.add_argument("loco", nargs="?", default=None,
+                        help=i18n.t("help.throttle.function_loco"))
     on_fn.add_argument("function", nargs="?", default=None,
                         help=i18n.t("help.arg.function_ref_or_every"))
     on_fn.add_argument("--lights-only", action="store_true",
                         help=i18n.t("help.throttle.lights_only"))
+    on_fn.epilog = (
+        "example:\n"
+        "  jmri-cli throttle on 3 1\n"
+        "  jmri-cli throttle on 3\n"
+        "  jmri-cli throttle on"
+    )
 
     off_fn = _leaf(
         throttle_sub, "off",
         help=i18n.t("help.throttle.off"),
         example="jmri-cli throttle off 3 1", func=throttle.throttle_off,
     )
-    off_fn.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    off_fn.add_argument("loco", nargs="?", default=None,
+                         help=i18n.t("help.throttle.function_loco"))
     off_fn.add_argument("function", nargs="?", default=None,
                          help=i18n.t("help.arg.function_ref_or_every"))
     off_fn.add_argument("--lights-only", action="store_true",
                          help=i18n.t("help.throttle.lights_only"))
-
-    lights_all = _leaf(
-        throttle_sub, "lights-all",
-        help=i18n.t("help.throttle.lights_all"),
-        example="jmri-cli throttle lights-all on", func=throttle.throttle_lights_all,
+    off_fn.epilog = (
+        "example:\n"
+        "  jmri-cli throttle off 3 1\n"
+        "  jmri-cli throttle off 3\n"
+        "  jmri-cli throttle off"
     )
-    lights_all.add_argument("state", choices=["on", "off"],
-                             help=i18n.t("help.throttle.lights_all_state"))
+
+    engine_start_cmd = _leaf(
+        throttle_sub, "engine-start", help=i18n.t("help.throttle.engine_start"),
+        example="jmri-cli throttle engine-start 3", func=throttle.throttle_engine_start,
+    )
+    engine_start_cmd.add_argument("loco", nargs="?", default=None,
+                                   help=i18n.t("help.throttle.engine_start_loco"))
+    engine_start_cmd.add_argument("--prefix", default=None,
+                                   help=i18n.t("help.throttle.acquire_prefix"))
+
+    engine_stop_cmd = _leaf(
+        throttle_sub, "engine-stop", help=i18n.t("help.throttle.engine_stop"),
+        example="jmri-cli throttle engine-stop", func=throttle.throttle_engine_stop,
+    )
+    engine_stop_cmd.add_argument("loco", nargs="?", default=None,
+                                  help=i18n.t("help.throttle.engine_stop_loco"))
 
     function_cmd = _leaf(
         throttle_sub, "function",

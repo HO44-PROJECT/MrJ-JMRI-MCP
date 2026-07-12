@@ -52,6 +52,7 @@ from jmri_core.constants.cli import (
     MIN_SPEED_PERCENT,
     SNIFF_THROTTLE_ID_PREFIX,
 )
+from jmri_core.constants.client_tuning import STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED
 from jmri_core.constants.lighting import is_light_label
 from jmri_core.jmri_client import JmriError, get_roster, get_roster_function_labels, resolve_roster_entry
 from jmri_core.jmri_ws import JmriWsClient
@@ -400,16 +401,14 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
 async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
     """Controlled stop (speed 0) of one loco, or every touched loco if none is given.
 
-    With no `args.loco` in one-shot mode, this stops every locomotive this
-    CLI's local cache (state.py) knows about — the CLI's own "stop
-    everything I've driven" primitive, since a fresh CLI process holds
-    nothing else to iterate. Locomotives never touched by this CLI (or
-    only driven from a JMRI panel/other client) are out of reach here,
-    same limitation any cache-driven CLI command has; use `power off` to
-    cut power to the whole layout regardless of who's driving. Inside the
-    shell, `args.loco` is required (the shell's own held throttles are the
-    only meaningful "every loco" set, and `throttle_direction`/
-    `throttle_speed` already reuse the shell's connection directly).
+    With no `args.loco`, this stops every locomotive state.py's local
+    cache knows about — the same touched-address population bare
+    `throttle` prints and `engine-start`/`engine-stop`/`on`/`off`/
+    `forward`/`reverse` fall back to — regardless of whether called
+    one-shot or from the shell. Locomotives never touched by this CLI (or only driven from
+    a JMRI panel/other client) are out of reach here, same limitation any
+    cache-driven CLI command has; use `power off` to cut power to the
+    whole layout regardless of who's driving.
 
     `stop`'s target is always 0, so unlike `speed`/`forward`/`reverse` it
     has no `--hold`/`--rampup` flags at all — only `--rampdown`.
@@ -423,8 +422,7 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
 
     Returns:
         0 if every targeted loco confirmed stopped, 1 if JMRI is
-        unreachable or any command was rejected, 2 if `args.loco` was
-        omitted inside the shell (mandatory there).
+        unreachable or any command was rejected.
     """
     if args.loco:
         try:
@@ -432,9 +430,6 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
         except JmriError as exc:
             print(i18n.error(exc), file=sys.stderr)
             return 1
-    elif client is not None:
-        print(i18n.t("cli.throttle_shell_stop_needs_loco"), file=sys.stderr)
-        return 2
     else:
         addresses = [int(a) for a in _state.load_state()]
         if not addresses:
@@ -466,62 +461,120 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
 
 
 async def throttle_estop(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
-    """Emergency stop (JMRI decoder e-stop, speed -1.0). No ramp support —
-    an emergency stop is a distinct decoder command that must be immediate,
-    not gradual (see module docstring: JMRI's real -1.0 sentinel, never to
-    be confused with `throttle_speed`'s CLI-only negative-percent shorthand).
+    """Emergency stop (JMRI decoder e-stop, speed -1.0) of one loco, or
+    every touched loco if none is given. No ramp support — an emergency
+    stop is a distinct decoder command that must be immediate, not gradual
+    (see module docstring: JMRI's real -1.0 sentinel, never to be confused
+    with `throttle_speed`'s CLI-only negative-percent shorthand).
+
+    With no `args.loco`, this e-stops every locomotive state.py's local
+    cache knows about — same "loco optional, defaults to state.py's
+    touched-address cache" pattern as `on`/`off`/`stop`/`forward`/
+    `reverse`/`engine-start`/`engine-stop`, not mandatory in the shell
+    either. One address failing doesn't abort the rest.
 
     Args:
         args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
-            DCC address).
+            DCC address, or None for every cached address).
         client: Shared connection when called from the interactive shell;
             None (default) opens and closes a fresh one-shot connection.
 
     Returns:
-        0 on success, 1 if JMRI is unreachable or the command is rejected.
+        0 if every targeted loco confirmed emergency-stopped, 1 if JMRI is
+        unreachable or any command was rejected.
     """
-    try:
-        address = await _resolve_address(args.loco)
-    except JmriError as exc:
-        print(i18n.error(exc), file=sys.stderr)
-        return 1
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        addresses = [int(a) for a in _state.load_state()]
+        if not addresses:
+            print(i18n.t("cli.throttle_no_locos_to_stop"), file=sys.stderr)
+            return 0
 
+    ok = True
     try:
         async with _client_scope(client) as c:
-            await c.acquire_throttle(cli_throttle_id(address), address)
-            await c.set_speed(cli_throttle_id(address), -1.0)
+            for address in addresses:
+                try:
+                    await c.acquire_throttle(cli_throttle_id(address), address)
+                    await c.set_speed(cli_throttle_id(address), -1.0)
+                    _state.update_address(address, speed=-1.0)
+                    print(f"address={address} emergency-stopped")
+                except JmriError as exc:
+                    print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+                    ok = False
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
+    return 0 if ok else 1
 
-    _state.update_address(address, speed=-1.0)
-    print(f"address={address} emergency-stopped")
+
+async def _direction_one(
+    address: int, args: argparse.Namespace, *, forward: bool, one_shot: bool, client: JmriWsClient
+) -> int:
+    """Set direction for one address. Returns 0 on success, 1 on JMRI error, 2 if --hold was required but missing."""
+    throttle_id = cli_throttle_id(address)
+    try:
+        acquired = await client.acquire_throttle(throttle_id, address)
+        current_fraction = acquired.get("speed") or 0.0
+
+        if one_shot and current_fraction > 0.0 and args.seconds is None:
+            print(i18n.t("cli.throttle_hold_required_address", address=address), file=sys.stderr)
+            return 2
+
+        data = await _execute_speed_change(
+            client, throttle_id,
+            target_forward=forward, target_fraction=current_fraction,
+            rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
+        )
+    except JmriError as exc:
+        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        return 1
+
+    reported = data.get("forward", forward)
+    speed = data.get("speed")
+    _state.update_address(address, forward=reported, **({"speed": speed} if speed is not None else {}))
+    print(f"address={address} direction={_direction_name(reported)}")
     return 0
 
 
 async def throttle_direction(
     args: argparse.Namespace, *, forward: bool, client: JmriWsClient | None = None
 ) -> int:
-    """Set a loco's direction, ramping speed down/back-up around the flip if moving.
+    """Set direction for one loco, or every touched loco if none is given, ramping speed down/back-up around the flip if moving.
 
-    If the loco is currently moving and this changes its direction, it
+    If a loco is currently moving and this changes its direction, it
     first ramps down to 0 (using `args.rampdown` if given, else instant),
     flips direction, then ramps back up to the speed magnitude it had
-    before the flip (using `args.rampup` if given, else instant). If the
+    before the flip (using `args.rampup` if given, else instant). If a
     loco is stationary, or already facing the requested direction, this is
     just a plain (possibly no-op) direction set — `args.rampup`/
     `args.rampdown`/`args.seconds` are accepted but have nothing to act on.
 
-    In one-shot mode, this needs one JMRI read (the acquire, to learn the
-    current speed) before it can know whether the mandatory-`--hold`
-    rule even applies — unlike `throttle_speed`/`throttle_stop`, which
-    know the target speed from `args` alone and can reject before
-    contacting JMRI at all. This is an accepted, documented exception, not
-    an inconsistency to "fix" later.
+    In one-shot mode, this needs one JMRI read per address (the acquire,
+    to learn the current speed) before it can know whether the
+    mandatory-`--hold` rule even applies — unlike `throttle_speed`/
+    `throttle_stop`, which know the target speed from `args` alone and
+    can reject before contacting JMRI at all. This is an accepted,
+    documented exception, not an inconsistency to "fix" later.
+
+    With no `args.loco`, this falls back to state.py's local
+    touched-address cache and applies the direction change to every one
+    of them — same "loco optional, defaults to every known locomotive"
+    pattern as `engine-start`/`engine-stop`/`stop`/`on`/`off`, not
+    mandatory in the shell either. A per-address `--hold`-required
+    rejection (one-shot mode, that address moving) does not abort the
+    rest of the loop.
 
     Args:
-        args: Parsed CLI arguments; uses `args.loco`, `args.rampup`,
-            `args.rampdown`, `args.seconds` (all seconds, optional).
+        args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
+            DCC address, or None for every locomotive in state.py's local
+            touched-address cache), `args.rampup`, `args.rampdown`,
+            `args.seconds` (all seconds, optional).
         forward: True for `throttle forward`, False for `throttle reverse`
             — bound via functools.partial in parser.py so "forward" and
             "reverse" are each their own leaf subcommand, not a shared one
@@ -531,42 +584,35 @@ async def throttle_direction(
             and enforces the mandatory-`--hold` rule above.
 
     Returns:
-        0 on success, 1 if JMRI is unreachable or the command is rejected,
-        2 if `--hold` was required (loco already moving) but not given
-        (one-shot mode only).
+        0 if every targeted loco's direction was set (or none were
+        touched, with no `args.loco` given), 1 if JMRI is unreachable or
+        any command was rejected, 2 if `--hold` was required for any
+        moving loco but not given (one-shot mode only) and nothing else failed worse.
     """
     one_shot = client is None
 
-    try:
-        address = await _resolve_address(args.loco)
-    except JmriError as exc:
-        print(i18n.error(exc), file=sys.stderr)
-        return 1
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        addresses = [int(a) for a in _state.load_state()]
+        if not addresses:
+            print(i18n.t("cli.throttle_no_locos_touched"))
+            return 0
 
-    throttle_id = cli_throttle_id(address)
+    worst = 0
     try:
         async with _client_scope(client) as c:
-            acquired = await c.acquire_throttle(throttle_id, address)
-            current_fraction = acquired.get("speed") or 0.0
-
-            if one_shot and current_fraction > 0.0 and args.seconds is None:
-                print(i18n.t("cli.throttle_hold_required"), file=sys.stderr)
-                return 2
-
-            data = await _execute_speed_change(
-                c, throttle_id,
-                target_forward=forward, target_fraction=current_fraction,
-                rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
-            )
+            for address in addresses:
+                code = await _direction_one(address, args, forward=forward, one_shot=one_shot, client=c)
+                worst = max(worst, code)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
-
-    reported = data.get("forward", forward)
-    speed = data.get("speed")
-    _state.update_address(address, forward=reported, **({"speed": speed} if speed is not None else {}))
-    print(f"address={address} direction={_direction_name(reported)}")
-    return 0
+    return worst
 
 
 async def _resolve_function_numbers(
@@ -615,31 +661,76 @@ async def _resolve_function_numbers(
     return sorted(matches)
 
 
-async def _throttle_set_functions(
-    args: argparse.Namespace, *, state: bool, client: JmriWsClient | None = None
-) -> int:
-    """Shared body for throttle_on/throttle_off."""
+async def _set_functions_one(
+    address: int, function: str | None, *, state: bool, lights_only: bool, client: JmriWsClient, bulk: bool = False
+) -> bool:
+    """Resolve and set one or more functions for one address. Returns True on full success.
+
+    `bulk`, when True (looping every address in state.py's touched-address
+    cache because no loco was given), downgrades a `lights_only` lookup
+    finding no light-labeled functions from a hard failure to a skipped
+    note — a locomotive without any light-labeled function isn't a error
+    in that context, unlike naming that same locomotive explicitly.
+    """
     try:
-        address = await _resolve_address(args.loco)
-        function_numbers = await _resolve_function_numbers(
-            address, args.function, lights_only=getattr(args, "lights_only", False)
-        )
+        function_numbers = await _resolve_function_numbers(address, function, lights_only=lights_only)
     except JmriError as exc:
-        print(i18n.error(exc), file=sys.stderr)
-        return 1
+        if bulk and exc.code == "no_light_labeled_functions":
+            print(i18n.t("cli.no_light_labeled_functions", name=exc.kwargs.get("name", address)))
+            return True
+        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        return False
 
     ok = True
     try:
+        await client.acquire_throttle(cli_throttle_id(address), address)
+    except JmriError as exc:
+        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        return False
+    for n in function_numbers:
+        try:
+            data = await client.set_function(cli_throttle_id(address), n, state)
+            reported = data.get(f"F{n}", state)
+            _state.update_address(address, functions={n: reported})
+            print(f"address={address} F{n}={'on' if reported else 'off'}")
+        except JmriError as exc:
+            print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+            ok = False
+    return ok
+
+
+async def _throttle_set_functions(
+    args: argparse.Namespace, *, state: bool, client: JmriWsClient | None = None
+) -> int:
+    """Shared body for throttle_on/throttle_off.
+
+    With no `args.loco`, falls back to state.py's local touched-address
+    cache — same "loco optional, defaults to every known locomotive"
+    pattern as `engine-start`/`engine-stop`/`stop`, not mandatory in the
+    shell either. `args.function` (number/label fragment/None) is applied
+    identically to every targeted address.
+    """
+    bulk = not args.loco
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        addresses = [int(a) for a in _state.load_state()]
+        if not addresses:
+            print(i18n.t("cli.throttle_no_locos_touched"))
+            return 0
+
+    lights_only = getattr(args, "lights_only", False)
+    ok = True
+    try:
         async with _client_scope(client) as c:
-            await c.acquire_throttle(cli_throttle_id(address), address)
-            for n in function_numbers:
-                try:
-                    data = await c.set_function(cli_throttle_id(address), n, state)
-                    reported = data.get(f"F{n}", state)
-                    _state.update_address(address, functions={n: reported})
-                    print(f"address={address} F{n}={'on' if reported else 'off'}")
-                except JmriError as exc:
-                    print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+            for address in addresses:
+                if not await _set_functions_one(
+                    address, args.function, state=state, lights_only=lights_only, client=c, bulk=bulk
+                ):
                     ok = False
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
@@ -648,7 +739,7 @@ async def _throttle_set_functions(
 
 
 async def throttle_on(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
-    """Turn one or more decoder functions on.
+    """Turn one or more decoder functions on, for one loco or every touched loco.
 
     `args.function` may be a number (F0-F28), a fragment of a roster-set
     function label ("phares" matches a label containing it), or omitted
@@ -658,89 +749,236 @@ async def throttle_on(args: argparse.Namespace, *, client: JmriWsClient | None =
     module, set_function docstring) — an unlabeled loco with no function number given is a
     clear error asking for one, not a guess.
 
+    With no `args.loco`, this falls back to state.py's local
+    touched-address cache and applies `args.function` to every one of
+    them — same "loco optional, defaults to every known locomotive"
+    pattern as `engine-start`/`engine-stop`/`stop`, not mandatory in the
+    shell either.
+
     Args:
         args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
-            DCC address) and `args.function` (number, label fragment, or
-            None).
+            DCC address, or None for every locomotive in state.py's local
+            touched-address cache) and `args.function` (number, label
+            fragment, or None).
         client: Shared connection when called from the interactive shell;
             None (default) opens and closes a fresh one-shot connection.
 
     Returns:
-        0 if every resolved function confirmed on, 1 if JMRI is
+        0 if every resolved function confirmed on for every targeted loco
+        (or none were touched, with no `args.loco` given), 1 if JMRI is
         unreachable, nothing resolves, or any command was rejected.
     """
     return await _throttle_set_functions(args, state=True, client=client)
 
 
 async def throttle_off(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
-    """Turn one or more decoder functions off. See throttle_on for `args.function` rules.
+    """Turn one or more decoder functions off, for one loco or every touched loco.
+
+    See throttle_on for `args.function` rules and the no-`args.loco`
+    cache-fallback behavior.
 
     Args:
         args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
-            DCC address) and `args.function` (number, label fragment, or
-            None).
+            DCC address, or None for every locomotive in state.py's local
+            touched-address cache) and `args.function` (number, label
+            fragment, or None).
         client: Shared connection when called from the interactive shell;
             None (default) opens and closes a fresh one-shot connection.
 
     Returns:
-        0 if every resolved function confirmed off, 1 if JMRI is
-        unreachable, nothing resolves, or any command was rejected.
+        0 if every resolved function confirmed off for every targeted
+        loco (or none were touched, with no `args.loco` given), 1 if JMRI
+        is unreachable, nothing resolves, or any command was rejected.
     """
     return await _throttle_set_functions(args, state=False, client=client)
 
 
-async def throttle_lights_all(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
-    """Turn every light-related function on/off, for every locomotive this CLI has touched.
+async def _engine_start_one(address: int, prefix: str | None, *, client: JmriWsClient) -> bool:
+    """Acquire, face forward, lights on for one address. Returns True on full success."""
+    throttle_id = cli_throttle_id(address)
+    try:
+        data = await client.acquire_throttle(throttle_id, address, prefix)
+        if not data.get("forward", True):
+            await client.set_direction(throttle_id, True)
+        function_numbers = await _resolve_function_numbers(address, None, lights_only=True)
+        for n in function_numbers:
+            await client.set_function(throttle_id, n, True)
+    except JmriError as exc:
+        if exc.code == "no_light_labeled_functions":
+            function_numbers = []
+        else:
+            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            return False
 
-    The CLI equivalent of the MCP server's set_all_locos_lights tool: loops
-    state.py's local cache of addresses (same "every locomotive this CLI
-    has touched" set `throttle stop` uses with no loco given), and for each
-    one turns on/off every function whose roster label matches a light
-    keyword (see jmri_core.constants.lighting.is_light_label) — not just
-    F0. A locomotive with no light-labeled functions is skipped with a
-    note, not treated as an error.
+    _state.update_address(address, speed=data.get("speed"), forward=True)
+    print(f"address={address} started (forward, {len(function_numbers)} light function(s) on)")
+    return True
+
+
+async def throttle_engine_start(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+    """Wake up one loco, or every touched loco if none is given: acquire, face forward, lights on.
+
+    The CLI equivalent of the MCP server's start_locomotive tool. Does NOT
+    start the locomotive moving — follow with `throttle speed` if the user
+    also wants it to move. Deliberately named "engine start", not "power
+    on"/"start" alone — this project already has `power on/off` for DCC
+    system power, a completely different concept (cutting power reaches
+    every locomotive regardless of who's driving it; this only ever
+    touches one loco's own throttle/lights). Never conflate the two.
+
+    Same "loco optional, defaults to every known locomotive" pattern as
+    `engine-stop`: with no `loco`, this always falls back to state.py's
+    local touched-address cache (the same list bare `throttle` prints),
+    whether called one-shot or from the shell — not mandatory in the
+    shell, unlike plain `throttle stop`.
 
     Args:
-        args: Parsed CLI arguments; uses `args.state` ("on" or "off").
+        args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
+            DCC address, or None for every locomotive in state.py's local
+            touched-address cache) and `args.prefix` (optional command
+            station prefix, only meaningful with an explicit `loco`).
         client: Shared connection when called from the interactive shell;
             None (default) opens and closes a fresh one-shot connection.
 
     Returns:
-        0 if every touched locomotive's light functions confirmed (or had
-        none to switch), 1 if JMRI is unreachable or any command was
-        rejected. 0 with a printed note if no locomotive has been touched
-        yet (not an error, mirrors throttle_stop's no-loco case).
+        0 if every targeted loco started cleanly (or none were touched,
+        with no `args.loco` given), 1 if JMRI is unreachable or any
+        locomotive's startup had a failing step.
     """
-    addresses = [int(a) for a in _state.load_state()]
-    if not addresses:
-        print(i18n.t("cli.throttle_no_locos_touched"))
-        return 0
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        addresses = [int(a) for a in _state.load_state()]
+        if not addresses:
+            print(i18n.t("cli.throttle_no_locos_touched"))
+            return 0
 
-    state = args.state == "on"
     ok = True
     try:
         async with _client_scope(client) as c:
             for address in addresses:
-                try:
-                    function_numbers = await _resolve_function_numbers(address, None, lights_only=True)
-                except JmriError as exc:
-                    if exc.code == "no_light_labeled_functions":
-                        print(i18n.t("cli.no_light_labeled_functions", name=exc.kwargs.get("name", address)))
-                        continue
-                    print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+                if not await _engine_start_one(address, args.prefix, client=c):
                     ok = False
-                    continue
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
+        return 1
+    return 0 if ok else 1
 
-                await c.acquire_throttle(cli_throttle_id(address), address)
-                for n in function_numbers:
-                    try:
-                        data = await c.set_function(cli_throttle_id(address), n, state)
-                        reported = data.get(f"F{n}", state)
-                        _state.update_address(address, functions={n: reported})
-                        print(f"address={address} F{n}={'on' if reported else 'off'}")
-                    except JmriError as exc:
-                        print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
-                        ok = False
+
+async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
+    """Ramp down, face forward, lights off, release for one address. Returns True on full success."""
+    throttle_id = cli_throttle_id(address)
+    ok = True
+    c = client
+    was_acquired = throttle_id in c._throttles
+    if was_acquired:
+        info = c.throttle_state(throttle_id) or {}
+        current_fraction = info.get("speed") or 0.0
+        rampdown = current_fraction * STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED
+        try:
+            await _execute_speed_change(
+                c, throttle_id,
+                target_forward=True, target_fraction=0.0,
+                rampup=0.0, rampdown=rampdown, hold_seconds=None,
+            )
+        except JmriError as exc:
+            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            ok = False
+
+    try:
+        function_numbers = await _resolve_function_numbers(address, None, lights_only=True)
+    except JmriError as exc:
+        function_numbers = []
+        if exc.code != "no_light_labeled_functions":
+            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            ok = False
+
+    lights_ok = True
+    if function_numbers:
+        try:
+            await c.acquire_throttle(throttle_id, address)
+        except JmriError as exc:
+            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            ok = False
+            lights_ok = False
+            function_numbers = []
+    for n in function_numbers:
+        try:
+            await c.set_function(throttle_id, n, False)
+        except JmriError as exc:
+            print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+            ok = False
+            lights_ok = False
+
+    try:
+        await c.release_throttle(throttle_id)
+    except JmriError as exc:
+        if not lights_ok:
+            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            ok = False
+
+    _state.update_address(address, speed=0.0, forward=True)
+    print(f"address={address} stopped (forward, lights off, released)")
+    return ok
+
+
+async def throttle_engine_stop(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+    """Put one loco to rest, or every touched loco if none is given: ramp down, forward, lights off, release.
+
+    The CLI equivalent of the MCP server's stop_locomotive/
+    stop_all_locomotives tools — same "loco optional, defaults to every
+    known locomotive" philosophy as plain `throttle stop`. Unlike
+    `throttle_stop`, `loco` is never mandatory, not even inside the shell:
+    with no `loco`, this always targets state.py's local touched-address
+    cache (the same list `jmri-cli throttle` bare prints), whether called
+    one-shot or from the shell — that cache, not the shell's own
+    in-memory acquired throttles, is what a user means by "every known
+    locomotive" (it's disk-persisted, survives across shell restarts, and
+    is exactly what the shell's own bare `throttle` status table reads).
+    Rampdown duration scales with each loco's current speed (proportionally
+    shorter for a loco already slow/stopped, up to
+    STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED at full speed) — not a
+    fixed wait. Unlike plain `throttle stop`, this also faces each loco
+    forward, turns off its light-related functions, and releases its
+    throttle; use plain `throttle stop` for a mid-run pause instead.
+    Deliberately named "engine stop", not "power off" — see
+    throttle_engine_start's docstring for why that name is reserved for
+    DCC system power, a different concept entirely.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
+            DCC address, or None for every locomotive in state.py's local
+            touched-address cache).
+        client: Shared connection when called from the interactive shell;
+            None (default) opens and closes a fresh one-shot connection.
+
+    Returns:
+        0 if every targeted loco stopped cleanly (or none were touched,
+        with no `args.loco` given), 1 if JMRI is unreachable or any
+        locomotive's shutdown had a failing step.
+    """
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        addresses = [int(a) for a in _state.load_state()]
+        if not addresses:
+            print(i18n.t("cli.throttle_no_locos_touched"))
+            return 0
+
+    ok = True
+    try:
+        async with _client_scope(client) as c:
+            for address in addresses:
+                if not await _engine_stop_one(address, client=c):
+                    ok = False
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1

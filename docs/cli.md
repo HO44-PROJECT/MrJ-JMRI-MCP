@@ -521,9 +521,11 @@ Controlled stop (speed 0) of one loco, or **every locomotive this CLI's
 local cache knows about** if `[loco]` is omitted — the CLI's own "stop
 everything I've driven" primitive, mirroring `power off`'s "no target =
 everything" pattern. Different from `estop` below — this is a normal speed
-command, not JMRI's decoder emergency stop. Inside the interactive shell,
-`[loco]` is **mandatory** (the shell's held throttles aren't reflected in
-the CLI-wide cache, so there's no "stop everything" target to fall back to).
+command, not JMRI's decoder emergency stop. Same "loco optional, defaults to
+`state.py`'s local touched-address cache" pattern as `on`/`off`/`forward`/
+`reverse`/`engine-start`/`engine-stop` (see below): with no `[loco]`, this
+always falls back to that cache whether run one-shot or from the shell —
+not mandatory inside the shell.
 
 ```bash
 $ jmri-cli throttle stop 3
@@ -544,17 +546,25 @@ panel or another client is out of reach here, same limitation any
 cache-driven CLI command has. Use `power off` to cut power to the whole
 layout regardless of who's driving.
 
-## `jmri-cli throttle estop <loco>`
+## `jmri-cli throttle estop [loco]`
 
 Emergency stop: JMRI's decoder e-stop command (`speed=-1.0`), not just
-speed 0. Use for safety-critical stops.
+speed 0. Use for safety-critical stops. Same "loco optional, defaults to
+`state.py`'s local touched-address cache" pattern as `stop`/`on`/`off`/
+`forward`/`reverse`/`engine-start`/`engine-stop`: with `[loco]` omitted,
+every locomotive in that cache is emergency-stopped, whether run one-shot
+or from the shell — not mandatory inside the shell.
 
 ```bash
 $ jmri-cli throttle estop 3
 address=3 emergency-stopped
+
+$ jmri-cli throttle estop
+address=3 emergency-stopped
+address=7 emergency-stopped
 ```
 
-## `jmri-cli throttle forward <loco>` / `throttle reverse <loco>` `[--rampup S] [--rampdown S] [--hold S]`
+## `jmri-cli throttle forward [loco]` / `throttle reverse [loco]` `[--rampup S] [--rampdown S] [--hold S]`
 
 Acquire a loco (if not already held) on a fresh connection, set its
 direction, print the direction JMRI actually reports back, then close the
@@ -562,12 +572,22 @@ connection. `forward`/`reverse` are the loco's own decoder-wired notion of
 front/back, not compass direction. Safe to call repeatedly with the same
 direction — same no-op/cache behavior as `speed`/`stop`/`estop` (see below).
 
+With `[loco]` omitted, applies to **every locomotive `state.py`'s local
+cache knows about** — same "loco optional, defaults to everything" pattern
+as `stop`/`on`/`off`/`engine-start`/`engine-stop`, not mandatory inside the
+shell either. Each targeted loco is handled independently, so one failing
+(or requiring `--hold`, see below) doesn't stop the rest.
+
 ```bash
 $ jmri-cli throttle reverse 3
 address=3 direction=reverse
 
 $ jmri-cli throttle reverse 3 --rampup 5 --hold 30 --rampdown 5
 address=3 direction=reverse
+
+$ jmri-cli throttle forward
+address=3 direction=forward
+address=7 direction=forward
 ```
 
 If the loco is **moving** when a direction flip is requested, it's ramped
@@ -578,12 +598,14 @@ direction reversal at speed. If the loco is **stationary**, `--rampup`/
 `--rampdown` are accepted but inert: it's a pure direction change, same as
 before this feature existed.
 
-Mandatory `--hold` applies here too, but only once the loco is confirmed
-moving (checked after the initial acquire, since that's the only way to know
-the current speed) — a `forward`/`reverse` on a stationary loco never
-requires `--hold`.
+Mandatory `--hold` applies here too, but only once a loco is confirmed
+moving (checked after its own acquire, since that's the only way to know
+its current speed) — a `forward`/`reverse` on a stationary loco never
+requires `--hold`. With `[loco]` omitted and multiple cached addresses,
+`--hold` is required if **any** of them turns out to be moving; a moving
+loco missing `--hold` is reported and skipped without aborting the others.
 
-## `jmri-cli throttle on <loco> [function]` / `throttle off <loco> [function]`
+## `jmri-cli throttle on [loco] [function]` / `throttle off [loco] [function]`
 
 Turn one or more decoder functions on or off. `[function]` may be a bare
 number (`0`-`28`), a fragment of a roster-set function label (e.g. `"phares"`
@@ -592,6 +614,13 @@ labeled function for this loco**. There is no F0-is-headlight fallback:
 F-number meaning is decoder/roster-specific, not a protocol guarantee — a
 loco with no labeled functions and no function number given is a clear
 error asking for one, not a guess.
+
+With `[loco]` also omitted, applies to **every locomotive `state.py`'s
+local cache knows about** — same "loco optional, defaults to everything"
+pattern as `stop`/`forward`/`reverse`/`engine-start`/`engine-stop`, not
+mandatory inside the shell either. `[function]` (a number, a label
+fragment, or omitted for every labeled function) is applied identically to
+each targeted address; one address failing doesn't stop the rest.
 
 ```bash
 $ jmri-cli throttle on 3 1
@@ -604,6 +633,12 @@ address=4 F2=on
 
 $ jmri-cli throttle on 141r
 Error: 141R (address=2) has no labeled functions in JMRI's roster — specify a function number, e.g. `throttle on 2 0`
+
+$ jmri-cli throttle on
+address=4 F0=on
+address=4 F1=on
+address=4 F2=on
+address=7 F0=on
 ```
 
 Out-of-range numbers (outside 0-28) are rejected locally without contacting
@@ -612,47 +647,102 @@ behavior as `speed`/`stop`/`estop`/`forward`/`reverse`.
 
 ### `--lights-only`: every light-labeled function, not just F0
 
-`throttle on <loco> --lights-only` / `throttle off <loco> --lights-only`
+`throttle on [loco] --lights-only` / `throttle off [loco] --lights-only`
 restricts the "no function given" lookup to functions whose roster label
 matches a light keyword (light/lamp/headlight, lumière/feu/lampe/phare,
 case-/accent-insensitive) instead of every labeled function. This is the
-CLI equivalent of the MCP server's `set_loco_lights` tool.
+CLI equivalent of the MCP server's `set_loco_lights` tool — and, combined
+with `[loco]` omitted, of `set_all_locos_lights`: `throttle on --lights-only`
+with no loco turns on every light-labeled function for **every locomotive
+this CLI's local cache knows about** in one call, looping the same cache
+(`~/.jmri-cli/throttle_state.json`) that `throttle stop` with no loco uses.
 
 ```bash
 $ jmri-cli throttle on autorail --lights-only
 address=4 F0=on
 address=4 F1=on
 address=4 F2=on
-```
 
-If the Autorail also had a non-light-labeled function (e.g. F3="Klaxon"),
-plain `throttle on autorail` (no flag) would switch it too; `--lights-only`
-leaves it untouched. A locomotive with no light-labeled functions at all is
-an explicit error (`no light-labeled functions in JMRI's roster`), same
-"ask rather than guess" behavior as the unfiltered case. Ignored on a bare
-function number, which is always explicit regardless of its label.
-
-## `jmri-cli throttle lights-all <on|off>`
-
-Turn every light-labeled function on/off, for **every locomotive this CLI
-has already touched** — the CLI equivalent of the MCP server's
-`set_all_locos_lights` tool. Loops the same local cache
-(`~/.jmri-cli/throttle_state.json`) that `throttle stop` with no loco
-given uses, applying the `--lights-only`-filtered lookup above to each one.
-
-```bash
-$ jmri-cli throttle lights-all on
+$ jmri-cli throttle on --lights-only
 address=4 F0=on
 address=4 F1=on
 address=4 F2=on
 address=8 has no light-labeled functions in JMRI's roster — skipped
 ```
 
-A locomotive with no light-labeled functions is skipped with a note, not
-treated as a failure. If no locomotive has been touched yet, prints a note
-and exits 0 rather than doing nothing silently. Like `set_all_locos_lights`,
-this only reaches locomotives this CLI session has acquired/touched — a
-locomotive only ever driven from a JMRI panel is out of reach.
+If the Autorail also had a non-light-labeled function (e.g. F3="Klaxon"),
+plain `throttle on autorail` (no flag) would switch it too; `--lights-only`
+leaves it untouched. A locomotive with no light-labeled functions at all is
+skipped with a note (not a hard failure) when acting on every touched
+locomotive, or an explicit error when a single `[loco]` is named — same
+"ask rather than guess" behavior as the unfiltered case. Ignored on a bare
+function number, which is always explicit regardless of its label.
+
+## `jmri-cli throttle engine-start [loco] [--prefix P]`
+
+Wake up one locomotive, or **every locomotive this CLI's local cache
+knows about** if `[loco]` is omitted: acquire the throttle, set forward
+(only if not already), turn on every light-labeled function — the CLI
+equivalent of the MCP server's `start_locomotive` tool. Does not change
+speed; follow with `throttle speed <loco> <percent>` if it should also
+move. Deliberately named "engine start", not "power on" — `power on/off`
+already means DCC system power (the whole layout, everyone's locomotives),
+a completely different concept from one locomotive's own throttle/lights.
+
+Same "loco optional, defaults to everything" pattern as `engine-stop`
+(see below): with no `[loco]`, this always falls back to `state.py`'s
+local touched-address cache, whether run one-shot or from the shell — not
+mandatory in the shell, unlike plain `throttle stop`. `--prefix` only
+makes sense targeting one specific `[loco]`; with `[loco]` omitted it's
+applied identically to every cached address, which is rarely what you
+want — leave it unset in that case.
+
+```bash
+$ jmri-cli throttle engine-start 3
+address=3 started (forward, 3 light function(s) on)
+
+$ jmri-cli throttle engine-start
+address=3 started (forward, 3 light function(s) on)
+address=7 started (forward, 0 light function(s) on)
+```
+
+## `jmri-cli throttle engine-stop [loco]`
+
+Put one locomotive to rest, or **every locomotive currently known** if
+`[loco]` is omitted — the CLI equivalent of the MCP server's
+`stop_locomotive`/`stop_all_locomotives` tools. Same "loco optional,
+defaults to everything" pattern as plain `throttle stop` (see above), and
+the same naming rationale as `engine-start` above: deliberately not
+"power off", to avoid any confusion with `power off`'s DCC-system-wide
+meaning. Each locomotive is ramped down to a stop, faced forward, has
+every light-labeled function turned off, and is released. Unlike plain
+`throttle stop`, this also faces each loco forward, kills its lights, and
+releases it; use plain `throttle stop` for a mid-run pause instead.
+Rampdown duration scales with each loco's speed at the moment this is
+called (shorter for an already-slow/stopped loco, capped at 3s at full
+speed) — there is no `--rampdown` flag here, it's automatic.
+
+Unlike plain `throttle stop`, `[loco]` is **not** mandatory inside the
+interactive shell: with no `[loco]`, it always falls back to `state.py`'s
+local touched-address cache (`~/.jmri-cli/throttle_state.json`, the same
+list bare `throttle` prints) whether run one-shot or from the shell —
+that disk-persisted cache, not the shell's own in-memory acquired
+throttles, is what "every known locomotive" means, and it survives shell
+restarts too.
+
+```bash
+$ jmri-cli throttle engine-stop 3
+address=3 stopped (forward, lights off, released)
+
+$ jmri-cli throttle engine-stop
+address=3 stopped (forward, lights off, released)
+address=4 stopped (forward, lights off, released)
+```
+
+Safe to call on a locomotive this CLI process never acquired — the
+ramp/direction step is skipped (nothing to stop), but the lights-off and
+release steps still run. If no locomotive has been touched yet and
+`[loco]` is omitted, prints a note and exits 0.
 
 ## `jmri-cli throttle sniff [-a N ...] [--show-pong]`
 

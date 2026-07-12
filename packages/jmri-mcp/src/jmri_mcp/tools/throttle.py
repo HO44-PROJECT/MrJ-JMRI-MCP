@@ -1,4 +1,4 @@
-"""Throttle MCP tools: acquire/release_throttle, set_speed, set_speed_ramped, stop, emergency_stop, set_direction, set_function, lights_on, lights_off.
+"""Throttle MCP tools: acquire/release_throttle, set_speed, set_speed_ramped, stop, emergency_stop, set_direction, set_function, lights_on, lights_off, set_loco_lights, set_all_locos_lights, start_locomotive, stop_locomotive, stop_all_locomotives.
 
 All keyed on DCC address — see jmri_mcp.tools._common.throttle_id. Talks to
 jmri_ws.py's shared, process-wide WebSocket connection (see
@@ -12,7 +12,10 @@ shared by the CLI and the LLM-facing MCP surface.
 import logging
 
 from jmri_core import i18n, jmri_client
-from jmri_core.constants.client_tuning import RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS
+from jmri_core.constants.client_tuning import (
+    RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS,
+    STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED,
+)
 from jmri_core.constants.lighting import is_light_label
 from jmri_core.jmri_client import resolve_roster_entry
 from jmri_core.jmri_ws import JmriError
@@ -603,3 +606,183 @@ def register(mcp) -> None:
         if not addresses:
             return {"locomotives": []}
         return {"locomotives": [await set_loco_lights(a, state) for a in addresses]}
+
+    @mcp.tool()
+    async def start_locomotive(address: int, prefix: str | None = None) -> dict:
+        """Wake up ONE locomotive for a session: acquire, face forward, lights on.
+
+        Args:
+            address: The locomotive's DCC address.
+            prefix: Optional command station prefix (e.g. "O", "Z", "R"),
+                passed straight through to acquire_throttle — see that
+                tool's docstring.
+
+        Use this for "allume la loco"/"start up the 3"/"wake up the
+        autorail" — the counterpart to stop_locomotive, for beginning a
+        session with a locomotive rather than a normal "go" command mid-run.
+        Runs three steps in order, in one call:
+
+          1. Acquires the throttle (safe even if already acquired — same as
+             acquire_throttle).
+          2. Sets direction to forward. Locomotives start a session facing
+             forward by this project's convention, matching
+             stop_locomotive's end-of-session state.
+          3. Turns on every light-related function (same as
+             set_loco_lights(address, True) — F0 and any other
+             roster-labeled light function, not just the headlight).
+
+        Does NOT set a speed — this only wakes the locomotive up and lights
+        it, it does not start it moving. Follow with set_speed/
+        set_speed_ramped if the user also asked it to move.
+
+        This is a single call for the LLM: never call acquire_throttle,
+        set_direction, and set_loco_lights yourself in sequence for a
+        "start up"/"wake up" request, use this tool instead.
+
+        Returns {"address": ..., "acquired": bool, "direction": "forward",
+        "lights": <set_loco_lights result>}.
+        """
+        client = get_ws_client()
+        try:
+            data = await client.acquire_throttle(throttle_id(address), address, prefix)
+        except JmriError as exc:
+            logger.warning("start_locomotive(%r, %r) acquire step failed: %s", address, prefix, exc)
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+
+        if not data.get("forward", True):
+            try:
+                await client.set_direction(throttle_id(address), True)
+            except JmriError as exc:
+                logger.warning("start_locomotive(%r) direction step failed: %s", address, exc)
+
+        lights_result = await set_loco_lights(address, True)
+
+        return {
+            "address": address,
+            "acquired": True,
+            "direction": "forward",
+            "lights": lights_result,
+        }
+
+    @mcp.tool()
+    async def stop_locomotive(address: int) -> dict:
+        """Put ONE locomotive to rest for the session: smooth stop, forward, lights off, throttle released.
+
+        Args:
+            address: The locomotive's DCC address.
+
+        Use this for "éteins la loco"/"put the 3 to bed"/"park the
+        autorail"/"shut down the autorail" — the counterpart to
+        start_locomotive, for an end-of-session shutdown of a single
+        locomotive, not a mid-run pause (use plain stop for that). Runs
+        four steps in order, in one call:
+
+          1. Ramps down to speed 0 (never an abrupt stop) — the rampdown
+             duration scales with the loco's CURRENT speed (proportionally
+             shorter for a loco already slow/stopped, up to ~3s at full
+             speed), so stopping an already-stationary loco doesn't wait
+             around for a fixed delay that has nothing to ramp down from.
+          2. If it's currently in reverse, flips to forward — always at
+             speed 0 by this point, so this is a safe, ordinary direction
+             set, not a moving flip. Locomotives are left facing forward at
+             rest, matching start_locomotive's own forward convention.
+          3. Turns off every light-related function (same as
+             set_loco_lights(address, False) — F0 and any other
+             roster-labeled light function, not just the headlight).
+          4. Releases this session's throttle on the locomotive, freeing it
+             for other JMRI clients.
+
+        If this session never acquired the locomotive (nothing to stop),
+        steps 1-2 are skipped — but step 3 (lights) still auto-acquires the
+        throttle the same way set_loco_lights always does, so step 4 always
+        runs and releases it regardless, leaving nothing acquired behind
+        either way.
+
+        This is a single call for the LLM: never call set_speed/stop,
+        set_direction, set_loco_lights, and release_throttle yourself in
+        sequence for a "shut down"/"put to bed" request, use this tool
+        instead.
+
+        Returns {"address": ..., "stopped": bool, "direction": "forward",
+        "lights": <set_loco_lights result>, "released": bool}.
+        """
+        client = get_ws_client()
+        tid = throttle_id(address)
+        was_acquired = tid in client._throttles
+
+        stopped = True
+        if was_acquired:
+            info = client.throttle_state(tid) or {}
+            current_fraction = info.get("speed") or 0.0
+            rampdown = current_fraction * STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED
+            try:
+                await execute_speed_change(
+                    client,
+                    tid,
+                    target_forward=True,
+                    target_fraction=0.0,
+                    rampup=0.0,
+                    rampdown=rampdown,
+                    hold_seconds=None,
+                )
+            except JmriError as exc:
+                logger.warning("stop_locomotive(%r) stop step failed: %s", address, exc)
+                stopped = False
+
+        lights_result = await set_loco_lights(address, False)
+
+        released = True
+        release_error = None
+        try:
+            await client.release_throttle(tid)
+        except JmriError as exc:
+            logger.warning("stop_locomotive(%r) release step failed: %s", address, exc)
+            released = False
+            release_error = i18n.t(f"errors.{exc.code}", **exc.kwargs)
+
+        out = {
+            "address": address,
+            "stopped": stopped,
+            "direction": "forward",
+            "lights": lights_result,
+            "released": released,
+        }
+        if "error" in lights_result and not released:
+            out["error"] = release_error or lights_result["error"]
+        return out
+
+    @mcp.tool()
+    async def stop_all_locomotives() -> dict:
+        """Put EVERY currently-acquired locomotive to rest at once: smooth stop, forward, lights off, released.
+
+        Call this for "éteins toutes les locos"/"shut down every
+        locomotive"/"put everything to bed" — the bulk counterpart to
+        stop_locomotive. Never loop stop_locomotive yourself for a request
+        like this — this tool already loops server-side, in one call, over
+        every locomotive this session has acquired, running the exact same
+        four-step sequence (proportional rampdown, face forward, lights
+        off, release) independently per locomotive.
+
+        IMPORTANT LIMITATION: same scope as emergency_stop_all/
+        set_all_locos_lights — this only reaches locomotives THIS MCP
+        session has acquired a throttle for. A locomotive being driven only
+        from a JMRI panel or another session is not touched. If nothing has
+        been acquired yet, returns {"locomotives": []}, not an error.
+
+        For a shutdown request naming ONE specific locomotive, use
+        stop_locomotive instead. For an immediate motion-only stop with no
+        lights/release side effects, use emergency_stop_all instead.
+
+        Returns {"locomotives": [<one stop_locomotive result per address>]}
+        — each locomotive is stopped independently, so one loco's failure
+        doesn't block the others.
+        """
+        client = get_ws_client()
+        addresses = sorted({
+            info["address"]
+            for info in client.all_throttle_states().values()
+            if info.get("address") is not None
+        })
+        if not addresses:
+            return {"locomotives": []}
+        return {"locomotives": [await stop_locomotive(a) for a in addresses]}

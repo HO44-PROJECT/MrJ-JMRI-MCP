@@ -191,8 +191,8 @@ boilerplate), split along the same layer boundary as the rest of the tree:
   function/speed ranges, and `SORT_INDICATOR` (` ▼`, appended to a sorted column's header
   at the print call site — never baked into the header string itself).
 - **`lighting.py`** — `LIGHT_LABEL_KEYWORDS` and `is_light_label(label)`, the keyword
-  vocabulary `set_loco_lights`/`set_all_locos_lights` (and the CLI's `--lights-only`/
-  `lights-all`) use to recognize a roster function label as naming a light (English
+  vocabulary `set_loco_lights`/`set_all_locos_lights` (and the CLI's `--lights-only`
+  flag) use to recognize a roster function label as naming a light (English
   light/lamp/headlight; French lumière/feu/lampe/phare, accent-folded). Deliberately a
   flat keyword list, not the i18n `kinds` table above — a user's roster labels are free
   text they typed themselves in JMRI's own editor, not a fixed vocabulary this project
@@ -1065,18 +1065,104 @@ against the LLM looping single-entity tool calls itself (see
 here; one that doesn't routes to `set_layout_lights` instead. Both tools'
 docstrings state this rule from both directions.
 
-CLI parity is two pieces, both in `jmri_cli/throttle.py`: a `--lights-only`
-flag on `throttle on`/`throttle off` (filters `_resolve_function_numbers`'s
-label lookup through `is_light_label` before falling through to the
-existing `_throttle_set_functions` — the CLI equivalent of `set_loco_lights`),
-and a new `throttle lights-all <on|off>` verb (`throttle_lights_all`) that
-loops every address in `state.py`'s local touched-locomotive cache — the
-same population `throttle stop` with no loco given already uses — applying
-the `--lights-only`-filtered path to each, the CLI equivalent of
-`set_all_locos_lights`. A locomotive with no light-labeled functions is
-skipped with a printed note, not treated as a failure; an empty cache
-prints a note and exits 0, mirroring `set_all_locos_lights`'s
-`{"locomotives": []}` case.
+CLI parity is a single `--lights-only` flag on `throttle on`/`throttle off`,
+in `jmri_cli/throttle.py`: it filters `_resolve_function_numbers`'s label
+lookup through `is_light_label` before falling through to the existing
+`_throttle_set_functions`. Combined with `on`/`off`'s own "loco optional,
+defaults to `state.py`'s local touched-address cache" behavior (see the CLI
+parity paragraph in the `start_locomotive`/`stop_locomotive` section below),
+`throttle on --lights-only`/`throttle off --lights-only` with no loco is the
+CLI equivalent of `set_loco_lights` (one address) or `set_all_locos_lights`
+(every touched address) depending on whether `[loco]` is given — there is
+no separate bulk verb; a locomotive with no light-labeled functions is
+skipped with a printed note rather than treated as a failure when acting on
+every touched address, and an empty cache prints a note and exits 0,
+mirroring `set_all_locos_lights`'s `{"locomotives": []}` case.
+
+## `start_locomotive` / `stop_locomotive` / `stop_all_locomotives`: session on/off for a locomotive
+
+`tools/throttle.py`'s `start_locomotive(address, prefix=None)` and
+`stop_locomotive(address)` are single-call counterparts covering the
+"wake up"/"put to bed" case for one locomotive, so the LLM never has to
+chain acquire/direction/lights/speed/release calls itself.
+
+`start_locomotive` runs three steps: acquire the throttle, flip to
+forward only if not already facing that way (`data.get("forward", True)`
+— avoids an unnecessary direction call when already forward), and call
+`set_loco_lights(address, True)`. It does not touch speed — waking a
+locomotive up is distinct from starting it moving.
+
+`stop_locomotive` runs four steps: ramp down to speed 0 via the shared
+`execute_speed_change` (see the ramping section below) with duration
+`current_fraction * STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED`
+(`jmri_core.constants.client_tuning`, 3.0s) — proportional to the
+locomotive's speed at the moment the call starts, so an already-slow or
+stopped locomotive doesn't wait through a fixed delay with nothing to
+ramp down from, and a locomotive at full speed still gets a smooth,
+bounded stop. This is deliberately capped below
+`RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS` (4.0s) so `stop_locomotive`
+can stay a simple blocking call, unlike `set_speed_ramped`'s
+background-task path. After the ramp: flip to forward (always safe here,
+since speed is 0 by construction), turn off every light-related function
+via `set_loco_lights(address, False)`, then release the throttle.
+
+If this session never acquired the locomotive, the ramp/direction step is
+skipped entirely (nothing to stop) — but the lights step still runs and
+auto-acquires the throttle the same way `set_loco_lights`/`set_function`
+always does, so the release step always has something to release
+regardless of the starting state, and nothing is left dangling either
+way. The returned dict is honest about total failure: if both the lights
+step and the release step failed (e.g. JMRI unreachable throughout), a
+top-level `"error"` key is set rather than reporting `"released": true`
+with no basis for it.
+
+`stop_all_locomotives()` is the bulk counterpart, looping
+`stop_locomotive` over every address `JmriWsClient.all_throttle_states()`
+currently holds — same scope limitation as `emergency_stop_all`/
+`set_all_locos_lights` (only reaches locomotives this session has
+acquired), same `{"locomotives": []}` empty case.
+
+CLI parity in `jmri_cli/throttle.py`: `throttle_engine_start` (verb
+`engine-start`) and `throttle_engine_stop` (verb `engine-stop`), both
+with `loco` optional. This is the same "loco optional, defaults to
+`state.py`'s local touched-address cache" pattern shared by seven of the
+eight throttle verbs — `on`, `off`, `stop`, `estop`, `forward`, `reverse`,
+`engine-start` (`engine-stop` already had it) — each implemented as a
+small per-address helper (`_engine_start_one`, `_set_functions_one`,
+`_direction_one`, and `stop`'s/`estop`'s own inline loop bodies) looped by
+the public `throttle_<verb>` function over either `[resolved_address]` (an
+explicit `loco` given) or every address in the cache (`loco` omitted), so
+one address failing doesn't abort the rest. None of the seven is
+loco-mandatory inside the interactive shell: with no `loco`, all fall back
+to the same disk-persisted cache — the same population bare `throttle`'s
+status table and each other already use — regardless of whether `client`
+is set (shell) or `None` (one-shot). That cache, not the shell's own
+in-memory `client.all_throttle_states()`, is what "every known locomotive"
+means to a user driving from the shell: it's what bare `throttle` itself
+already shows them, and it survives shell restarts (an in-memory-only
+source would silently go empty on every new shell process, contradicting
+what the status table just displayed). **`throttle_speed` is the sole
+exception**: it always requires an explicit `loco`, since a bare speed
+target has no unambiguous "apply this same percentage to everything
+known" reading the way a stop/estop/direction-flip/function-toggle does.
+`throttle_engine_start`/`throttle_engine_stop` additionally merge what
+were originally separate single-address/bulk functions into one,
+mirroring `throttle_stop`'s own established "optional trailing loco = one
+vs. all" idiom rather than a separate bulk verb or an `--all` flag. CLI
+verbs are named `engine-start`/
+`engine-stop` rather than `start`/`stop`-alone or `power-on`/`power-off`
+specifically to avoid colliding with the pre-existing `power on/off`
+verb — DCC system power (the whole layout) and one locomotive's own
+throttle/lights are different concepts, and a name collision here risks
+the LLM confusing the two, not just CLI readability. The MCP tool names
+(`start_locomotive`, `stop_locomotive`, `stop_all_locomotives`) are
+unaffected by this CLI-only renaming. The one-shot CLI's `engine-stop`
+acquires the throttle explicitly before its lights step, unlike the MCP
+tool's `set_loco_lights`/`set_function`, which auto-acquire internally —
+a fresh one-shot connection never already holds a throttle, so without an
+explicit acquire here JMRI would reject the function calls with
+"Throttles must be requested with an address."
+(caught by `test_throttle_engine_stop_never_acquired_still_turns_off_lights_and_releases`).
 
 ## `set_power`: never re-POST a state JMRI already reports
 
@@ -1307,6 +1393,18 @@ response to real user friction, not hypothetical:
   `"status": "started"` reply is a normal success, not a timeout or dropped
   call — a routing fix alone couldn't have caught this, since the symptom
   only exists once routing already works.
+
+- **Session on/off routing** — added alongside `start_locomotive`/
+  `stop_locomotive`/`stop_all_locomotives` (see the dedicated section
+  above): maps "allume la loco"/"start up the 3"/"wake up the autorail" to
+  `start_locomotive`, "éteins la loco"/"put the 3 to bed"/"shut down the
+  autorail" to `stop_locomotive`, and "éteins toutes les locos"/"shut down
+  every locomotive"/"put everything to bed" to `stop_all_locomotives`
+  (never a loop of `stop_locomotive` calls). Explicitly tells the LLM
+  never to chain acquire_throttle/set_direction/set_loco_lights/
+  set_speed(_ramped)/release_throttle itself for any of these three
+  requests — each already has one native tool, the same rationale as the
+  bulk-routing paragraph above.
 
 Two real limits on this mechanism, both by design of the protocol, not
 bugs here:

@@ -22,7 +22,7 @@ src/jmri_mcp/
 │   ├── en.json          # errors.*/kinds.* message templates (English, default)
 │   └── fr.json          # same keys, French
 ├── jmri_client/       # async HTTP client for JMRI's JSON API
-│   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor/signal)
+│   ├── __init__.py    #   re-exports every public name (power/roster/light/turnout/sensor/block/signal)
 │   ├── _http.py        #  shared GET/POST plumbing, JmriError re-export, envelope unwrap
 │   ├── power.py        #  version, power-system discovery, power on/off,
 │   │                   #  power_off_all/power_on_all, resolve_system
@@ -30,6 +30,7 @@ src/jmri_mcp/
 │   ├── light.py         # layout light discovery, on/off, resolve_light
 │   ├── turnout.py       # turnout discovery, closed/thrown, resolve_turnout
 │   ├── sensor.py        # sensor discovery (read-only), resolve_sensor
+│   ├── block.py          # layout block discovery (read-only), resolve_block
 │   └── signal.py        # signal mast discovery, aspect set, resolve_signal
 │   │                    #   (signalMast only, not signalHead — see file docstring)
 ├── jmri_ws/            # persistent WebSocket client (ws://<jmri>/json/) for throttles
@@ -50,6 +51,7 @@ src/jmri_mcp/
 │   │                    #   distinct from a locomotive's F0 headlight function)
 │   ├── turnout.py       # list_turnouts, get_turnout, set_turnout
 │   ├── sensor.py        # list_sensors, get_sensor (read-only)
+│   ├── block.py          # list_blocks, get_block (read-only)
 │   ├── signal.py        # list_signals, get_signal, set_signal (signalMast only)
 │   └── mode.py           # set_executor_mode, get_executor_mode (concise/
 │   │                    #   no-narration response style, no JMRI I/O)
@@ -72,16 +74,17 @@ src/jmri_mcp/
     ├── light.py       #   light [list|find|findr|findg|on|off] (jmri_client)
     ├── turnout.py     #   turnout [list|find|findr|findg|close|throw] (jmri_client)
     ├── sensor.py      #   sensor [list|find|findr|findg|status] (jmri_client, read-only)
+    ├── block.py       #   block [list|find|findr|findg|status] (jmri_client, read-only)
     ├── signal.py      #   signal [list|status|find|findr|findg|set] (jmri_client, signalMast only)
     └── parser.py      #   build_parser(): wires the above into one CLI, incl. the
                         #     bare-group-default and verb-elevation patterns (see docs/cli.md)
 ```
 
-Seven domains — **power**, **roster**, **throttle**, **light**, **turnout**,
-**sensor**, **signal** — recur across the project and are split the same way
+Eight domains — **power**, **roster**, **throttle**, **light**, **turnout**,
+**sensor**, **block**, **signal** — recur across the project and are split the same way
 everywhere they get big enough to warrant it: `jmri_client/` (HTTP),
 `tools/` (MCP surface), and `cli/` (manual CLI) each have their own
-`power.py`/`roster.py`/`throttle.py`/`light.py`/`turnout.py`/`sensor.py`/`signal.py`.
+`power.py`/`roster.py`/`throttle.py`/`light.py`/`turnout.py`/`sensor.py`/`block.py`/`signal.py`.
 `jmri_ws/__init__.py` stays a single file within its package — it's one
 cohesive unit of tightly-coupled state (a WebSocket connection's
 request/reply/cache logic) with no natural seam to split along.
@@ -171,7 +174,7 @@ stay English/developer-facing, per this project's existing English-for-code conv
 only `cli`/`tools` translate at the catch site via `i18n.t()` (against
 `active_lang()`, driven by the `JMRI_MCP_LANG` env var, default `"en"`).
 
-Domain errors that repeat the same shape across turnout/light/sensor/signal/roster/system
+Domain errors that repeat the same shape across turnout/light/sensor/block/signal/roster/system
 (`"Unknown X 'query'. Available: ..."`, `"Ambiguous X 'query': matches ..."`, `"JMRI
 reports no Xs"`, ...) share one code each (`unknown_entity`, `ambiguous_entity`,
 `none_available`, `no_query_given`, `vanished_after_post`) parameterized by a `kind=`
@@ -235,7 +238,7 @@ The remaining hardcoded `print()` calls across `cli/*.py` — success/status pro
 result messages, unconfirmed-state warnings, the welcome banner (`cli/banner.py`), and the
 shell's own welcome/exit/help text (`cli/shell.py`) — are now wired to `i18n.t("cli.*", ...)`
 the same way. The `no_entities_found`/`no_entities_match`/`not_every_entity_confirmed`
-templates are shared across `light.py`/`turnout.py`/`sensor.py`/`signal.py` via a `kind=`
+templates are shared across `light.py`/`turnout.py`/`sensor.py`/`block.py`/`signal.py` via a `kind=`
 kwarg (e.g. `kind="signal mast"`, matching the `kinds` table's key exactly) — callers pass
 `kind=` directly and let `i18n.lookup()`'s `_expand_kind()` step derive `{kind}`/
 `{kind_plural}`/`{Kind}` from the `kinds.*` table; a call site must never pre-resolve
@@ -438,11 +441,36 @@ light) — no listener needed for a stateless list/get tool, so this domain
 follows the simpler `jmri_client/` (one-shot HTTP) pattern rather than
 `jmri_ws/`'s persistent-connection one.
 
+## Blocks: `list_blocks` / `get_block` (read-only, #35)
+
+`jmri_client/block.py` mirrors `sensor.py`'s read-only shape —
+`/json/blocks` (list), state 2=OCCUPIED/4=UNOCCUPIED (0=UNKNOWN,
+8=INCONSISTENT — see `BLOCK_STATE_NAMES`) — but exposes JMRI's native
+Layout Block object rather than a plain sensor. A block is richer than the
+sensor-based occupancy already covered by `sensor.py`/#16: each entry also
+carries `sensor` (the system name of the occupancy sensor driving it, e.g.
+`"RS24"`) and `value` (whatever JMRI's reporting hardware — an RFID reader,
+a `Reporter` — detected occupying the block, e.g. a roster entry or tag id;
+verified live to be `null` on the user's layout, which has no such
+hardware, but not guaranteed null in general). There is deliberately **no
+`set_block`**, for the same reason as sensors: occupancy is detected from
+real-world hardware, not a command this project should issue.
+`resolve_block()` uses the same tolerant exact/fragment match as
+`resolve_sensor()`.
+
+Confirmed live against the user's real JMRI (`GET /json/blocks`): envelope
+shape `{"type": "block", "data": {...}}` like every other domain, fields
+`name`/`userName`/`comment`/`properties`/`state`/`value`/`sensor`/
+`reporter`/`speed`/`curvature`/`direction`/`length`/`permissive`/
+`speedLimit`/`denied` — this project surfaces only the subset relevant to
+occupancy reporting (`name`, `state`, `sensor`, `value`) via `compact_block()`,
+the same "compact for LLM output" treatment as every other list tool.
+
 ## Signal masts: `list_signals` / `get_signal` / `set_signal` (#26)
 
 `jmri_client/signal.py` is a structural copy of `turnout.py`: JMRI's
 `/json/signalMasts` (list) and `/json/signalMast/<name>` (single get/set).
-Unlike turnout/light/sensor, a mast's state is not a small numeric enum —
+Unlike turnout/light/sensor/block, a mast's state is not a small numeric enum —
 it's an **aspect name** (a free-form string like `"Hp0"`/`"Hp1"`/`"Hp2"`),
 whose valid vocabulary is defined by whichever signal system (e.g.
 `DB-HV-1969`) the mast was configured with in PanelPro. JMRI does not
@@ -542,7 +570,7 @@ cohérence?"):
   `subparsers.add_subparsers(dest=..., required=False)` plus
   `group_cmd.set_defaults(func=default_func)` lets `jmri-cli power` run
   `power_status` directly. Applied to every group: `power`→`status`,
-  `roster`→`list`, `throttle`→`list`, `light`/`turnout`/`sensor`/`signal`→
+  `roster`→`list`, `throttle`→`list`, `light`/`turnout`/`sensor`/`block`/`signal`→
   their own `list`.
 - **Verb elevation**: a leaf whose own argument was really a fixed choice
   of state values (`power set <system> <on|off>`, `throttle direction

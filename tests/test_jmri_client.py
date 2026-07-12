@@ -6,12 +6,14 @@ from httpx import ConnectError, Response
 
 from jmri_mcp.jmri_client import (
     JmriError,
+    get_blocks,
     get_lights,
     get_roster,
     get_roster_function_labels,
     get_sensors,
     get_systems,
     get_turnouts,
+    resolve_block,
     resolve_light,
     resolve_roster_entry,
     resolve_sensor,
@@ -285,6 +287,81 @@ def test_resolve_sensor_empty_query_raises():
         resolve_sensor("", SENSORS)
     with pytest.raises(JmriError, match="No sensor name given"):
         resolve_sensor("   ", SENSORS)
+
+
+# --- get_blocks ---
+
+
+async def test_get_blocks_unwraps_envelope_and_matches_fixture(mock_blocks, blocks_fixture):
+    blocks = await get_blocks()
+    assert blocks == [entry["data"] for entry in blocks_fixture]
+
+
+async def test_get_blocks_accepts_bare_data():
+    bare = [{"name": "IB1", "userName": "Montagne A", "state": 4, "sensor": "RS24", "value": None}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/blocks").mock(return_value=Response(200, json=bare))
+        blocks = await get_blocks()
+    assert blocks == bare
+
+
+async def test_get_blocks_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/blocks").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await get_blocks()
+
+
+async def test_get_blocks_raises_on_non_list_non_dict_payload():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/blocks").mock(return_value=Response(200, json="oops"))
+        with pytest.raises(JmriError, match="Unexpected /json/blocks payload"):
+            await get_blocks()
+
+
+# --- resolve_block: pure function, no I/O ---
+
+BLOCKS = [
+    {"name": "IB1", "userName": "Montagne A", "state": 4, "sensor": "RS24", "value": None},
+    {"name": "IB2", "userName": "Montagne B", "state": 2, "sensor": "RS42", "value": None},
+    {"name": "IB3", "userName": "Montagne A int", "state": 4, "sensor": "RS45", "value": None},
+]
+
+
+@pytest.mark.parametrize(
+    "query,expected_name",
+    [
+        ("Montagne B", "IB2"),
+        ("montagne b", "IB2"),
+        ("MONTAGNE B", "IB2"),
+        ("IB2", "IB2"),
+        ("ib2", "IB2"),
+    ],
+)
+def test_resolve_block_tolerant_match(query, expected_name):
+    assert resolve_block(query, BLOCKS)["name"] == expected_name
+
+
+def test_resolve_block_ambiguous_fragment_raises():
+    with pytest.raises(JmriError, match="Ambiguous block"):
+        resolve_block("Montagne", BLOCKS)  # matches "Montagne A", "Montagne B", "Montagne A int"
+
+
+def test_resolve_block_unknown_name_raises():
+    with pytest.raises(JmriError, match="Unknown block 'tgv'"):
+        resolve_block("tgv", BLOCKS)
+
+
+def test_resolve_block_empty_blocks_raises():
+    with pytest.raises(JmriError, match="no blocks"):
+        resolve_block("Montagne B", [])
+
+
+def test_resolve_block_empty_query_raises():
+    with pytest.raises(JmriError, match="No block name given"):
+        resolve_block("", BLOCKS)
+    with pytest.raises(JmriError, match="No block name given"):
+        resolve_block("   ", BLOCKS)
 
 
 # --- get_roster ---

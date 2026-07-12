@@ -1,6 +1,6 @@
 """Shared constants for jmri-cli's command modules and the MCP tools layer.
 
-The four *_STATE_NAMES dicts are the single source of truth for JMRI's
+The five *_STATE_NAMES dicts are the single source of truth for JMRI's
 numeric state codes -> readable names, used by both cli/*.py (table/print
 output) and tools/_common.py (MCP tool return values) — previously
 duplicated byte-for-byte between the two.
@@ -10,6 +10,7 @@ POWER_STATE_NAMES: dict[int, str] = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "IDLE"}
 LIGHT_STATE_NAMES: dict[int, str] = {2: "ON", 4: "OFF", 0: "UNKNOWN", 8: "INCONSISTENT"}
 TURNOUT_STATE_NAMES: dict[int, str] = {2: "CLOSED", 4: "THROWN", 0: "UNKNOWN", 8: "INCONSISTENT"}
 SENSOR_STATE_NAMES: dict[int, str] = {2: "ACTIVE", 4: "INACTIVE", 0: "UNKNOWN", 8: "INCONSISTENT"}
+BLOCK_STATE_NAMES: dict[int, str] = {2: "OCCUPIED", 4: "UNOCCUPIED", 0: "UNKNOWN", 8: "INCONSISTENT"}
 
 CLI_THROTTLE_ID_PREFIX = "cli"
 SNIFF_THROTTLE_ID_PREFIX = "sniff"

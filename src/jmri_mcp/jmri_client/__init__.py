@@ -15,6 +15,7 @@ Package layout:
     turnout.py  Turnout discovery, closed/thrown, resolve_turnout.
     sensor.py   Sensor discovery (read-only), resolve_sensor.
     signal.py   Signal mast discovery, aspect set, resolve_signal.
+    block.py    Layout block discovery (read-only), resolve_block.
 
 Every public name below is re-exported here so existing callers can keep
 doing `from jmri_mcp.jmri_client import get_roster` etc. without knowing
@@ -22,6 +23,12 @@ which domain module actually defines it.
 """
 
 from jmri_mcp.jmri_client._http import JmriError
+from jmri_mcp.jmri_client.block import (
+    BLOCK_OCCUPIED,
+    BLOCK_UNOCCUPIED,
+    get_blocks,
+    resolve_block,
+)
 from jmri_mcp.jmri_client.light import (
     LIGHT_OFF,
     LIGHT_ON,
@@ -93,4 +100,8 @@ __all__ = [
     "get_signals",
     "set_signal",
     "resolve_signal",
+    "BLOCK_OCCUPIED",
+    "BLOCK_UNOCCUPIED",
+    "get_blocks",
+    "resolve_block",
 ]

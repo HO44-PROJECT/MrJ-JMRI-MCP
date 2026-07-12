@@ -623,6 +623,48 @@ async def test_get_sensor_unknown_name_returns_error_not_exception(mock_sensors)
     assert "error" in out and "tgv" in out["error"]
 
 
+async def test_list_blocks_registered_and_compact(mock_blocks):
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "list_blocks" in tool_names
+
+    out = await call(mcp, "list_blocks")
+    assert out == {
+        "blocks": [
+            {
+                "name": "Montagne A", "state": "UNOCCUPIED", "sensor": "RS24", "value": None,
+                "length": 934.24, "curvature": 2, "speed": "Fifty", "comment": None,
+            },
+            {
+                "name": "Montagne B", "state": "OCCUPIED", "sensor": "RS42", "value": None,
+                "length": 1661.63, "curvature": 1, "speed": "Sixty", "comment": None,
+            },
+        ]
+    }
+
+
+async def test_list_blocks_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "list_blocks")
+    assert "error" in out
+
+
+async def test_get_block_resolves_by_fragment(mock_blocks):
+    mcp = make_server()
+    out = await call(mcp, "get_block", name="montagne b")
+    assert out == {
+        "name": "Montagne B", "state": "OCCUPIED", "sensor": "RS42", "value": None,
+        "length": 1661.63, "curvature": 1, "speed": "Sixty", "comment": None,
+    }
+
+
+async def test_get_block_unknown_name_returns_error_not_exception(mock_blocks):
+    mcp = make_server()
+    out = await call(mcp, "get_block", name="tgv")
+    assert "error" in out and "tgv" in out["error"]
+
+
 async def test_power_off_all_confirms_every_system(monkeypatch):
     import respx
     from httpx import Response

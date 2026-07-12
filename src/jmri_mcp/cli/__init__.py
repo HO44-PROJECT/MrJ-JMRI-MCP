@@ -52,6 +52,10 @@ Package layout:
                   one-shot HTTP; read-only).
     signal.py     signal [list|status|find|findr|findg|set] (jmri_client.py,
                   one-shot HTTP; signalMast only, not signalHead).
+    block.py      block [list|find|findr|findg|status] (jmri_client.py,
+                  one-shot HTTP; read-only; a named track section with
+                  occupancy + linked sensor/value, richer than a plain
+                  sensor).
     parser.py     build_parser(): wires all of the above into one CLI, incl.
                   the bare-group-default and verb-elevation patterns.
 """
@@ -66,7 +70,7 @@ from jmri_mcp.cli.parser import build_parser
 
 __all__ = ["build_parser", "main"]
 
-_GROUP_NAMES = ["light", "power", "roster", "sensor", "signal", "status", "throttle", "turnout"]
+_GROUP_NAMES = ["block", "light", "power", "roster", "sensor", "signal", "status", "throttle", "turnout"]
 
 
 def _command_list() -> str:

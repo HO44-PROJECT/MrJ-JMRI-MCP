@@ -1,0 +1,42 @@
+[
+    {
+        "type": "block",
+        "data": {
+            "name": "IB1",
+            "userName": "Montagne A",
+            "comment": null,
+            "properties": [],
+            "state": 4,
+            "value": null,
+            "sensor": "RS24",
+            "reporter": null,
+            "speed": "Fifty",
+            "curvature": 2,
+            "direction": 0,
+            "length": 934.24,
+            "permissive": false,
+            "speedLimit": 80.0,
+            "denied": []
+        }
+    },
+    {
+        "type": "block",
+        "data": {
+            "name": "IB2",
+            "userName": "Montagne B",
+            "comment": null,
+            "properties": [],
+            "state": 2,
+            "value": null,
+            "sensor": "RS42",
+            "reporter": null,
+            "speed": "Sixty",
+            "curvature": 1,
+            "direction": 0,
+            "length": 1661.63,
+            "permissive": false,
+            "speedLimit": 90.0,
+            "denied": []
+        }
+    }
+]

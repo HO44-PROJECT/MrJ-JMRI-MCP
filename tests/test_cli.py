@@ -237,6 +237,19 @@ async def test_roster_lists_every_entry(mock_roster, capsys):
     assert "Boite à Sel" in out and "-" in out  # empty road/model shown as "-"
 
 
+async def test_roster_bydcc_sorts_by_address(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "bydcc")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.split() and l.split()[0].isdigit()]
+    assert [l.split()[0] for l in lines] == ["2", "4", "8"]
+
+
+async def test_roster_findr_byname_sorts_filtered_results(mock_roster, capsys):
+    code, out, _ = await run(capsys, "roster", "findr", "byname", ".")
+    assert code == 0
+    assert "141R" in out and "Autorail" in out and "Boite" in out
+
+
 async def test_roster_reports_error_on_unreachable(monkeypatch, capsys):
     monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
     code, _, err = await run(capsys, "roster")
@@ -309,6 +322,22 @@ async def test_light_list_all(mock_lights, capsys):
     assert "Street Lamps" in out and "ON" in out
     header = out.splitlines()[0]
     assert header.index("System ID") < header.index("Light")
+
+
+async def test_light_bystate_sorts_by_state_column(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "bystate")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith("IL")]
+    # OFF < ON alphabetically; IL1/IL3 are OFF, IL2 is ON.
+    assert [l.split()[0] for l in lines] == ["IL1", "IL3", "IL2"]
+    assert "State ▼" in out
+
+
+async def test_light_findg_byid_sorts_filtered_results(mock_lights, capsys):
+    code, out, _ = await run(capsys, "light", "findg", "byid", "*")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith("IL")]
+    assert [l.split()[0] for l in lines] == ["IL1", "IL2", "IL3"]
 
 
 async def test_light_on_unknown_name(mock_lights, capsys):
@@ -388,6 +417,47 @@ async def test_turnout_list_all(mock_turnouts, capsys):
     assert "no" in ot23_line
 
 
+async def test_turnout_list_defaults_to_byname_order(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "list")
+    assert code == 0
+    lines = [l for l in out.splitlines() if "Layout Turnout" in l or "Mountain" in l]
+    # userNames alphabetically: "A / Mountain..." < "Layout Turnout A" < "Layout Turnout BL"
+    assert lines[0].startswith("OT23")
+    assert "Turnout ▼" in out
+
+
+async def test_turnout_bystate_sorts_by_state_column(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "bystate")
+    assert code == 0
+    lines = [l for l in out.splitlines() if "IT100" in l or "IT101" in l or "OT23" in l]
+    # CLOSED < THROWN alphabetically; IT100/IT101 are CLOSED, OT23 is THROWN.
+    assert lines[0].startswith("IT100") or lines[0].startswith("IT101")
+    assert lines[-1].startswith("OT23")
+    assert "State ▼" in out
+
+
+async def test_turnout_byid_sorts_by_system_id(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "byid")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith(("IT", "OT"))]
+    assert [l.split()[0] for l in lines] == ["IT100", "IT101", "OT23"]
+    assert "System ID ▼" in out
+
+
+async def test_turnout_findr_byid_sorts_filtered_results(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "findr", "byid", "^Layout")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith(("IT", "OT"))]
+    assert [l.split()[0] for l in lines] == ["IT100", "IT101"]
+
+
+async def test_turnout_findr_no_sort_word_still_works(mock_turnouts, capsys):
+    code, out, _ = await run(capsys, "turnout", "findr", "^Layout")
+    assert code == 0
+    assert "Layout Turnout A" in out
+    assert "Mountain" not in out
+
+
 async def test_turnout_closed_unknown_name(mock_turnouts, capsys):
     code, _, err = await run(capsys, "turnout", "close", "tgv")
     assert code == 1
@@ -453,6 +523,16 @@ async def test_signal_list_all(mock_signals, capsys):
     assert code == 0
     assert "Entry Signal A" in out and "Hp1" in out
     assert "ZF$dsm:DB-HV-1969:block(45)" in out and "Hp0" in out
+
+
+async def test_signal_byaspect_sorts_by_aspect_column(mock_signals, capsys):
+    code, out, _ = await run(capsys, "signal", "byaspect")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith("ZF")]
+    # Hp0 < Hp1 alphabetically.
+    assert "Hp0" in lines[0]
+    assert "Hp1" in lines[1]
+    assert "Aspect ▼" in out
 
 
 async def test_signal_status_one(mock_signals, capsys):
@@ -558,6 +638,22 @@ async def test_sensor_list_all(mock_sensors, capsys):
     assert "Montagne B" in out and "INACTIVE" in out
 
 
+async def test_sensor_byid_sorts_by_system_id(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "byid")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith(("IS", "RS"))]
+    assert [l.split()[0] for l in lines] == ["ISCLOCKRUNNING", "RS22", "RS23"]
+    assert "System ID ▼" in out
+
+
+async def test_sensor_findr_bystate_sorts_filtered_results(mock_sensors, capsys):
+    code, out, _ = await run(capsys, "sensor", "findr", "bystate", "^Montagne")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith("RS")]
+    # ACTIVE < INACTIVE alphabetically; RS23 is ACTIVE, RS22 is INACTIVE.
+    assert [l.split()[0] for l in lines] == ["RS23", "RS22"]
+
+
 async def test_sensor_status_one(mock_sensors, capsys):
     code, out, _ = await run(capsys, "sensor", "status", "Montagne B")
     assert code == 0
@@ -618,6 +714,97 @@ async def test_sensor_findg_no_match(mock_sensors, capsys):
     code, out, _ = await run(capsys, "sensor", "findg", "zzz*")
     assert code == 0
     assert "No sensors match" in out
+
+
+async def test_block_list_all(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "list")
+    assert code == 0
+    assert "Montagne A" in out and "UNOCCUPIED" in out
+    assert "Montagne B" in out and "OCCUPIED" in out
+
+
+async def test_block_bysensor_sorts_by_sensor_column(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "bysensor")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith("IB")]
+    # RS22 < RS42 alphabetically; IB1 uses RS22, IB2 uses RS42.
+    assert [l.split()[0] for l in lines] == ["IB1", "IB2"]
+    assert "Sensor ▼" in out
+
+
+async def test_block_findg_byid_sorts_filtered_results(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "findg", "byid", "Montagne*")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith("IB")]
+    assert [l.split()[0] for l in lines] == ["IB1", "IB2"]
+
+
+async def test_block_status_one(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "status", "Montagne B")
+    assert code == 0
+    assert out.strip() == (
+        "name=Montagne B system_id=IB2 state=OCCUPIED sensor=RS42 value=None "
+        "length=1661.63 curvature=1 speed=Sixty comment=-"
+    )
+
+
+async def test_block_status_unknown(mock_blocks, capsys):
+    code, _, err = await run(capsys, "block", "status", "tgv")
+    assert code == 1
+    assert "Unknown block 'tgv'" in err
+
+
+async def test_block_find_by_username(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "find", "Montagne B")
+    assert code == 0
+    assert out.strip() == (
+        "name=Montagne B system_id=IB2 state=OCCUPIED sensor=RS42 value=None "
+        "length=1661.63 curvature=1 speed=Sixty comment=-"
+    )
+
+
+async def test_block_find_by_system_id(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "find", "IB1")
+    assert code == 0
+    assert "name=Montagne A" in out
+
+
+async def test_block_find_unknown_name(mock_blocks, capsys):
+    code, _, err = await run(capsys, "block", "find", "tgv")
+    assert code == 1
+    assert "Unknown block 'tgv'" in err
+
+
+async def test_block_findr_matches_regex(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "findr", "^Montagne B")
+    assert code == 0
+    assert "Montagne B" in out
+    assert "Montagne A" not in out
+
+
+async def test_block_findr_no_match(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "findr", "zzz")
+    assert code == 0
+    assert "No blocks match" in out
+
+
+async def test_block_findr_invalid_regex(mock_blocks, capsys):
+    code, _, err = await run(capsys, "block", "findr", "[")
+    assert code == 1
+    assert "Invalid regex" in err
+
+
+async def test_block_findg_matches_glob(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "findg", "Montagne B")
+    assert code == 0
+    assert "Montagne B" in out
+    assert "Montagne A" not in out
+
+
+async def test_block_findg_no_match(mock_blocks, capsys):
+    code, out, _ = await run(capsys, "block", "findg", "zzz*")
+    assert code == 0
+    assert "No blocks match" in out
 
 
 async def test_throttle_stop_one_address(fake_jmri, capsys):

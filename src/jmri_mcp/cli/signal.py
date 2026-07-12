@@ -12,22 +12,33 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
+from jmri_mcp.cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_mcp.constants.cli import SORT_INDICATOR
 from jmri_mcp.jmri_client import JmriError, get_signals, resolve_signal
 from jmri_mcp.jmri_client import set_signal as _set_signal
 
 
 def _headers() -> list[str]:
-    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG. Signal listings are always sorted by name, so the sort indicator is unconditional."""
-    return [i18n.t("headers.signal") + SORT_INDICATOR, i18n.t("headers.system_id"), i18n.t("headers.aspect")]
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
+    return [i18n.t("headers.system_id"), i18n.t("headers.signal"), i18n.t("headers.aspect")]
+
+
+# `signal by*` subcommand name -> (index into _row()'s tuple, casefold?).
+# Shared with parser.py so every `by*` sibling leaf it builds is guaranteed
+# to match a key this module actually knows how to sort on.
+SORT_FIELDS: dict[str, tuple[int, bool]] = {
+    "byid": (0, True),
+    "byname": (1, True),
+    "byaspect": (2, True),
+}
 
 
 def _row(signal: dict) -> list:
-    """Flatten one JMRI signal mast object into a `[label, system_id, aspect]` table row."""
+    """Flatten one JMRI signal mast object into a `[system_id, label, aspect]` table row."""
     aspect = signal.get("aspect") or "UNKNOWN"
     label = signal.get("userName") or signal.get("name", "?")
     system_id = signal.get("name", "?")
-    return [label, system_id, aspect]
+    return [system_id, label, aspect]
 
 
 def _label(signal: dict) -> str:
@@ -36,10 +47,13 @@ def _label(signal: dict) -> str:
 
 
 async def signal_list(args: argparse.Namespace) -> int:
-    """Print the state of every signal mast, sorted alphabetically.
+    """Print the state of every signal mast.
 
     Args:
-        args: Parsed CLI arguments; no fields used.
+        args: Parsed CLI arguments; `args.sort_by` (one of SORT_FIELDS, e.g.
+            "byid"/"byaspect") picks the sort order - set by parser.py to a
+            fixed value per `by*` sibling leaf (defaults to "byname" for
+            bare `signal`/`signal list`).
 
     Returns:
         0 on success (including no signal masts), 1 if JMRI is unreachable.
@@ -53,8 +67,10 @@ async def signal_list(args: argparse.Namespace) -> int:
     if not signals:
         print(i18n.t("cli.no_entities_found", kind="signal mast"))
         return 0
-    rows = [_row(s) for s in sorted(signals, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=_headers()))
+    sort_by = getattr(args, "sort_by", None) or "byname"
+    rows = sort_rows([_row(s) for s in signals], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 
@@ -76,7 +92,7 @@ async def signal_status(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    label, system_id, aspect = _row(match)
+    system_id, label, aspect = _row(match)
     print(f"name={label} system_id={system_id} aspect={aspect}")
     return 0
 
@@ -107,19 +123,22 @@ async def _signal_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
     masts — no ambiguity error, just a filtered `signal list`-style table
     (or "no signal masts match" if the pattern matches nothing).
     """
+    sort_by, pattern = split_find_tokens(args.pattern_tokens, SORT_FIELDS)
     try:
         signals = await get_signals()
         matcher = find_regex if regex else find_glob
-        matches = matcher(args.pattern, signals, _label)
+        matches = matcher(pattern, signals, _label)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
-        print(i18n.t("cli.no_entities_match", kind="signal mast", pattern=args.pattern))
+        print(i18n.t("cli.no_entities_match", kind="signal mast", pattern=pattern))
         return 0
-    rows = [_row(s) for s in sorted(matches, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=_headers()))
+    sort_by = sort_by or "byname"
+    rows = sort_rows([_row(s) for s in matches], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 
@@ -172,7 +191,7 @@ async def signal_set(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    label, system_id, aspect = _row(result)
+    system_id, label, aspect = _row(result)
     print(f"name={label} system_id={system_id} aspect={aspect}")
     if not result["confirmed"]:
         print(i18n.t("cli.signal_aspect_not_confirmed", aspect=args.aspect), file=sys.stderr)

@@ -4,7 +4,7 @@
 convenience tool for exercising the same JMRI logic the MCP tools use, without
 needing an MCP client (Claude, Kira, ...) in the loop. Useful for quick manual
 checks against a real layout, or for debugging. `power`/`roster`/`status`/
-`light`/`turnout`/`sensor`/`signal` use `jmri_client/` (one-shot HTTP);
+`light`/`turnout`/`sensor`/`block`/`signal` use `jmri_client/` (one-shot HTTP);
 `throttle` uses `jmri_ws/` (a fresh WebSocket connection for the one command,
 then closed).
 
@@ -32,7 +32,7 @@ Two rules apply consistently across every command group below:
 - **A group whose members share an obvious "just show me the state" default
   doesn't force typing a leaf name.** Bare `jmri-cli power` behaves exactly
   like `power status`; bare `roster` like `roster list`; bare `throttle`
-  like `throttle list`; bare `light`/`turnout`/`sensor`/`signal` like their
+  like `throttle list`; bare `light`/`turnout`/`sensor`/`block`/`signal` like their
   own `list`.
 - **A state value that would otherwise be a positional argument (on/off,
   forward/reverse, close/throw) is elevated to be the subcommand name
@@ -236,16 +236,45 @@ into UNKNOWN instead of no-opping, which is awkward to recover from.
 List every locomotive in JMRI's roster: DCC address, name, road, model, as a
 sorted table. No side effects. Empty road/model print as `-` (the user
 never filled them in in JMRI — not an error). Bare `jmri-cli roster` is
-identical to `jmri-cli roster list`.
+identical to `jmri-cli roster list`, sorted by name by default.
 
 ```bash
 $ jmri-cli roster
-  Address  Name         Road                            Model
+  Address  Name ▼       Road                            Model
 ---------  -----------  ------------------------------  -------
         2  141R         Mikado 141 R                    8273
         3  Corentine    Locotender 030T                 63338
         4  Autorail     Railcar                         4185A
         8  Boite à Sel  -                                -
+```
+
+### Sorting: `jmri-cli roster by<column>`
+
+Every column is sortable via a `by<column>` sibling subcommand, in place of
+a `--sort` flag — this project's CLI favors natural-language-shaped verbs
+(`turnout close`/`throw`, `light on`/`off`) over computer-science-flavored
+options. The sorted column is marked with a `▼` in the header.
+
+| Subcommand        | Sorts by         |
+| ------------------ | ---------------- |
+| `roster byname`     | Name (default)    |
+| `roster bydcc`       | DCC address       |
+| `roster byroad`      | Road name         |
+| `roster byroadnumber`| Road number       |
+| `roster bymanufacturer` | Manufacturer   |
+| `roster bymodel`     | Model             |
+| `roster byowner`     | Owner             |
+| `roster bydate`      | Last-modified date|
+| `roster bygroup`     | Roster group      |
+
+```bash
+$ jmri-cli roster bydcc
+  Address ▼  Name         Road                            Model
+-----------  -----------  ------------------------------  -------
+          2  141R         Mikado 141 R                    8273
+          3  Corentine    Locotender 030T                 63338
+          4  Autorail     Railcar                         4185A
+          8  Boite à Sel  -                                -
 ```
 
 ## `jmri-cli roster find <name-or-address>`
@@ -271,13 +300,15 @@ Error: Unknown locomotive 'tgv'. Available: ['141R', 'Autorail', ...]
 A name matching more than one entry (e.g. `"a"`) is reported as an
 `Ambiguous locomotive` error listing every match, rather than guessing one.
 
-## `jmri-cli roster findr <regex>` / `roster findg <glob>`
+## `jmri-cli roster findr [by<column>] <regex>` / `roster findg [by<column>] <glob>`
 
 Unlike `roster find` (exactly one result, or an error), `findr`/`findg` list
 **every** roster entry whose name matches a pattern — a filtered `roster
-list`, sorted the same way and marked with the same `▼` chevron on the Name
-column. Zero matches is not an error, just an empty-looking result printed
-as `No roster entries match '<pattern>'`.
+list`, sorted by name by default (marked with the same `▼` chevron) unless a
+`by<column>` word (same choices as `roster by<column>` above) is given right
+before the pattern, e.g. `roster findr bydcc '^auto'`. Zero matches is not
+an error, just an empty-looking result printed as `No roster entries match
+'<pattern>'`.
 
 - `findr <regex>`: a case-insensitive Python regular expression, matched
   with `re.search` (so it doesn't need to match the whole name — `auto`
@@ -631,11 +662,11 @@ is identical to `jmri-cli light list`.
 
 ```bash
 $ jmri-cli light
-System ID ▼    Light           State
+System ID    Light ▼         State
 -----------  --------------  -------
 IL1          Depot Lighting  OFF
-IL2          Street Lamps    ON
 IL3          IL3             OFF
+IL2          Street Lamps    ON
 ```
 
 A light with no `userName` set in JMRI prints its raw system name (`IL3`
@@ -643,6 +674,21 @@ above) as the label too — not an error, just unlabeled. `System ID` is
 JMRI's own internal name, useful when several lights share a similar
 `userName` — shown first since it's the stable identifier, with the
 (possibly absent/duplicate) friendly name next to it.
+
+### Sorting: `jmri-cli light by<column>`
+
+Every column is sortable via a `by<column>` sibling subcommand (same
+convention as `roster by<column>` above): `light byid` (System ID),
+`light byname` (Light, default), `light bystate` (State).
+
+```bash
+$ jmri-cli light byid
+System ID ▼    Light           State
+-----------  --------------  -------
+IL1          Depot Lighting  OFF
+IL2          Street Lamps    ON
+IL3          IL3             OFF
+```
 
 ## `jmri-cli light find <name>`
 
@@ -655,20 +701,22 @@ $ jmri-cli light find "depot"
 system_id=IL1 name=Depot Lighting state=OFF
 ```
 
-## `jmri-cli light findr <regex>` / `light findg <glob>`
+## `jmri-cli light findr [by<column>] <regex>` / `light findg [by<column>] <glob>`
 
 List every light whose name matches a pattern — a filtered `light
-list`-style table. Zero matches is not an error, just
-`No lights match '<pattern>'`. Same regex (`re.search`, case-insensitive)
-vs. glob (`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
+list`-style table, sorted by name by default unless a `by<column>` word
+(same choices as `light by<column>` above) is given right before the
+pattern. Zero matches is not an error, just `No lights match '<pattern>'`.
+Same regex (`re.search`, case-insensitive) vs. glob (`fnmatch`,
+case-insensitive) split as `roster findr`/`findg`.
 
 ```bash
 $ jmri-cli light findr '^Depot'
-System ID ▼    Light           State
+System ID    Light ▼         State
 -----------  --------------  -------
 IL1          Depot Lighting  OFF
 
-$ jmri-cli light findg 'Street*'
+$ jmri-cli light findg byid 'Street*'
 System ID ▼    Light         State
 -----------  ------------  -------
 IL2          Street Lamps  ON
@@ -700,6 +748,22 @@ turnout` is identical to `jmri-cli turnout list`.
 
 ```bash
 $ jmri-cli turnout
+System ID    Turnout ▼                       State    Feedback  Comment
+-----------  ------------------------------  -------  ----------  -------------------
+OT23         A / Mountain A -> Platform A/B  THROWN   no
+IT100        Layout Turnout A                CLOSED   yes         Yard throat switch
+IT101        Layout Turnout BL               CLOSED   yes
+```
+
+### Sorting: `jmri-cli turnout by<column>`
+
+Every column is sortable via a `by<column>` sibling subcommand (same
+convention as `roster by<column>` above): `turnout byid` (System ID),
+`turnout byname` (Turnout, default), `turnout bystate` (State),
+`turnout byfeedback` (Feedback), `turnout bycomment` (Comment).
+
+```bash
+$ jmri-cli turnout byid
 System ID ▼    Turnout                         State    Feedback  Comment
 -----------  ------------------------------  -------  ----------  -------------------
 IT100        Layout Turnout A                CLOSED   yes         Yard throat switch
@@ -737,19 +801,21 @@ $ jmri-cli turnout find IT100
 system_id=IT100 name=Layout Turnout A state=CLOSED feedback_sensor=yes comment=Yard throat switch
 ```
 
-## `jmri-cli turnout findr <regex>` / `turnout findg <glob>`
+## `jmri-cli turnout findr [by<column>] <regex>` / `turnout findg [by<column>] <glob>`
 
 Unlike `turnout find` (exactly one result, or an error), `findr`/`findg`
 list **every** turnout whose name matches a pattern — a filtered `turnout
-list`, same columns and chevron. Zero matches is not an error, just
-`No turnouts match '<pattern>'`. Same regex (`re.search`, case-insensitive)
-vs. glob (`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
+list`, same columns, sorted by name by default unless a `by<column>` word
+(same choices as `turnout by<column>` above) is given right before the
+pattern. Zero matches is not an error, just `No turnouts match
+'<pattern>'`. Same regex (`re.search`, case-insensitive) vs. glob
+(`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
 
 ```bash
 $ jmri-cli turnout findr '^Mountain'
 No turnouts match '^Mountain'
 
-$ jmri-cli turnout findr 'Mountain'
+$ jmri-cli turnout findr byid 'Mountain'
 System ID ▼    Turnout                         State    Feedback  Comment
 -----------  ------------------------------  -------  ----------  ---------
 OT23         A / Mountain A -> Platform A/B  THROWN   no
@@ -758,7 +824,7 @@ OT27         C / Mountain C -> Platform B/C  THROWN   yes
 OT29         D / Viaduc -> Mountain A/B      THROWN   no
 
 $ jmri-cli turnout findg 'Layout*'
-System ID ▼    Turnout            State    Feedback  Comment
+System ID    Turnout ▼          State    Feedback  Comment
 -----------  -----------------  -------  ----------  -------------------
 IT100        Layout Turnout A   THROWN   yes         Yard throat switch
 IT101        Layout Turnout BL  THROWN   yes
@@ -800,16 +866,22 @@ own hardware inputs, not a command this project should issue. Bare
 
 ```bash
 $ jmri-cli sensor
-Sensor ▼          System ID       State
-----------------  --------------  --------
-ISCLOCKRUNNING    ISCLOCKRUNNING  ACTIVE
-Montagne A int    RS24            INACTIVE
-Montagne B        RS22            INACTIVE
+System ID       Sensor ▼        State
+--------------  --------------  --------
+ISCLOCKRUNNING  ISCLOCKRUNNING  ACTIVE
+RS24            Montagne A int  INACTIVE
+RS22            Montagne B      INACTIVE
 ```
 
 `System ID` is JMRI's own internal name — the same value shown when a
 sensor has no `userName` set (e.g. `ISCLOCKRUNNING` above, which has no
 friendly label at all).
+
+### Sorting: `jmri-cli sensor by<column>`
+
+Every column is sortable via a `by<column>` sibling subcommand (same
+convention as `roster by<column>` above): `sensor byid` (System ID),
+`sensor byname` (Sensor, default), `sensor bystate` (State).
 
 ## `jmri-cli sensor status <name>` / `sensor find <name>`
 
@@ -824,25 +896,87 @@ $ jmri-cli sensor find "montagne b"
 name=Montagne B system_id=RS22 state=INACTIVE
 ```
 
-## `jmri-cli sensor findr <regex>` / `sensor findg <glob>`
+## `jmri-cli sensor findr [by<column>] <regex>` / `sensor findg [by<column>] <glob>`
 
 List every sensor whose name matches a pattern — a filtered `sensor
-list`-style table. Zero matches is not an error, just
-`No sensors match '<pattern>'`. Same regex (`re.search`, case-insensitive)
-vs. glob (`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
+list`-style table, sorted by name by default unless a `by<column>` word
+(same choices as `sensor by<column>` above) is given right before the
+pattern. Zero matches is not an error, just `No sensors match '<pattern>'`.
+Same regex (`re.search`, case-insensitive) vs. glob (`fnmatch`,
+case-insensitive) split as `roster findr`/`findg`.
 
 ```bash
 $ jmri-cli sensor findr '^Montagne'
-Sensor ▼        System ID    State
---------------  -----------  --------
-Montagne A int  RS24         INACTIVE
-Montagne B      RS22         INACTIVE
+System ID    Sensor ▼        State
+-----------  --------------  --------
+RS24         Montagne A int  INACTIVE
+RS22         Montagne B      INACTIVE
 
-$ jmri-cli sensor findg 'Quai*'
-Sensor ▼    System ID    State
-----------  -----------  --------
-Quai A int  RS26         ACTIVE
-Quai B      RS49         INACTIVE
+$ jmri-cli sensor findg byid 'Quai*'
+System ID    Sensor      State
+-----------  ----------  --------
+RS26         Quai A int  ACTIVE
+RS49         Quai B      INACTIVE
+```
+
+## `jmri-cli block` / `block list`
+
+Show the state of every JMRI Layout Block — richer than `sensor`'s block-
+occupancy reporting (#16): each block also names the occupancy sensor
+driving it, and carries a `value` field JMRI populates from RFID/reporter
+hardware when present (usually `None` — the user's layout has no such
+hardware). Read-only: there is no `block set`, for the same reason as
+`sensor` — occupancy is detected from real-world hardware, not a command
+this project should issue. Bare `jmri-cli block` is identical to `jmri-cli
+block list`.
+
+```bash
+$ jmri-cli block
+System ID    Block ▼     State       Sensor    Length    Curvature  Speed    Comment
+-----------  ----------  ----------  --------  --------  -----------  -------  ---------
+IB1          Montagne A  UNOCCUPIED  RS24        934.24            2  Fifty
+IB2          Montagne B  OCCUPIED    RS42       1661.63            1  Sixty
+```
+
+`System ID` is JMRI's own internal name (`IB1`, `IB2`, ...) — the same
+value shown when a block has no `userName` set.
+
+### Sorting: `jmri-cli block by<column>`
+
+Every column is sortable via a `by<column>` sibling subcommand (same
+convention as `roster by<column>` above): `block byid` (System ID),
+`block byname` (Block, default), `block bystate` (State), `block bysensor`
+(Sensor), `block bylength` (Length), `block bycurvature` (Curvature),
+`block byspeed` (Speed), `block bycomment` (Comment).
+
+## `jmri-cli block status <name>` / `block find <name>`
+
+Show one block's full state, including its `value` field. `<name>` matches
+either JMRI's system name (`"IB1"`) or its user-friendly `userName`
+(`"Montagne A"`), case-insensitive, tolerant of an unambiguous fragment. No
+side effects. `find` is an alias for `status`, kept for naming consistency
+with every other domain's "resolve one, no side effects" command.
+
+```bash
+$ jmri-cli block find "montagne a"
+name=Montagne A system_id=IB1 state=UNOCCUPIED sensor=RS24 value=None
+```
+
+## `jmri-cli block findr [by<column>] <regex>` / `block findg [by<column>] <glob>`
+
+List every block whose name matches a pattern — a filtered `block
+list`-style table, sorted by name by default unless a `by<column>` word
+(same choices as `block by<column>` above) is given right before the
+pattern. Zero matches is not an error, just `No blocks match '<pattern>'`.
+Same regex (`re.search`, case-insensitive) vs. glob (`fnmatch`,
+case-insensitive) split as `roster findr`/`findg`.
+
+```bash
+$ jmri-cli block findr byid '^Montagne'
+System ID ▼  Block       State       Sensor    Length    Curvature  Speed    Comment
+-----------  ----------  ----------  --------  --------  -----------  -------  ---------
+IB1          Montagne A  UNOCCUPIED  RS24        934.24            2  Fifty
+IB2          Montagne B  OCCUPIED    RS42       1661.63            1  Sixty
 ```
 
 ## `jmri-cli signal` / `signal list`
@@ -855,14 +989,20 @@ for why. No side effects. Bare `jmri-cli signal` is identical to
 
 ```bash
 $ jmri-cli signal
-Signal ▼    System ID                    Aspect
-----------  ---------------------------  --------
-bloc31      ZF$dsm:DB-HV-1969:block(31)  Unknown
+System ID                    Signal ▼    Aspect
+---------------------------  ----------  --------
+ZF$dsm:DB-HV-1969:block(31)  bloc31      Unknown
 ```
 
 Aspect names (`Hp0`, `Hp1`, `Hp2`, `Unknown`, ...) are whatever vocabulary
 the mast's configured signal system uses (e.g. German `DB-HV-1969`) —
 passed through verbatim, never hardcoded or translated by this project.
+
+### Sorting: `jmri-cli signal by<column>`
+
+Every column is sortable via a `by<column>` sibling subcommand (same
+convention as `roster by<column>` above): `signal byid` (System ID),
+`signal byname` (Signal, default), `signal byaspect` (Aspect).
 
 ## `jmri-cli signal status <name>` / `signal find <name>`
 
@@ -882,24 +1022,25 @@ $ jmri-cli signal find "ZF\$dsm:DB-HV-1969:block(31)"
 name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1
 ```
 
-## `jmri-cli signal findr <regex>` / `signal findg <glob>`
+## `jmri-cli signal findr [by<column>] <regex>` / `signal findg [by<column>] <glob>`
 
 List every signal mast whose name matches a pattern — a filtered `signal
-list`-style table. Zero matches is not an error, just
-`No signal masts match '<pattern>'`. Same regex (`re.search`,
-case-insensitive) vs. glob (`fnmatch`, case-insensitive) split as
-`roster findr`/`findg`.
+list`-style table, sorted by name by default unless a `by<column>` word
+(same choices as `signal by<column>` above) is given right before the
+pattern. Zero matches is not an error, just `No signal masts match
+'<pattern>'`. Same regex (`re.search`, case-insensitive) vs. glob
+(`fnmatch`, case-insensitive) split as `roster findr`/`findg`.
 
 ```bash
 $ jmri-cli signal findr '^bloc'
-Signal ▼    System ID                    Aspect
-----------  ---------------------------  --------
-bloc31      ZF$dsm:DB-HV-1969:block(31)  Unknown
+System ID                    Signal ▼    Aspect
+---------------------------  ----------  --------
+ZF$dsm:DB-HV-1969:block(31)  bloc31      Unknown
 
-$ jmri-cli signal findg 'bloc*'
-Signal ▼    System ID                    Aspect
-----------  ---------------------------  --------
-bloc31      ZF$dsm:DB-HV-1969:block(31)  Unknown
+$ jmri-cli signal findg byid 'bloc*'
+System ID ▼                  Signal    Aspect
+---------------------------  --------  --------
+ZF$dsm:DB-HV-1969:block(31)  bloc31    Unknown
 ```
 
 ## `jmri-cli signal set <name> <aspect>`

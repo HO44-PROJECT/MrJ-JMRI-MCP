@@ -14,24 +14,34 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
+from jmri_mcp.cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_mcp.constants.cli import SORT_INDICATOR, TURNOUT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_turnouts, resolve_turnout
 from jmri_mcp.jmri_client import set_turnout as _set_turnout
 from jmri_mcp.jmri_client.turnout import TURNOUT_CLOSED, TURNOUT_THROWN
 
 
-def _headers(*, sorted_by_system_id: bool = False) -> list[str]:
+def _headers() -> list[str]:
     """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
-    system_id = i18n.t("headers.system_id")
-    if sorted_by_system_id:
-        system_id += SORT_INDICATOR
     return [
-        system_id,
+        i18n.t("headers.system_id"),
         i18n.t("headers.turnout"),
         i18n.t("headers.state"),
         i18n.t("headers.feedback"),
         i18n.t("headers.comment"),
     ]
+
+
+# `turnout by*` subcommand name -> (index into _row()'s tuple, casefold?).
+# Shared with parser.py so every `by*` sibling leaf it builds is guaranteed
+# to match a key this module actually knows how to sort on.
+SORT_FIELDS: dict[str, tuple[int, bool]] = {
+    "byid": (0, True),
+    "byname": (1, True),
+    "bystate": (2, True),
+    "byfeedback": (3, True),
+    "bycomment": (4, True),
+}
 
 
 def _row(turnout: dict) -> list:
@@ -83,19 +93,22 @@ async def _turnout_find_pattern(args: argparse.Namespace, *, regex: bool) -> int
     turnouts — no ambiguity error, just a filtered `turnout list`-style table
     (or "no turnouts match" if the pattern matches nothing).
     """
+    sort_by, pattern = split_find_tokens(args.pattern_tokens, SORT_FIELDS)
     try:
         turnouts = await get_turnouts()
         matcher = find_regex if regex else find_glob
-        matches = matcher(args.pattern, turnouts, _label)
+        matches = matcher(pattern, turnouts, _label)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
-        print(i18n.t("cli.no_entities_match", kind="turnout", pattern=args.pattern))
+        print(i18n.t("cli.no_entities_match", kind="turnout", pattern=pattern))
         return 0
-    rows = [_row(t) for t in sorted(matches, key=lambda t: t.get("name", "?"))]
-    print(tabulate(rows, headers=_headers()))
+    sort_by = sort_by or "byname"
+    rows = sort_rows([_row(t) for t in matches], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 
@@ -127,10 +140,13 @@ async def turnout_findg(args: argparse.Namespace) -> int:
 
 
 async def turnout_list(args: argparse.Namespace) -> int:
-    """Print the state of every turnout, sorted alphabetically.
+    """Print the state of every turnout.
 
     Args:
-        args: Parsed CLI arguments; no fields used.
+        args: Parsed CLI arguments; `args.sort_by` (one of SORT_FIELDS, e.g.
+            "byid"/"bystate") picks the sort order - set by parser.py to a
+            fixed value per `by*` sibling leaf (defaults to "byname" for
+            bare `turnout`/`turnout list`).
 
     Returns:
         0 on success (including no turnouts), 1 if JMRI is unreachable.
@@ -144,8 +160,10 @@ async def turnout_list(args: argparse.Namespace) -> int:
     if not turnouts:
         print(i18n.t("cli.no_entities_found", kind="turnout"))
         return 0
-    rows = [_row(t) for t in sorted(turnouts, key=lambda t: t.get("name", "?"))]
-    print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
+    sort_by = getattr(args, "sort_by", None) or "byname"
+    rows = sort_rows([_row(t) for t in turnouts], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 

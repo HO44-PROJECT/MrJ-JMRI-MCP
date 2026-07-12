@@ -54,6 +54,41 @@ package version stays `0.1.0` during active milestone development).
   - Full test suite rewritten/extended alongside the redesign (244 passed);
     `docs/cli.md` and `docs/architecture.md` updated to match.
 
+- Layout blocks (#35): `list_blocks` / `get_block` + `jmri-cli block
+  [list|find|findr|findg|status]`, native JMRI Layout Block objects
+  (`/json/block(s)`) — distinct from sensor-based block occupancy (#16),
+  which reports whether a track section is physically occupied by a train.
+  A block's own state instead exposes JMRI's Layout Editor concept (block
+  membership, direction, `value` field used for RFID/reporter tag data on
+  some layouts, occupancy sensor linkage). Mirrors the `sensor` domain's
+  three-layer shape (`jmri_client/block.py`, `tools/block.py`,
+  `cli/block.py`); read-only, no `set_block` — a block's state isn't
+  something JMRI expects a client to write directly. `resolve_block` reuses
+  the same tolerant name-matching (`userName`, then unambiguous fragment)
+  as `resolve_turnout`/`resolve_light`/`resolve_signal`.
+
+- CLI: sortable `by*` sibling subcommands (#42) — every `list`/`findr`/
+  `findg` command across all six domains (roster, block, sensor, signal,
+  turnout, light) now has a `by<column>` sibling for every column in its
+  table (e.g. `turnout bystate`, `sensor byid`, `roster bydate`), sorting
+  the output by that column instead of JMRI's arbitrary native order.
+  Sorting is exposed as sibling subcommands rather than a `--sort` flag, to
+  match this project's existing verb-elevation CLI style (see the
+  command-shape redesign above). `findr`/`findg` accept an optional leading
+  sort token before the search pattern, so a sort and a pattern match can
+  be combined in one invocation. The sorted column's header is marked with
+  a small `▼` indicator in the printed table. New shared
+  `src/jmri_mcp/cli/_sort.py` (`sort_rows()`, `mark_sorted_header()`,
+  `split_find_tokens()`); each domain module declares its own
+  `SORT_FIELDS: dict[str, tuple[int, bool]]` mapping a `by*` leaf name to
+  `(row index, casefold?)`, which `cli/parser.py` reads to build the
+  matching `by*` sibling leaves — so the parser and the sort implementation
+  can't drift out of sync. Roster's sort mechanism (which pre-dated this
+  feature with a differently-shaped implementation) was converted to use
+  this same shared mechanism. CLI only — no MCP tool surface change, since
+  voice/LLM output has no use for column sorting the way an interactive
+  terminal table does.
+
 - **Fixed**: `jmri-cli --help` rendered as an unreadable wall of text —
   argparse's default formatter rewraps a multi-line `description` into one
   prose paragraph, so the ~30 one-per-line usage examples in the CLI

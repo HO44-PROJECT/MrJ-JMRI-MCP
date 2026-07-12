@@ -10,6 +10,7 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
+from jmri_mcp.cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_mcp.constants.cli import SORT_INDICATOR
 from jmri_mcp.jmri_client import (
     JmriError,
@@ -18,31 +19,7 @@ from jmri_mcp.jmri_client import (
     resolve_roster_entry,
 )
 
-# "roster list" sort_by choice (e.g. "bydcc") -> (roster field, casefold?).
-# One entry per field get_roster() returns (except "groups", handled below -
-# it's a list, not a sortable scalar). All are the same listing with a
-# different ORDER BY, not a different view, so they share this one
-# table-rendering path.
-_SORT_FIELDS: dict[str, tuple[str, bool]] = {
-    "byname": ("name", True),
-    "bydcc": ("address", False),
-    "byroad": ("road", True),
-    "byroadnumber": ("road_number", True),
-    "bymanufacturer": ("manufacturer", True),
-    "bymodel": ("model", True),
-    "byowner": ("owner", True),
-    "bydate": ("date_modified", False),
-}
 
-
-# All valid `roster list <sort_by>` choices, in the order shown in -h.
-# Shared with parser.py so the argparse `choices=` list can't drift from
-# what _sort_roster() actually knows how to handle.
-SORT_CHOICES: list[str] = [*_SORT_FIELDS, "bygroup"]
-
-# sort_by choice -> index into the headers list below, so roster_list can
-# mark the active sort column with a chevron instead of the user having to
-# infer it from the row order.
 def _headers() -> list[str]:
     """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
     return [
@@ -56,20 +33,22 @@ def _headers() -> list[str]:
         i18n.t("headers.modified"),
         i18n.t("headers.groups"),
     ]
-_SORT_COLUMN_INDEX: dict[str, int] = {
-    "byname": 1, "bydcc": 0, "byroad": 2, "byroadnumber": 3, "bymanufacturer": 4,
-    "bymodel": 5, "byowner": 6, "bydate": 7, "bygroup": 8,
+
+
+# `roster by*` subcommand name -> (index into _row()'s tuple, casefold?).
+# Shared with parser.py so every `by*` sibling leaf it builds is guaranteed
+# to match a key this module actually knows how to sort on.
+SORT_FIELDS: dict[str, tuple[int, bool]] = {
+    "byname": (1, True),
+    "bydcc": (0, False),
+    "byroad": (2, True),
+    "byroadnumber": (3, True),
+    "bymanufacturer": (4, True),
+    "bymodel": (5, True),
+    "byowner": (6, True),
+    "bydate": (7, True),
+    "bygroup": (8, True),
 }
-
-
-def _sort_roster(roster: list[dict], sort_by: str) -> list[dict]:
-    """Sort roster entries by `sort_by` (a key from SORT_CHOICES, e.g. "bydcc")."""
-    if sort_by == "bygroup":
-        return sorted(roster, key=lambda e: ", ".join(e["groups"]).casefold())
-    field, fold = _SORT_FIELDS[sort_by]
-    if fold:
-        return sorted(roster, key=lambda e: str(e[field]).casefold())
-    return sorted(roster, key=lambda e: e[field])
 
 
 def _row(e: dict) -> list:
@@ -96,11 +75,11 @@ async def roster_list(args: argparse.Namespace) -> int:
     """Print every locomotive in JMRI's roster: all known roster fields.
 
     Args:
-        args: Parsed CLI arguments; `args.sort_by` (one of SORT_CHOICES,
-            e.g. "bydcc"/"bygroup") picks the sort order if present - only
-            `roster list` itself has this argument (see parser.py); bare
-            `roster` (this function reused as the group's default) has no
-            `sort_by` attribute at all, so it falls back to name order.
+        args: Parsed CLI arguments; `args.sort_by` (one of SORT_FIELDS,
+            e.g. "bydcc"/"bygroup") picks the sort order - set by parser.py
+            to a fixed value per `by*` sibling leaf (defaults to "byname"
+            for bare `roster`/`roster list`, see build_parser()'s
+            `_sort_family()` call for this group).
 
     Returns:
         0 on success (including an empty roster), 1 if JMRI is unreachable.
@@ -115,10 +94,8 @@ async def roster_list(args: argparse.Namespace) -> int:
         print(i18n.t("cli.roster_empty"))
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
-    rows = [_row(e) for e in _sort_roster(roster, sort_by)]
-    headers = _headers()
-    column = _SORT_COLUMN_INDEX[sort_by]
-    headers[column] += SORT_INDICATOR
+    rows = sort_rows([_row(e) for e in roster], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
 
@@ -130,20 +107,21 @@ async def _roster_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
     locomotives — no ambiguity error, just a filtered `roster list`-style
     table (or "no roster entries match" if the pattern matches nothing).
     """
+    sort_by, pattern = split_find_tokens(args.pattern_tokens, SORT_FIELDS)
     try:
         roster = await get_roster()
         matcher = find_regex if regex else find_glob
-        matches = matcher(args.pattern, roster, _label)
+        matches = matcher(pattern, roster, _label)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
-        print(i18n.t("cli.no_roster_entries_match", pattern=args.pattern))
+        print(i18n.t("cli.no_roster_entries_match", pattern=pattern))
         return 0
-    rows = [_row(e) for e in sorted(matches, key=lambda e: str(e["name"]).casefold())]
-    headers = _headers()
-    headers[1] += SORT_INDICATOR
+    sort_by = sort_by or "byname"
+    rows = sort_rows([_row(e) for e in matches], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
 

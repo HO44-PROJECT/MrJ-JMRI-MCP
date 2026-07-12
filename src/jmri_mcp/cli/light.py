@@ -13,18 +13,26 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
+from jmri_mcp.cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_mcp.constants.cli import SORT_INDICATOR, LIGHT_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_lights, resolve_light
 from jmri_mcp.jmri_client import set_light as _set_light
 from jmri_mcp.jmri_client.light import LIGHT_ON, LIGHT_OFF
 
 
-def _headers(*, sorted_by_system_id: bool = False) -> list[str]:
+def _headers() -> list[str]:
     """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
-    system_id = i18n.t("headers.system_id")
-    if sorted_by_system_id:
-        system_id += SORT_INDICATOR
-    return [system_id, i18n.t("headers.light"), i18n.t("headers.state")]
+    return [i18n.t("headers.system_id"), i18n.t("headers.light"), i18n.t("headers.state")]
+
+
+# `light by*` subcommand name -> (index into _row()'s tuple, casefold?).
+# Shared with parser.py so every `by*` sibling leaf it builds is guaranteed
+# to match a key this module actually knows how to sort on.
+SORT_FIELDS: dict[str, tuple[int, bool]] = {
+    "byid": (0, True),
+    "byname": (1, True),
+    "bystate": (2, True),
+}
 
 
 def _row(light: dict) -> list:
@@ -41,10 +49,13 @@ def _label(light: dict) -> str:
 
 
 async def light_list(args: argparse.Namespace) -> int:
-    """Print the state of every layout light, sorted alphabetically.
+    """Print the state of every layout light.
 
     Args:
-        args: Parsed CLI arguments; no fields used.
+        args: Parsed CLI arguments; `args.sort_by` (one of SORT_FIELDS, e.g.
+            "byid"/"bystate") picks the sort order - set by parser.py to a
+            fixed value per `by*` sibling leaf (defaults to "byname" for
+            bare `light`/`light list`).
 
     Returns:
         0 on success (including no lights), 1 if JMRI is unreachable.
@@ -58,8 +69,10 @@ async def light_list(args: argparse.Namespace) -> int:
     if not lights:
         print(i18n.t("cli.no_entities_found", kind="light"))
         return 0
-    rows = [_row(lt) for lt in sorted(lights, key=lambda lt: lt.get("name", "?"))]
-    print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
+    sort_by = getattr(args, "sort_by", None) or "byname"
+    rows = sort_rows([_row(lt) for lt in lights], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 
@@ -93,19 +106,22 @@ async def _light_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
     lights — no ambiguity error, just a filtered `light list`-style table
     (or "no lights match" if the pattern matches nothing).
     """
+    sort_by, pattern = split_find_tokens(args.pattern_tokens, SORT_FIELDS)
     try:
         lights = await get_lights()
         matcher = find_regex if regex else find_glob
-        matches = matcher(args.pattern, lights, _label)
+        matches = matcher(pattern, lights, _label)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
-        print(i18n.t("cli.no_entities_match", kind="light", pattern=args.pattern))
+        print(i18n.t("cli.no_entities_match", kind="light", pattern=pattern))
         return 0
-    rows = [_row(lt) for lt in sorted(matches, key=lambda lt: lt.get("name", "?"))]
-    print(tabulate(rows, headers=_headers(sorted_by_system_id=True)))
+    sort_by = sort_by or "byname"
+    rows = sort_rows([_row(lt) for lt in matches], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 

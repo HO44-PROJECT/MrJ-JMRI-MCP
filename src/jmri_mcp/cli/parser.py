@@ -25,7 +25,7 @@ import argparse
 import functools
 
 from jmri_mcp import i18n
-from jmri_mcp.cli import light, power, roster, sensor, signal, throttle, turnout
+from jmri_mcp.cli import block, light, power, roster, sensor, signal, throttle, turnout
 
 
 def _leaf(subparsers, name: str, *, help: str, example: str, func) -> argparse.ArgumentParser:
@@ -95,6 +95,86 @@ def _group(subparsers, name: str, *, default_func=None):
         group_cmd.set_defaults(func=default_func)
     group_sub = group_cmd.add_subparsers(dest=f"{name}_command", required=default_func is None)
     return group_cmd, group_sub
+
+
+def _sort_siblings(subparsers, sort_fields, *, func, example_prefix: str, pattern_help: str | None = None) -> None:
+    """Add one `by*` sibling leaf per key in a domain module's `SORT_FIELDS`.
+
+    `jmri-cli <group> by<column>` runs the exact same command function as
+    the group's `list` leaf, just with `sort_by` pre-bound to that column
+    instead of defaulting to "byname". This is what lets a user type
+    `jmri-cli block bystate` directly, matching the existing pattern for
+    verb-shaped leaves elsewhere (`turnout close`/`throw`, `light on`/`off`)
+    instead of a `--sort`-style option.
+
+    Also used one level down, under `findr`/`findg`, to sort filtered
+    results the same way - pass `pattern_help` in that case so each `by*`
+    leaf also gets the `pattern` positional `findr`/`findg` need
+    (`jmri-cli block findr byid '^B_1'`); omit it for the top-level
+    `list`/bare-group case, which takes no positional at all.
+
+    Args:
+        subparsers: The parent subparsers action (e.g. block_sub, or
+            block_findr_cmd's own add_subparsers() for the nested case).
+        sort_fields: The domain module's `SORT_FIELDS` dict (e.g. block.SORT_FIELDS).
+        func: The command function to reuse (e.g. block.block_list).
+        example_prefix: What precedes the `by*` word in the epilog example
+            (e.g. "jmri-cli block" or "jmri-cli block findr").
+        pattern_help: If set, each `by*` leaf also gets a `pattern`
+            positional with this help text (the findr/findg case).
+    """
+    for sort_by in sort_fields:
+        leaf = subparsers.add_parser(
+            sort_by,
+            help=i18n.t(f"help.sort.{sort_by}"),
+            description=i18n.t(f"help.sort.{sort_by}"),
+            epilog=f"example:\n  {example_prefix} {sort_by}" + (" '^B_1'" if pattern_help else ""),
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+        leaf.set_defaults(func=func, sort_by=sort_by)
+        if pattern_help is not None:
+            leaf.add_argument("pattern", help=pattern_help)
+
+
+def _find_pattern_leaf(subparsers, name: str, *, help: str, example: str, func, sort_fields) -> None:
+    """Add a findr/findg-style leaf that also accepts an optional `by*` sort word.
+
+    `jmri-cli <group> findr '^B_1'` still works with no sort word (defaults
+    to name order, same as bare `list`). `jmri-cli <group> findr byid
+    '^B_1'` additionally sorts the filtered results by a specific column -
+    the `by*` word comes right after `findr`/`findg` and before the
+    pattern, mirroring how `by*` sits right after the group name for `list`.
+
+    Implemented as a single positional `nargs="+"` (1 or 2 tokens) rather
+    than nested subparsers: argparse can't cleanly make an optional
+    positional and an optional subparser coexist in the same parser (the
+    first free token gets tried against the subparser's `choices` first,
+    so a pattern like `^B_1` that isn't a `by*` word hard-errors instead of
+    falling through). `args.pattern_tokens` is split back into
+    `(sort_by, pattern)` by the command function itself at call time - see
+    each domain's `_split_find_tokens()`-style handling in `_find_pattern`.
+
+    Args:
+        subparsers: The parent group's subparsers action (e.g. block_sub).
+        name: "findr" or "findg".
+        help: Short help shown in the parent's command list.
+        example: A full `jmri-cli ...` command string shown in `-h`'s epilog.
+        func: The command function (e.g. block.block_findr).
+        sort_fields: The domain module's `SORT_FIELDS` dict, used only to
+            list valid `by*` words in the help text.
+    """
+    find_cmd = subparsers.add_parser(
+        name, help=help, description=help,
+        epilog=f"example:\n  {example}\n  {example.rsplit(' ', 1)[0]} byid {example.rsplit(' ', 1)[1]}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    find_cmd.set_defaults(func=func)
+    pattern_help = i18n.t("help.arg.regex_pattern" if name == "findr" else "help.arg.glob_pattern")
+    sort_words = "/".join(sort_fields)
+    find_cmd.add_argument(
+        "pattern_tokens", nargs="+", metavar="[SORT] PATTERN",
+        help=f"{pattern_help}; optionally preceded by a sort word ({sort_words})",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -177,14 +257,13 @@ def build_parser() -> argparse.ArgumentParser:
     roster_cmd.epilog = "example:\n  jmri-cli roster"
     roster_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
-    list_cmd = _leaf(
+    _leaf(
         roster_sub, "list", help=i18n.t("help.roster.list"),
-        example="jmri-cli roster list bydcc", func=roster.roster_list,
+        example="jmri-cli roster list", func=roster.roster_list,
     )
-    list_cmd.add_argument(
-        "sort_by", nargs="?", default="byname",
-        choices=roster.SORT_CHOICES,
-        help=i18n.t("help.roster.sort_by"),
+    _sort_siblings(
+        roster_sub, roster.SORT_FIELDS, func=roster.roster_list,
+        example_prefix="jmri-cli roster",
     )
 
     roster_find_cmd = _leaf(
@@ -193,17 +272,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     roster_find_cmd.add_argument("name", help=i18n.t("help.arg.loco_ref"))
 
-    roster_findr_cmd = _leaf(
+    _find_pattern_leaf(
         roster_sub, "findr", help=i18n.t("help.roster.findr"),
         example="jmri-cli roster findr '^auto'", func=roster.roster_findr,
+        sort_fields=roster.SORT_FIELDS,
     )
-    roster_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
-    roster_findg_cmd = _leaf(
+    _find_pattern_leaf(
         roster_sub, "findg", help=i18n.t("help.roster.findg"),
         example="jmri-cli roster findg 'boite*'", func=roster.roster_findg,
+        sort_fields=roster.SORT_FIELDS,
     )
-    roster_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     roster_functions_cmd = _leaf(
         roster_sub, "functions", help=i18n.t("help.arg.function_labels"),
@@ -358,6 +437,10 @@ def build_parser() -> argparse.ArgumentParser:
         light_sub, "list", help=i18n.t("help.light.list"),
         example="jmri-cli light list", func=light.light_list,
     )
+    _sort_siblings(
+        light_sub, light.SORT_FIELDS, func=light.light_list,
+        example_prefix="jmri-cli light",
+    )
 
     light_find_cmd = _leaf(
         light_sub, "find", help=i18n.t("help.light.find"),
@@ -365,17 +448,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     light_find_cmd.add_argument("name", help=i18n.t("help.light.find_name"))
 
-    light_findr_cmd = _leaf(
+    _find_pattern_leaf(
         light_sub, "findr", help=i18n.t("help.light.findr"),
         example="jmri-cli light findr '^Depot'", func=light.light_findr,
+        sort_fields=light.SORT_FIELDS,
     )
-    light_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
-    light_findg_cmd = _leaf(
+    _find_pattern_leaf(
         light_sub, "findg", help=i18n.t("help.light.findg"),
         example="jmri-cli light findg 'Depot*'", func=light.light_findg,
+        sort_fields=light.SORT_FIELDS,
     )
-    light_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     light_on_cmd = _leaf(
         light_sub, "on", help=i18n.t("help.light.on"),
@@ -400,6 +483,10 @@ def build_parser() -> argparse.ArgumentParser:
         turnout_sub, "list", help=i18n.t("help.turnout.list"),
         example="jmri-cli turnout list", func=turnout.turnout_list,
     )
+    _sort_siblings(
+        turnout_sub, turnout.SORT_FIELDS, func=turnout.turnout_list,
+        example_prefix="jmri-cli turnout",
+    )
 
     turnout_find_cmd = _leaf(
         turnout_sub, "find", help=i18n.t("help.turnout.find"),
@@ -407,17 +494,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     turnout_find_cmd.add_argument("name", help=i18n.t("help.turnout.find_name"))
 
-    turnout_findr_cmd = _leaf(
+    _find_pattern_leaf(
         turnout_sub, "findr", help=i18n.t("help.turnout.findr"),
         example="jmri-cli turnout findr '^Mountain'", func=turnout.turnout_findr,
+        sort_fields=turnout.SORT_FIELDS,
     )
-    turnout_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
-    turnout_findg_cmd = _leaf(
+    _find_pattern_leaf(
         turnout_sub, "findg", help=i18n.t("help.turnout.findg"),
         example="jmri-cli turnout findg 'Layout*'", func=turnout.turnout_findg,
+        sort_fields=turnout.SORT_FIELDS,
     )
-    turnout_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     turnout_close_cmd = _leaf(
         turnout_sub, "close", help=i18n.t("help.turnout.close"),
@@ -442,6 +529,10 @@ def build_parser() -> argparse.ArgumentParser:
         sensor_sub, "list", help=i18n.t("help.sensor.list"),
         example="jmri-cli sensor list", func=sensor.sensor_list,
     )
+    _sort_siblings(
+        sensor_sub, sensor.SORT_FIELDS, func=sensor.sensor_list,
+        example_prefix="jmri-cli sensor",
+    )
 
     sensor_status_cmd = _leaf(
         sensor_sub, "status", help=i18n.t("help.sensor.status"),
@@ -455,17 +546,55 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sensor_find_cmd.add_argument("name", help=i18n.t("help.arg.sensor_ref"))
 
-    sensor_findr_cmd = _leaf(
+    _find_pattern_leaf(
         sensor_sub, "findr", help=i18n.t("help.sensor.findr"),
         example="jmri-cli sensor findr '^Montagne'", func=sensor.sensor_findr,
+        sort_fields=sensor.SORT_FIELDS,
     )
-    sensor_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
-    sensor_findg_cmd = _leaf(
+    _find_pattern_leaf(
         sensor_sub, "findg", help=i18n.t("help.sensor.findg"),
         example="jmri-cli sensor findg 'Montagne*'", func=sensor.sensor_findg,
+        sort_fields=sensor.SORT_FIELDS,
     )
-    sensor_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
+
+    # -- block: bare = list; read-only ------------------------------------
+    block_cmd, block_sub = _group(subparsers, "block", default_func=block.block_list)
+    block_cmd.epilog = "example:\n  jmri-cli block"
+    block_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
+
+    _leaf(
+        block_sub, "list", help=i18n.t("help.block.list"),
+        example="jmri-cli block list", func=block.block_list,
+    )
+    _sort_siblings(
+        block_sub, block.SORT_FIELDS, func=block.block_list,
+        example_prefix="jmri-cli block",
+    )
+
+    block_status_cmd = _leaf(
+        block_sub, "status", help=i18n.t("help.block.status"),
+        example='jmri-cli block status "B_1_Montagne A"', func=block.block_status,
+    )
+    block_status_cmd.add_argument("name", help=i18n.t("help.arg.block_ref"))
+
+    block_find_cmd = _leaf(
+        block_sub, "find", help=i18n.t("help.block.find"),
+        example='jmri-cli block find "B_1_Montagne A"', func=block.block_find,
+    )
+    block_find_cmd.add_argument("name", help=i18n.t("help.arg.block_ref"))
+
+    _find_pattern_leaf(
+        block_sub, "findr", help=i18n.t("help.block.findr"),
+        example="jmri-cli block findr '^B_1'", func=block.block_findr,
+        sort_fields=block.SORT_FIELDS,
+    )
+
+    _find_pattern_leaf(
+        block_sub, "findg", help=i18n.t("help.block.findg"),
+        example="jmri-cli block findg 'B_1*'", func=block.block_findg,
+        sort_fields=block.SORT_FIELDS,
+    )
 
     # -- signal: bare = list ---------------------------------------------
     signal_cmd, signal_sub = _group(subparsers, "signal", default_func=signal.signal_list)
@@ -475,6 +604,10 @@ def build_parser() -> argparse.ArgumentParser:
     _leaf(
         signal_sub, "list", help=i18n.t("help.signal.list"),
         example="jmri-cli signal list", func=signal.signal_list,
+    )
+    _sort_siblings(
+        signal_sub, signal.SORT_FIELDS, func=signal.signal_list,
+        example_prefix="jmri-cli signal",
     )
 
     signal_status_cmd = _leaf(
@@ -489,17 +622,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     signal_find_cmd.add_argument("name", help=i18n.t("help.arg.signal_ref"))
 
-    signal_findr_cmd = _leaf(
+    _find_pattern_leaf(
         signal_sub, "findr", help=i18n.t("help.signal.findr"),
         example="jmri-cli signal findr '^Entry'", func=signal.signal_findr,
+        sort_fields=signal.SORT_FIELDS,
     )
-    signal_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
-    signal_findg_cmd = _leaf(
+    _find_pattern_leaf(
         signal_sub, "findg", help=i18n.t("help.signal.findg"),
         example="jmri-cli signal findg 'Entry*'", func=signal.signal_findg,
+        sort_fields=signal.SORT_FIELDS,
     )
-    signal_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     signal_set_cmd = _leaf(
         signal_sub, "set", help=i18n.t("help.signal.set"),

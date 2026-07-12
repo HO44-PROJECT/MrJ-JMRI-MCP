@@ -7,6 +7,7 @@ compaction.
 """
 
 from jmri_mcp.constants.cli import (
+    BLOCK_STATE_NAMES,
     LIGHT_STATE_NAMES,
     POWER_STATE_NAMES,
     SENSOR_STATE_NAMES,
@@ -107,6 +108,48 @@ def compact_sensor(sensor: dict) -> dict:
     return {
         "name": sensor.get("userName") or sensor.get("name"),
         "state": SENSOR_STATE_NAMES.get(sensor.get("state"), "UNKNOWN"),
+    }
+
+
+def compact_block(block: dict) -> dict:
+    """Reduce a raw JMRI block dict to the fields worth showing the LLM.
+
+    Args:
+        block: A block dict as returned by jmri_client.get_blocks(), with
+            at least "name" and "state", and optionally "userName",
+            "sensor" (linked occupancy sensor's system name), "value"
+            (whatever JMRI's reporting hardware detected occupying the
+            block, e.g. a roster entry or RFID tag id), "length" (block
+            length in JMRI's configured layout units, e.g. cm), "curvature"
+            (JMRI's small curvature enum, e.g. 0=NONE/1=GRADUAL/2=TIGHT/
+            3=SEVERE), "speed" (a named speed step, e.g. "Normal"/"Fifty",
+            or a numeric string — vocabulary is layout-defined, not a fixed
+            enum), "comment" (free text set in PanelPro's block editor).
+
+    Returns:
+        {"name": ..., "state": "OCCUPIED"/"UNOCCUPIED"/"UNKNOWN"/"INCONSISTENT",
+        "sensor": str|None, "value": ...|None, "length": float|None,
+        "curvature": int|None, "speed": str|None, "comment": str|None}.
+        "name" is the user-friendly userName if JMRI has one set, else
+        falls back to the raw system name (e.g. "IB1"). "value" is included
+        verbatim (not just a bool) because on layouts with train-detection
+        hardware beyond simple occupancy (RFID/reporter based), it
+        identifies *what* is occupying the block, not just *whether* — but
+        is None on layouts (like this project's own, verified live) with
+        plain occupancy sensors only. "length"/"curvature"/"speed" are
+        static layout metadata (PanelPro's block editor), not live state —
+        useful context for the LLM (e.g. explaining a speed restriction),
+        not something this project ever writes.
+    """
+    return {
+        "name": block.get("userName") or block.get("name"),
+        "state": BLOCK_STATE_NAMES.get(block.get("state"), "UNKNOWN"),
+        "sensor": block.get("sensor"),
+        "value": block.get("value"),
+        "length": block.get("length"),
+        "curvature": block.get("curvature"),
+        "speed": block.get("speed"),
+        "comment": block.get("comment"),
     }
 
 

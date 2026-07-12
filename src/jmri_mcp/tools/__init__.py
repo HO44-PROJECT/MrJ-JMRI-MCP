@@ -27,11 +27,14 @@ Package layout:
     signal.py   list_signals, get_signal, set_signal (signalMast only,
                 see jmri_client.signal's module docstring for why not
                 signalHead).
+    block.py    list_blocks, get_block (read-only; a block is a named
+                track section with occupancy + linked sensor/value,
+                richer than a plain sensor).
     mode.py     set_executor_mode, get_executor_mode (concise/no-narration
                 response style — a behavioral nudge, not a JMRI command).
 """
 
-from jmri_mcp.tools import light, mode, power, roster, sensor, signal, throttle, turnout
+from jmri_mcp.tools import block, light, mode, power, roster, sensor, signal, throttle, turnout
 
 __all__ = ["register"]
 
@@ -49,4 +52,5 @@ def register(mcp) -> None:
     turnout.register(mcp)
     sensor.register(mcp)
     signal.register(mcp)
+    block.register(mcp)
     mode.register(mcp)

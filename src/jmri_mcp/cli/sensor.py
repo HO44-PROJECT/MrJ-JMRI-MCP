@@ -13,21 +13,32 @@ from tabulate import tabulate
 
 from jmri_mcp import i18n
 from jmri_mcp.cli._match import find_glob, find_regex
+from jmri_mcp.cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_mcp.constants.cli import SORT_INDICATOR, SENSOR_STATE_NAMES
 from jmri_mcp.jmri_client import JmriError, get_sensors, resolve_sensor
 
 
 def _headers() -> list[str]:
-    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG. Sensor listings are always sorted by name, so the sort indicator is unconditional."""
-    return [i18n.t("headers.sensor") + SORT_INDICATOR, i18n.t("headers.system_id"), i18n.t("headers.state")]
+    """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
+    return [i18n.t("headers.system_id"), i18n.t("headers.sensor"), i18n.t("headers.state")]
+
+
+# `sensor by*` subcommand name -> (index into _row()'s tuple, casefold?).
+# Shared with parser.py so every `by*` sibling leaf it builds is guaranteed
+# to match a key this module actually knows how to sort on.
+SORT_FIELDS: dict[str, tuple[int, bool]] = {
+    "byid": (0, True),
+    "byname": (1, True),
+    "bystate": (2, True),
+}
 
 
 def _row(sensor: dict) -> list:
-    """Flatten one JMRI sensor object into a `[label, system_id, state]` table row."""
+    """Flatten one JMRI sensor object into a `[system_id, label, state]` table row."""
     state = SENSOR_STATE_NAMES.get(sensor.get("state"), "UNKNOWN")
     label = sensor.get("userName") or sensor.get("name", "?")
     system_id = sensor.get("name", "?")
-    return [label, system_id, state]
+    return [system_id, label, state]
 
 
 def _label(sensor: dict) -> str:
@@ -36,10 +47,13 @@ def _label(sensor: dict) -> str:
 
 
 async def sensor_list(args: argparse.Namespace) -> int:
-    """Print the state of every sensor, sorted alphabetically.
+    """Print the state of every sensor.
 
     Args:
-        args: Parsed CLI arguments; no fields used.
+        args: Parsed CLI arguments; `args.sort_by` (one of SORT_FIELDS, e.g.
+            "byid"/"bystate") picks the sort order - set by parser.py to a
+            fixed value per `by*` sibling leaf (defaults to "byname" for
+            bare `sensor`/`sensor list`).
 
     Returns:
         0 on success (including no sensors), 1 if JMRI is unreachable.
@@ -53,8 +67,10 @@ async def sensor_list(args: argparse.Namespace) -> int:
     if not sensors:
         print(i18n.t("cli.no_entities_found", kind="sensor"))
         return 0
-    rows = [_row(s) for s in sorted(sensors, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=_headers()))
+    sort_by = getattr(args, "sort_by", None) or "byname"
+    rows = sort_rows([_row(s) for s in sensors], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 
@@ -76,7 +92,7 @@ async def sensor_status(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    label, system_id, state = _row(match)
+    system_id, label, state = _row(match)
     print(f"name={label} system_id={system_id} state={state}")
     return 0
 
@@ -107,19 +123,22 @@ async def _sensor_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
     sensors — no ambiguity error, just a filtered `sensor list`-style table
     (or "no sensors match" if the pattern matches nothing).
     """
+    sort_by, pattern = split_find_tokens(args.pattern_tokens, SORT_FIELDS)
     try:
         sensors = await get_sensors()
         matcher = find_regex if regex else find_glob
-        matches = matcher(args.pattern, sensors, _label)
+        matches = matcher(pattern, sensors, _label)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
     if not matches:
-        print(i18n.t("cli.no_entities_match", kind="sensor", pattern=args.pattern))
+        print(i18n.t("cli.no_entities_match", kind="sensor", pattern=pattern))
         return 0
-    rows = [_row(s) for s in sorted(matches, key=lambda s: _row(s)[0].casefold())]
-    print(tabulate(rows, headers=_headers()))
+    sort_by = sort_by or "byname"
+    rows = sort_rows([_row(s) for s in matches], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
+    print(tabulate(rows, headers=headers))
     return 0
 
 

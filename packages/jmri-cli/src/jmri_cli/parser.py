@@ -398,6 +398,8 @@ def build_parser() -> argparse.ArgumentParser:
     on_fn.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     on_fn.add_argument("function", nargs="?", default=None,
                         help=i18n.t("help.arg.function_ref_or_every"))
+    on_fn.add_argument("--lights-only", action="store_true",
+                        help=i18n.t("help.throttle.lights_only"))
 
     off_fn = _leaf(
         throttle_sub, "off",
@@ -407,6 +409,16 @@ def build_parser() -> argparse.ArgumentParser:
     off_fn.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
     off_fn.add_argument("function", nargs="?", default=None,
                          help=i18n.t("help.arg.function_ref_or_every"))
+    off_fn.add_argument("--lights-only", action="store_true",
+                         help=i18n.t("help.throttle.lights_only"))
+
+    lights_all = _leaf(
+        throttle_sub, "lights-all",
+        help=i18n.t("help.throttle.lights_all"),
+        example="jmri-cli throttle lights-all on", func=throttle.throttle_lights_all,
+    )
+    lights_all.add_argument("state", choices=["on", "off"],
+                             help=i18n.t("help.throttle.lights_all_state"))
 
     function_cmd = _leaf(
         throttle_sub, "function",

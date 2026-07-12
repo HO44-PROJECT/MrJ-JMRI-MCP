@@ -6,6 +6,8 @@ behavior, and get_power/set_power/system_status all need the same power
 compaction.
 """
 
+import asyncio
+
 from jmri_core.constants.cli import (
     BLOCK_STATE_NAMES,
     LIGHT_STATE_NAMES,
@@ -222,6 +224,32 @@ def compact_throttle(data: dict) -> dict:
         "speed": data.get(FIELD_SPEED),
         "direction": direction_name(data.get(FIELD_FORWARD)),
     }
+
+
+background_tasks: set = set()
+"""Live asyncio.Task handles for fire-and-forget tool work (set_speed_ramped's
+long-duration path). A plain module-level set, not per-request state, since
+a task must outlive the tool call that started it. Each task removes itself
+on completion (see run_in_background); server/__init__.py's shutdown awaits
+whatever's left so a locomotive is never abandoned mid-ramp on a clean exit.
+"""
+
+
+def run_in_background(coro) -> None:
+    """Schedule `coro` to run after the current tool call returns, and track it.
+
+    Args:
+        coro: An awaitable (e.g. a call to execute_speed_change(...)) to run
+            without the caller waiting for it.
+
+    The task is kept alive by a strong reference in `background_tasks`
+    (asyncio only weakly references tasks created with create_task, so an
+    untracked task can be silently garbage-collected mid-run) and removes
+    itself from that set once done, successfully or not.
+    """
+    task = asyncio.create_task(coro)
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
 
 async def ensure_acquired(client, address: int) -> None:

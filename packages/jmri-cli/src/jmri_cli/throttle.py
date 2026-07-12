@@ -52,6 +52,7 @@ from jmri_core.constants.cli import (
     MIN_SPEED_PERCENT,
     SNIFF_THROTTLE_ID_PREFIX,
 )
+from jmri_core.constants.lighting import is_light_label
 from jmri_core.jmri_client import JmriError, get_roster, get_roster_function_labels, resolve_roster_entry
 from jmri_core.jmri_ws import JmriWsClient
 from jmri_core.jmri_ws.ramp import execute_speed_change as _execute_speed_change
@@ -568,7 +569,9 @@ async def throttle_direction(
     return 0
 
 
-async def _resolve_function_numbers(address: int, function: str | None) -> list[int]:
+async def _resolve_function_numbers(
+    address: int, function: str | None, *, lights_only: bool = False
+) -> list[int]:
     """Resolve a CLI-typed function reference to one or more function numbers.
 
     `function` may be a bare number ("1"), a label fragment matched
@@ -576,6 +579,12 @@ async def _resolve_function_numbers(address: int, function: str | None) -> list[
     (every labeled function for this loco). Raises JmriError if a
     label/None lookup finds nothing — see throttle_on/throttle_off for why
     this deliberately does NOT fall back to F0 in that case.
+
+    `lights_only`, when True, restricts a None/label-fragment lookup to
+    functions whose label matches a light keyword (see
+    jmri_core.constants.lighting.is_light_label) — the CLI equivalent of
+    the MCP server's set_loco_lights tool. Ignored for a bare function
+    number, which is always explicit regardless of its label.
     """
     if function is not None and function.strip().lstrip("-").isdigit():
         n = int(function.strip())
@@ -588,7 +597,11 @@ async def _resolve_function_numbers(address: int, function: str | None) -> list[
     roster = await get_roster()
     entry = resolve_roster_entry(str(address), roster)
     labels = await get_roster_function_labels(entry["name"])
+    if lights_only:
+        labels = {n: label for n, label in labels.items() if is_light_label(label)}
     if not labels:
+        if lights_only:
+            raise JmriError("no_light_labeled_functions", name=entry["name"])
         raise JmriError("no_labeled_functions", name=entry["name"], address=address)
 
     if function is None:
@@ -608,7 +621,9 @@ async def _throttle_set_functions(
     """Shared body for throttle_on/throttle_off."""
     try:
         address = await _resolve_address(args.loco)
-        function_numbers = await _resolve_function_numbers(address, args.function)
+        function_numbers = await _resolve_function_numbers(
+            address, args.function, lights_only=getattr(args, "lights_only", False)
+        )
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -672,6 +687,64 @@ async def throttle_off(args: argparse.Namespace, *, client: JmriWsClient | None 
         unreachable, nothing resolves, or any command was rejected.
     """
     return await _throttle_set_functions(args, state=False, client=client)
+
+
+async def throttle_lights_all(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+    """Turn every light-related function on/off, for every locomotive this CLI has touched.
+
+    The CLI equivalent of the MCP server's set_all_locos_lights tool: loops
+    state.py's local cache of addresses (same "every locomotive this CLI
+    has touched" set `throttle stop` uses with no loco given), and for each
+    one turns on/off every function whose roster label matches a light
+    keyword (see jmri_core.constants.lighting.is_light_label) — not just
+    F0. A locomotive with no light-labeled functions is skipped with a
+    note, not treated as an error.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.state` ("on" or "off").
+        client: Shared connection when called from the interactive shell;
+            None (default) opens and closes a fresh one-shot connection.
+
+    Returns:
+        0 if every touched locomotive's light functions confirmed (or had
+        none to switch), 1 if JMRI is unreachable or any command was
+        rejected. 0 with a printed note if no locomotive has been touched
+        yet (not an error, mirrors throttle_stop's no-loco case).
+    """
+    addresses = [int(a) for a in _state.load_state()]
+    if not addresses:
+        print(i18n.t("cli.throttle_no_locos_touched"))
+        return 0
+
+    state = args.state == "on"
+    ok = True
+    try:
+        async with _client_scope(client) as c:
+            for address in addresses:
+                try:
+                    function_numbers = await _resolve_function_numbers(address, None, lights_only=True)
+                except JmriError as exc:
+                    if exc.code == "no_light_labeled_functions":
+                        print(i18n.t("cli.no_light_labeled_functions", name=exc.kwargs.get("name", address)))
+                        continue
+                    print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+                    ok = False
+                    continue
+
+                await c.acquire_throttle(cli_throttle_id(address), address)
+                for n in function_numbers:
+                    try:
+                        data = await c.set_function(cli_throttle_id(address), n, state)
+                        reported = data.get(f"F{n}", state)
+                        _state.update_address(address, functions={n: reported})
+                        print(f"address={address} F{n}={'on' if reported else 'off'}")
+                    except JmriError as exc:
+                        print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+                        ok = False
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
+        return 1
+    return 0 if ok else 1
 
 
 async def throttle_function(args: argparse.Namespace) -> int:

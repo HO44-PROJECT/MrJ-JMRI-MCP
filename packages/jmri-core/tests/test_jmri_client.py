@@ -17,6 +17,7 @@ from jmri_core.jmri_client import (
     resolve_light,
     resolve_roster_entry,
     resolve_sensor,
+    resolve_signal,
     resolve_system,
     resolve_turnout,
 )
@@ -136,6 +137,13 @@ def test_resolve_light_empty_query_raises():
         resolve_light("   ", LIGHTS)
 
 
+def test_resolve_light_partial_system_id_fragment_matches():
+    # Regression: the partial-match fallback used to check only userName,
+    # never the system id - so a fragment of "IL3" (userName=None) always
+    # failed even though the full id "IL3" already worked via exact match.
+    assert resolve_light("L3", LIGHTS)["name"] == "IL3"
+
+
 # --- get_turnouts ---
 
 
@@ -210,6 +218,13 @@ def test_resolve_turnout_empty_query_raises():
         resolve_turnout("", TURNOUTS)
     with pytest.raises(JmriError, match="No turnout name given"):
         resolve_turnout("   ", TURNOUTS)
+
+
+def test_resolve_turnout_partial_system_id_fragment_matches():
+    # Regression: the partial-match fallback used to check only userName,
+    # never the system id - so a fragment of "OT23" (e.g. "OT2") always
+    # failed even though the full id "OT23" already worked via exact match.
+    assert resolve_turnout("OT2", TURNOUTS)["name"] == "OT23"
 
 
 # --- get_sensors ---
@@ -289,6 +304,13 @@ def test_resolve_sensor_empty_query_raises():
         resolve_sensor("   ", SENSORS)
 
 
+def test_resolve_sensor_partial_system_id_fragment_matches():
+    # Regression: the partial-match fallback used to check only userName,
+    # never the system id - so a fragment of "ISCLOCKRUNNING" (userName=None)
+    # always failed even though the full id already worked via exact match.
+    assert resolve_sensor("CLOCKRUN", SENSORS)["name"] == "ISCLOCKRUNNING"
+
+
 # --- get_blocks ---
 
 
@@ -362,6 +384,64 @@ def test_resolve_block_empty_query_raises():
         resolve_block("", BLOCKS)
     with pytest.raises(JmriError, match="No block name given"):
         resolve_block("   ", BLOCKS)
+
+
+def test_resolve_block_partial_system_id_fragment_matches():
+    # Regression: the partial-match fallback used to check only userName,
+    # never the system id - so a fragment of "IB1" (e.g. "B1") always failed
+    # even though the full id "IB1" already worked via exact match.
+    assert resolve_block("B1", BLOCKS)["name"] == "IB1"
+
+
+# --- resolve_signal: pure function, no I/O ---
+
+SIGNALS = [
+    {"name": "ZF$dsm:DB-HV-1969:block(31)", "userName": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False},
+    {"name": "ZF$dsm:DB-HV-1969:block(45)", "userName": None, "aspect": "Hp0", "lit": True, "held": False},
+]
+
+
+@pytest.mark.parametrize(
+    "query,expected_name",
+    [
+        ("Entry Signal A", "ZF$dsm:DB-HV-1969:block(31)"),
+        ("entry signal a", "ZF$dsm:DB-HV-1969:block(31)"),
+        ("ZF$dsm:DB-HV-1969:block(31)", "ZF$dsm:DB-HV-1969:block(31)"),
+        ("ZF$dsm:DB-HV-1969:block(45)", "ZF$dsm:DB-HV-1969:block(45)"),
+        ("entry", "ZF$dsm:DB-HV-1969:block(31)"),
+    ],
+)
+def test_resolve_signal_tolerant_match(query, expected_name):
+    assert resolve_signal(query, SIGNALS)["name"] == expected_name
+
+
+def test_resolve_signal_partial_system_id_fragment_matches():
+    # Regression: the partial-match fallback used to check only userName,
+    # never the system id - so a fragment of "block(45)" (userName=None)
+    # always failed even though the full id already worked via exact match.
+    assert resolve_signal("block(45)", SIGNALS)["name"] == "ZF$dsm:DB-HV-1969:block(45)"
+
+
+def test_resolve_signal_ambiguous_fragment_raises():
+    with pytest.raises(JmriError, match="Ambiguous signal mast"):
+        resolve_signal("DB-HV-1969", SIGNALS)  # matches both masts' system names
+
+
+def test_resolve_signal_unknown_name_raises():
+    with pytest.raises(JmriError, match="Unknown signal mast 'tgv'"):
+        resolve_signal("tgv", SIGNALS)
+
+
+def test_resolve_signal_empty_signals_raises():
+    with pytest.raises(JmriError, match="no signal mast"):
+        resolve_signal("Entry Signal A", [])
+
+
+def test_resolve_signal_empty_query_raises():
+    with pytest.raises(JmriError, match="No signal mast name given"):
+        resolve_signal("", SIGNALS)
+    with pytest.raises(JmriError, match="No signal mast name given"):
+        resolve_signal("   ", SIGNALS)
 
 
 # --- get_roster ---

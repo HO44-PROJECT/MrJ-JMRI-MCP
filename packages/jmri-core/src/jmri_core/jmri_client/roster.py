@@ -5,11 +5,11 @@ jmri_core.jmri_client._http for the shared GET/POST plumbing).
 """
 
 import logging
-import unicodedata
 from typing import Any
 
 from jmri_core.constants import endpoints
 from jmri_core.jmri_client._http import JmriError, _get_json, _unwrap
+from jmri_core.text import fold as _fold
 
 logger = logging.getLogger("jmri_core.client")
 
@@ -86,12 +86,6 @@ async def get_roster() -> list[dict[str, Any]]:
             "groups": e.get("rosterGroups", []),
         })
     return compact
-
-
-def _fold(text: str) -> str:
-    """Casefold and strip accents, for tolerant French-name matching ("autorail" == "Autorail")."""
-    normalized = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in normalized if not unicodedata.combining(c)).casefold()
 
 
 def resolve_roster_entry(

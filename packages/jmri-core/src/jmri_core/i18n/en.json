@@ -25,7 +25,8 @@
         "invalid_jmri_url": "Invalid JMRI_URL {url!r}: expected http(s)://host[:port], e.g. {default}",
         "invalid_function_number_range": "function must be {min}-{max}, got {n}",
         "no_labeled_functions": "{name} (address={address}) has no labeled functions in JMRI's roster — specify a function number, e.g. `throttle on {address} 0`",
-        "no_labeled_function_match": "No labeled function matches {query!r}. Available: {available}"
+        "no_labeled_function_match": "No labeled function matches {query!r}. Available: {available}",
+        "no_light_labeled_functions": "{name} has no light-labeled functions in JMRI's roster (labels are checked for keywords like light/lamp/headlight/lumière/feu/phare) — nothing to switch"
     },
     "kinds": {
         "signal mast": {
@@ -147,6 +148,9 @@
             "on": "Turn a decoder function on (by number or label), or every labeled one",
             "off": "Turn a decoder function off (by number or label), or every labeled one",
             "function": "List a locomotive's user-labeled decoder functions",
+            "lights_only": "Only switch functions whose label names a light (light/lamp/headlight/lumière/feu/phare) instead of every labeled function",
+            "lights_all": "Turn every light-related function on/off for every locomotive this CLI has touched",
+            "lights_all_state": "\"on\" or \"off\"",
             "sniff": "Dump every JMRI WebSocket message live, until Ctrl-C",
             "sniff_address": "DCC address to acquire first (repeatable) so its pushes from OTHER clients show up too; omit to just watch this connection",
             "sniff_show_pong": "Include keepalive pong messages (hidden by default, no info)"
@@ -262,6 +266,7 @@
         "throttle_error_stopping_address": "Error stopping address={address}: {message}",
         "throttle_error_address": "Error: address={address}: {message}",
         "throttle_error_function": "Error: F{function}: {message}",
-        "throttle_warning_could_not_acquire": "Warning: could not acquire {address}: {message}"
+        "throttle_warning_could_not_acquire": "Warning: could not acquire {address}: {message}",
+        "no_light_labeled_functions": "{name} has no light-labeled functions in JMRI's roster (labels are checked for keywords like light/lamp/headlight/lumière/feu/phare) — nothing to switch"
     }
 }

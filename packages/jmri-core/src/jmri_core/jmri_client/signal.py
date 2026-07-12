@@ -107,8 +107,8 @@ def resolve_signal(query: str, signals: list[dict[str, Any]]) -> dict[str, Any]:
     Tolerant like resolve_turnout: case-insensitive, matches either the
     JMRI system name ("ZF$dsm:DB-HV-1969:block(31)") or the user-friendly
     userName exactly first, then an unambiguous substring fragment of
-    userName. No default fallback - a mast must be named, there's no
-    single "the" signal.
+    userName or the system name. No default fallback - a mast must be
+    named, there's no single "the" signal.
     """
     if not signals:
         raise JmriError("none_available", kind="signal mast")
@@ -126,7 +126,11 @@ def resolve_signal(query: str, signals: list[dict[str, Any]]) -> dict[str, Any]:
     if len(exact) == 1:
         return exact[0]
 
-    partial = [s for s in signals if q in str(s.get("userName") or "").casefold()]
+    partial = [
+        s for s in signals
+        if q in str(s.get("userName") or "").casefold()
+        or q in str(s.get("name", "")).casefold()
+    ]
     if len(partial) == 1:
         return partial[0]
     if len(partial) > 1:

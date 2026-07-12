@@ -51,8 +51,8 @@ def resolve_block(query: str, blocks: list[dict[str, Any]]) -> dict[str, Any]:
 
     Tolerant like resolve_sensor/resolve_light: case-insensitive, matches
     either the JMRI system name ("IB1") or the user-friendly userName
-    exactly first, then an unambiguous substring fragment of userName. No
-    default fallback — a block must be named.
+    exactly first, then an unambiguous substring fragment of userName or
+    the system name. No default fallback — a block must be named.
     """
     if not blocks:
         raise JmriError("none_available", kind="block")
@@ -70,7 +70,11 @@ def resolve_block(query: str, blocks: list[dict[str, Any]]) -> dict[str, Any]:
     if len(exact) == 1:
         return exact[0]
 
-    partial = [b for b in blocks if q in str(b.get("userName") or "").casefold()]
+    partial = [
+        b for b in blocks
+        if q in str(b.get("userName") or "").casefold()
+        or q in str(b.get("name", "")).casefold()
+    ]
     if len(partial) == 1:
         return partial[0]
     if len(partial) > 1:

@@ -19,6 +19,7 @@ from typing import Any
 
 _SUPPORTED_LANGS = ("en", "fr")
 _DEFAULT_LANG = "en"
+_MAX_LISTED = 15
 
 _DIR = Path(__file__).parent
 _cache: dict[str, dict[str, Any]] = {}
@@ -56,6 +57,28 @@ def _expand_kind(lang: str, kwargs: dict[str, Any]) -> dict[str, Any]:
     return expanded
 
 
+def _cap_list_kwarg(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Join+truncate list-valued 'available'/'matches' kwargs before formatting.
+
+    A JMRI layout can have dozens of turnouts/lights/sensors; rendering the
+    full list into an error message is both a wall of text for voice/chat
+    output and, unbounded, an "enfer d'inutilite" the LLM tends to recite
+    back verbatim. Capping here (not at each resolver call site) fixes every
+    unknown_entity/ambiguous_entity message in one place. exc.kwargs itself
+    keeps the full uncapped list — only the rendered string is capped.
+    """
+    capped = dict(kwargs)
+    for key in ("available", "matches"):
+        value = capped.get(key)
+        if isinstance(value, list):
+            if len(value) > _MAX_LISTED:
+                shown = ", ".join(value[:_MAX_LISTED])
+                capped[key] = f"{shown}, ... (+{len(value) - _MAX_LISTED} more)"
+            else:
+                capped[key] = ", ".join(value)
+    return capped
+
+
 def lookup(lang: str, key: str, **kwargs: Any) -> str:
     """Resolve a dotted key (e.g. 'errors.unknown_entity'), formatted with kwargs.
 
@@ -77,7 +100,7 @@ def lookup(lang: str, key: str, **kwargs: Any) -> str:
             node = node[part]
         if isinstance(node, str):
             try:
-                return node.format(**_expand_kind(candidate, kwargs))
+                return node.format(**_cap_list_kwarg(_expand_kind(candidate, kwargs)))
             except (KeyError, IndexError):
                 return node
     return key

@@ -399,6 +399,45 @@ async def test_light_findg_no_match(mock_lights, capsys):
     assert "No lights match" in out
 
 
+async def test_light_on_bare_confirms_every_light(capsys):
+    """No name given -> every light, matching set_layout_lights' MCP-tool coverage."""
+    import json
+
+    import respx
+    from httpx import Response
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    live_state = {"IL1": 4, "IL2": 2, "IL3": 4}
+
+    def get_lights(request):
+        payload = [
+            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
+            {"type": "light", "data": {"name": "IL2", "userName": "Street Lamps", "state": live_state["IL2"]}},
+            {"type": "light", "data": {"name": "IL3", "userName": None, "state": live_state["IL3"]}},
+        ]
+        return Response(200, json=payload)
+
+    def post_light(name):
+        def handler(request):
+            live_state[name] = json.loads(request.content)["state"]
+            return Response(200, json={})
+
+        return handler
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/lights").mock(side_effect=get_lights)
+        router.post(f"{MOCK_JMRI_URL}/json/light/IL1").mock(side_effect=post_light("IL1"))
+        router.post(f"{MOCK_JMRI_URL}/json/light/IL2").mock(side_effect=post_light("IL2"))
+        router.post(f"{MOCK_JMRI_URL}/json/light/IL3").mock(side_effect=post_light("IL3"))
+        code, out, _ = await run(capsys, "light", "on")
+
+    assert code == 0
+    assert "Depot Lighting" in out and "Street Lamps" in out
+    lines = [l for l in out.splitlines() if l.startswith("IL")]
+    assert all("ON" in l for l in lines)
+    assert live_state == {"IL1": 2, "IL2": 2, "IL3": 2}
+
+
 async def test_turnout_list_all(mock_turnouts, capsys):
     code, out, _ = await run(capsys, "turnout", "list")
     assert code == 0
@@ -462,6 +501,46 @@ async def test_turnout_closed_unknown_name(mock_turnouts, capsys):
     code, _, err = await run(capsys, "turnout", "close", "tgv")
     assert code == 1
     assert "Unknown turnout 'tgv'" in err
+
+
+async def test_turnout_throw_bare_confirms_every_turnout(capsys):
+    """No name given -> every turnout, matching set_all_turnouts' MCP-tool coverage."""
+    import json
+
+    import respx
+    from httpx import Response
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    live_state = {"IT100": 2, "IT101": 2, "OT23": 4}
+
+    def get_turnouts(request):
+        payload = [
+            {"type": "turnout", "data": {"name": "IT100", "userName": "Layout Turnout A", "state": live_state["IT100"]}},
+            {"type": "turnout", "data": {"name": "IT101", "userName": "Layout Turnout BL", "state": live_state["IT101"]}},
+            {"type": "turnout", "data": {"name": "OT23", "userName": "A / Mountain A -> Platform A/B", "state": live_state["OT23"]}},
+        ]
+        return Response(200, json=payload)
+
+    def post_turnout(name):
+        def handler(request):
+            live_state[name] = json.loads(request.content)["state"]
+            return Response(200, json={})
+
+        return handler
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(side_effect=get_turnouts)
+        router.post(f"{MOCK_JMRI_URL}/json/turnout/IT100").mock(side_effect=post_turnout("IT100"))
+        router.post(f"{MOCK_JMRI_URL}/json/turnout/IT101").mock(side_effect=post_turnout("IT101"))
+        router.post(f"{MOCK_JMRI_URL}/json/turnout/OT23").mock(side_effect=post_turnout("OT23"))
+        code, out, _ = await run(capsys, "turnout", "throw")
+
+    assert code == 0
+    assert "Layout Turnout A" in out and "Layout Turnout BL" in out
+    assert "A / Mountain A -> Platform A/B" in out
+    lines = [l for l in out.splitlines() if "Layout Turnout" in l or "Mountain" in l]
+    assert all("THROWN" in l for l in lines)
+    assert live_state == {"IT100": 4, "IT101": 4, "OT23": 4}
 
 
 async def test_turnout_find_by_system_id(mock_turnouts, capsys):
@@ -1091,6 +1170,77 @@ async def test_throttle_on_no_function_no_labels_is_explicit_error(fake_jmri, mo
     code, _, err = await run(capsys, "throttle", "on", "8")
     assert code == 1
     assert "no labeled functions" in err
+
+
+def _patch_autorail_roster(monkeypatch):
+    async def fake_get_roster():
+        return [{"address": 2, "name": "141R"}, {"address": 4, "name": "Autorail"},
+                 {"address": 8, "name": "Boite à Sel"}]
+
+    async def fake_get_labels(name):
+        return {
+            "Autorail": {0: "Lumières avant", 1: "Lumières cabine", 2: "Lumières arrière", 3: "Klaxon"},
+            "Boite à Sel": {},
+        }.get(name, {})
+
+    monkeypatch.setattr("jmri_cli.throttle.get_roster", fake_get_roster)
+    monkeypatch.setattr("jmri_cli.throttle.get_roster_function_labels", fake_get_labels)
+
+
+async def test_throttle_on_lights_only_filters_out_non_light_labels(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    code, out, _ = await run(capsys, "throttle", "on", "4", "--lights-only")
+    assert code == 0
+    assert "address=4 F0=on" in out
+    assert "address=4 F1=on" in out
+    assert "address=4 F2=on" in out
+    assert "F3" not in out
+
+
+async def test_throttle_off_lights_only_filters_out_non_light_labels(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    code, out, _ = await run(capsys, "throttle", "off", "4", "--lights-only")
+    assert code == 0
+    assert "address=4 F0=off" in out
+    assert "address=4 F1=off" in out
+    assert "address=4 F2=off" in out
+    assert "F3" not in out
+
+
+async def test_throttle_on_lights_only_no_light_labels_is_explicit_error(fake_jmri, monkeypatch, capsys):
+    async def fake_get_roster():
+        return [{"address": 3, "name": "141R"}]
+
+    async def fake_get_labels(name):
+        return {"141R": {3: "Klaxon"}}.get(name, {})
+
+    monkeypatch.setattr("jmri_cli.throttle.get_roster", fake_get_roster)
+    monkeypatch.setattr("jmri_cli.throttle.get_roster_function_labels", fake_get_labels)
+
+    code, _, err = await run(capsys, "throttle", "on", "3", "--lights-only")
+    assert code == 1
+    assert "no light-labeled functions" in err
+
+
+async def test_throttle_lights_all_covers_every_touched_locomotive(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    await run(capsys, "throttle", "speed", "4", "0")
+    await run(capsys, "throttle", "speed", "8", "0")
+
+    code, out, _ = await run(capsys, "throttle", "lights-all", "on")
+    assert code == 0
+    assert "address=4 F0=on" in out
+    assert "address=4 F1=on" in out
+    assert "address=4 F2=on" in out
+
+
+async def test_throttle_lights_all_with_empty_cache(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "throttle", "lights-all", "on")
+    assert code == 0
+    assert "no locomotives" in out.lower() or out.strip() != ""
 
 
 async def test_throttle_find_resolves_fuzzy_name(mock_roster, capsys):

@@ -83,9 +83,9 @@ def resolve_turnout(query: str, turnouts: list[dict[str, Any]]) -> dict[str, Any
 
     Tolerant like resolve_light: case-insensitive, matches either the JMRI
     system name ("IT100") or the user-friendly userName ("Layout Turnout A")
-    exactly first, then an unambiguous substring fragment of userName. No
-    default fallback — a turnout must be named, there's no single "the"
-    turnout.
+    exactly first, then an unambiguous substring fragment of userName or the
+    system name. No default fallback — a turnout must be named, there's no
+    single "the" turnout.
     """
     if not turnouts:
         raise JmriError("none_available", kind="turnout")
@@ -103,7 +103,11 @@ def resolve_turnout(query: str, turnouts: list[dict[str, Any]]) -> dict[str, Any
     if len(exact) == 1:
         return exact[0]
 
-    partial = [t for t in turnouts if q in str(t.get("userName") or "").casefold()]
+    partial = [
+        t for t in turnouts
+        if q in str(t.get("userName") or "").casefold()
+        or q in str(t.get("name", "")).casefold()
+    ]
     if len(partial) == 1:
         return partial[0]
     if len(partial) > 1:

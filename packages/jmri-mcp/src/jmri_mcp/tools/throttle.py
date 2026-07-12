@@ -11,11 +11,20 @@ shared by the CLI and the LLM-facing MCP surface.
 
 import logging
 
-from jmri_core import i18n
+from jmri_core import i18n, jmri_client
+from jmri_core.constants.client_tuning import RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS
+from jmri_core.constants.lighting import is_light_label
+from jmri_core.jmri_client import resolve_roster_entry
 from jmri_core.jmri_ws import JmriError
 from jmri_core.jmri_ws import get_ws_client
 from jmri_core.jmri_ws.ramp import execute_speed_change
-from jmri_mcp.tools._common import compact_throttle, direction_name, ensure_acquired, throttle_id
+from jmri_mcp.tools._common import (
+    compact_throttle,
+    direction_name,
+    ensure_acquired,
+    run_in_background,
+    throttle_id,
+)
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -99,6 +108,12 @@ def register(mcp) -> None:
         panic stop — don't call set_speed(speed_percent=0) for an emergency,
         it's a different command to JMRI, not just "speed 0".
 
+        If the request names a DURATION ("for 10 seconds", "pendant 10
+        secondes"), do NOT use this tool followed by a separately-timed
+        stop call — use set_speed_ramped(hold_seconds=...) instead, which
+        waits and auto-stops server-side in one call. This tool is only
+        for an immediate, duration-less speed change.
+
         A locomotive's speed can be changed by something other than this
         tool at any time — another JMRI panel, PanelPro, another MCP/voice
         session controlling the same loco. If the requested speed already
@@ -159,11 +174,9 @@ def register(mcp) -> None:
                 Just pass through the number of seconds the user asked for
                 (e.g. "pendant 10 secondes" -> hold_seconds=10) — this MCP
                 server does the actual waiting internally on the JMRI
-                connection while your tool call is in flight, and this
-                call's response only arrives once the hold and the
-                auto-stop are already finished. Never refuse or say you
-                "can't track time" for this parameter; it's a plain number,
-                not something you have to count yourself.
+                connection, not you. Never refuse or say you "can't track
+                time" for this parameter; it's a plain number, not
+                something you have to count yourself.
 
         Use this instead of plain set_speed whenever the user asks for
         smoothness/gentleness ("en douceur", "progressivement", "ramp up/
@@ -173,11 +186,20 @@ def register(mcp) -> None:
         emergency_stop for any panic/safety stop — this tool never sends
         JMRI's real -1.0 e-stop sentinel, even at rampdown_seconds=0.
 
-        NOTE: this call blocks until rampup + hold_seconds + rampdown have
-        all elapsed server-side before returning a result — for a 10s hold
-        with ramps, expect the tool response to take on the order of that
-        many seconds, not to return instantly. This is expected latency,
-        not a hang.
+        NOTE on response timing: for a SHORT total duration (rampup +
+        hold_seconds + rampdown), this call blocks until it's all finished
+        and returns the real final speed/direction, same as set_speed. For
+        a LONGER total duration, this tool instead returns right away with
+        "status": "started" once the ramp has been kicked off, and the
+        ramp/hold/auto-stop keep running server-side on JMRI's already-open
+        connection after your response — the loco WILL still stop itself
+        automatically at the end, you do not need (and should not attempt)
+        a follow-up call to check on or stop it. This split exists because
+        a voice/chat turn that just sits silent for many seconds waiting on
+        one tool call can trip the CLIENT's own turn timeout even though
+        the ramp is working correctly — do not interpret "status": "started"
+        as a failure or as needing a retry. Tell the user the action has
+        begun (and for how long/what target), not that it already finished.
 
         If a direction flip is needed while the locomotive is already
         moving, this ramps down to 0 first (over rampdown_seconds), flips
@@ -186,13 +208,51 @@ def register(mcp) -> None:
 
         Returns the actual speed/direction JMRI reports back after the
         ramp (and the auto-stop, if hold_seconds was given) completes, the
-        same shape as set_speed/set_direction's combined fields.
+        same shape as set_speed/set_direction's combined fields — or, for
+        the long-duration background path, {"address", "status": "started",
+        "speed_percent" (the target), "direction", "seconds_total"}.
         """
         client = get_ws_client()
         target_forward = False if speed_percent < 0 else None
         target_fraction = max(0.0, min(100.0, abs(speed_percent))) / 100.0
+        total_seconds = rampup_seconds + rampdown_seconds + (hold_seconds or 0.0)
         try:
             await ensure_acquired(client, address)
+        except JmriError as exc:
+            logger.warning(
+                "set_speed_ramped(%r, %r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
+                address, speed_percent, rampup_seconds, rampdown_seconds, hold_seconds, exc,
+            )
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+
+        if total_seconds > RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS:
+            async def _run_ramp() -> None:
+                try:
+                    await execute_speed_change(
+                        client,
+                        throttle_id(address),
+                        target_forward=target_forward,
+                        target_fraction=target_fraction,
+                        rampup=rampup_seconds,
+                        rampdown=rampdown_seconds,
+                        hold_seconds=hold_seconds,
+                    )
+                except JmriError as exc:
+                    logger.warning(
+                        "background set_speed_ramped(%r, %r) failed: %s",
+                        address, speed_percent, exc,
+                    )
+
+            run_in_background(_run_ramp())
+            return {
+                "address": address,
+                "status": "started",
+                "speed_percent": abs(speed_percent),
+                "direction": "reverse" if target_forward is False else None,
+                "seconds_total": total_seconds,
+            }
+
+        try:
             data = await execute_speed_change(
                 client,
                 throttle_id(address),
@@ -435,3 +495,111 @@ def register(mcp) -> None:
         (depot, street lamps, signals) — for those, use set_light instead.
         """
         return await set_function(address, 0, False)
+
+    @mcp.tool()
+    async def set_loco_lights(address: int, state: bool) -> dict:
+        """Turn ON/OFF EVERY light-related function of ONE locomotive in a single call.
+
+        Args:
+            address: The locomotive's DCC address. Acquires the throttle
+                automatically if this session doesn't already hold it.
+            state: True to turn every light-related function on, False to
+                turn them all off.
+
+        Different from lights_on/lights_off, which only ever touch F0. This
+        tool reads the locomotive's roster function LABELS (as set by the
+        user in JMRI's roster editor — see get_locomotive_functions) and
+        switches every function whose label names a light: keywords like
+        "light"/"lamp"/"headlight" (English) or "lumière"/"feu"/"lampe"/
+        "phare" (French), case- and accent-insensitive. Real example from
+        this layout: the Autorail has F0="Lumières avant", F1="Lumières
+        cabine", F2="Lumières arrières" — all three are light-labeled, so
+        "turn on all the Autorail's lights" must flip all three, not just
+        F0. Use THIS tool (not lights_on/lights_off) whenever the request
+        says "all"/"every"/"toutes les lumières" together with a named
+        locomotive — never loop set_function yourself, this tool already
+        does that server-side in one call.
+
+        If the locomotive has no light-labeled functions at all, this is
+        NOT an error: it returns an empty "applied" list with a "note"
+        explaining why (most locos have no labels set — see
+        get_locomotive_functions). Only ask the user for an explicit
+        F-number as a fallback in that case.
+
+        For "all locos"/"toutes les locos" (no single locomotive named),
+        use set_all_locos_lights instead. For layout/scenery lighting
+        (depot, street lamps — JMRI Light objects, not a locomotive's own
+        functions), use set_layout_lights instead — never this tool.
+
+        Returns {"address": ..., "applied": [{"function", "label", "state"}...],
+        "failed": [...]} — each individual function switch is attempted even
+        if another one fails (catch-and-continue), so a single bad function
+        doesn't block the rest of the loco's lights.
+        """
+        try:
+            roster = await jmri_client.get_roster()
+            entry = resolve_roster_entry(str(address), roster)
+            labels = await jmri_client.get_roster_function_labels(entry["name"])
+        except JmriError as exc:
+            logger.warning("set_loco_lights(%r, %r) failed: %s", address, state, exc)
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+
+        light_functions = {n: label for n, label in labels.items() if is_light_label(label)}
+        if not light_functions:
+            return {
+                "address": address,
+                "applied": [],
+                "failed": [],
+                "note": i18n.t("cli.no_light_labeled_functions", name=entry["name"]),
+            }
+
+        applied: list[dict] = []
+        failed: list[dict] = []
+        for n, label in sorted(light_functions.items()):
+            result = await set_function(address, n, state)
+            if "error" in result:
+                failed.append({"function": n, "label": label, "error": result["error"]})
+            else:
+                applied.append({"function": n, "label": label, "state": state})
+        return {"address": address, "applied": applied, "failed": failed}
+
+    @mcp.tool()
+    async def set_all_locos_lights(state: bool) -> dict:
+        """Turn ON/OFF EVERY light-related function of EVERY currently-acquired locomotive at once.
+
+        Args:
+            state: True to turn every light-related function on for every
+                locomotive, False to turn them all off.
+
+        Call this for "turn on/off all the lights of all the locos"/"allume/
+        éteins toutes les lumières de toutes les locos" — any lighting
+        request that mentions locomotives in bulk, with no single one
+        named. Never loop set_loco_lights or set_function yourself for a
+        request like this — this tool already loops server-side, in one
+        call, over every locomotive this session has acquired.
+
+        IMPORTANT LIMITATION: same scope as emergency_stop_all — this only
+        reaches locomotives THIS MCP session has acquired a throttle for
+        (via acquire_throttle or any prior set_speed/stop/set_function/
+        etc. call). A locomotive being driven only from a JMRI panel or
+        another session is not touched. If nothing has been acquired yet,
+        returns {"locomotives": []}, not an error.
+
+        For a lighting request that names ONE specific locomotive, use
+        set_loco_lights instead. For layout/scenery lighting (JMRI Light
+        objects — depot, street lamps, no locomotive involved), use
+        set_layout_lights instead — never this tool.
+
+        Returns {"locomotives": [<one set_loco_lights result per address>]}
+        — each locomotive's lights are attempted independently, so one
+        loco's failure doesn't block the others.
+        """
+        client = get_ws_client()
+        addresses = sorted({
+            info["address"]
+            for info in client.all_throttle_states().values()
+            if info.get("address") is not None
+        })
+        if not addresses:
+            return {"locomotives": []}
+        return {"locomotives": [await set_loco_lights(a, state) for a in addresses]}

@@ -76,9 +76,9 @@ def resolve_light(query: str, lights: list[dict[str, Any]]) -> dict[str, Any]:
     Tolerant like resolve_system/resolve_roster_entry: case-insensitive,
     matches either the JMRI system name ("IL1") or the user-friendly
     userName ("Depot Lighting") exactly first, then an unambiguous
-    substring fragment of userName. No default fallback — a light must be
-    named, there's no single "the" light the way there's a default power
-    system.
+    substring fragment of userName or the system name. No default fallback
+    — a light must be named, there's no single "the" light the way there's
+    a default power system.
     """
     if not lights:
         raise JmriError("none_available", kind="light")
@@ -96,7 +96,11 @@ def resolve_light(query: str, lights: list[dict[str, Any]]) -> dict[str, Any]:
     if len(exact) == 1:
         return exact[0]
 
-    partial = [lt for lt in lights if q in str(lt.get("userName") or "").casefold()]
+    partial = [
+        lt for lt in lights
+        if q in str(lt.get("userName") or "").casefold()
+        or q in str(lt.get("name", "")).casefold()
+    ]
     if len(partial) == 1:
         return partial[0]
     if len(partial) > 1:

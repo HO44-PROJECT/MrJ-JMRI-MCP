@@ -47,7 +47,7 @@ def resolve_sensor(query: str, sensors: list[dict[str, Any]]) -> dict[str, Any]:
     Tolerant like resolve_light/resolve_turnout: case-insensitive, matches
     either the JMRI system name ("RS22") or the user-friendly userName
     ("Montagne B") exactly first, then an unambiguous substring fragment of
-    userName. No default fallback — a sensor must be named.
+    userName or the system name. No default fallback — a sensor must be named.
     """
     if not sensors:
         raise JmriError("none_available", kind="sensor")
@@ -65,7 +65,11 @@ def resolve_sensor(query: str, sensors: list[dict[str, Any]]) -> dict[str, Any]:
     if len(exact) == 1:
         return exact[0]
 
-    partial = [s for s in sensors if q in str(s.get("userName") or "").casefold()]
+    partial = [
+        s for s in sensors
+        if q in str(s.get("userName") or "").casefold()
+        or q in str(s.get("name", "")).casefold()
+    ]
     if len(partial) == 1:
         return partial[0]
     if len(partial) > 1:

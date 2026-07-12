@@ -294,11 +294,15 @@ $ jmri-cli roster find 4
 address=4 name=Autorail road=Railcar road_number=ET 90 02 manufacturer=Roco model=4185A owner=DB modified=2023-12-30T17:06:47.954+00:00 groups=-
 
 $ jmri-cli roster find tgv
-Error: Unknown locomotive 'tgv'. Available: ['141R', 'Autorail', ...]
+Error: Unknown locomotive 'tgv'. Available: 141R, Autorail, Boite à Sel
 ```
 
 A name matching more than one entry (e.g. `"a"`) is reported as an
 `Ambiguous locomotive` error listing every match, rather than guessing one.
+On a layout with a large roster/turnout/light/sensor list, this list is
+capped at 15 entries (`"..., ... (+N more)"`) so an `Unknown`/`Ambiguous`
+error stays a short, readable line rather than a full inventory dump — see
+`docs/architecture.md`'s i18n section.
 
 ## `jmri-cli roster findr [by<column>] <regex>` / `roster findg [by<column>] <glob>`
 
@@ -606,6 +610,50 @@ Out-of-range numbers (outside 0-28) are rejected locally without contacting
 JMRI. Safe to call repeatedly with the same state — same no-op/cache
 behavior as `speed`/`stop`/`estop`/`forward`/`reverse`.
 
+### `--lights-only`: every light-labeled function, not just F0
+
+`throttle on <loco> --lights-only` / `throttle off <loco> --lights-only`
+restricts the "no function given" lookup to functions whose roster label
+matches a light keyword (light/lamp/headlight, lumière/feu/lampe/phare,
+case-/accent-insensitive) instead of every labeled function. This is the
+CLI equivalent of the MCP server's `set_loco_lights` tool.
+
+```bash
+$ jmri-cli throttle on autorail --lights-only
+address=4 F0=on
+address=4 F1=on
+address=4 F2=on
+```
+
+If the Autorail also had a non-light-labeled function (e.g. F3="Klaxon"),
+plain `throttle on autorail` (no flag) would switch it too; `--lights-only`
+leaves it untouched. A locomotive with no light-labeled functions at all is
+an explicit error (`no light-labeled functions in JMRI's roster`), same
+"ask rather than guess" behavior as the unfiltered case. Ignored on a bare
+function number, which is always explicit regardless of its label.
+
+## `jmri-cli throttle lights-all <on|off>`
+
+Turn every light-labeled function on/off, for **every locomotive this CLI
+has already touched** — the CLI equivalent of the MCP server's
+`set_all_locos_lights` tool. Loops the same local cache
+(`~/.jmri-cli/throttle_state.json`) that `throttle stop` with no loco
+given uses, applying the `--lights-only`-filtered lookup above to each one.
+
+```bash
+$ jmri-cli throttle lights-all on
+address=4 F0=on
+address=4 F1=on
+address=4 F2=on
+address=8 has no light-labeled functions in JMRI's roster — skipped
+```
+
+A locomotive with no light-labeled functions is skipped with a note, not
+treated as a failure. If no locomotive has been touched yet, prints a note
+and exits 0 rather than doing nothing silently. Like `set_all_locos_lights`,
+this only reaches locomotives this CLI session has acquired/touched — a
+locomotive only ever driven from a JMRI panel is out of reach.
+
 ## `jmri-cli throttle sniff [-a N ...] [--show-pong]`
 
 Opens a WebSocket connection and prints every JMRI message it receives,
@@ -740,6 +788,11 @@ as `power on`/`off` — if the observed state doesn't match the request (e.g.
 a feedback-wired light that didn't actually switch), the command prints a
 warning to stderr and exits with code 1.
 
+This bare "every light" behavior is the CLI's formal parity equivalent of
+the MCP server's `set_layout_lights` tool — same one-call-covers-everything
+semantics, confirmed by a regression test proving both agree against the
+same fixture data (see `docs/architecture.md`).
+
 ## `jmri-cli turnout` / `turnout list`
 
 Show the state of every turnout known to JMRI, sorted alphabetically by name
@@ -855,6 +908,12 @@ the request, the command prints a warning to stderr and exits with code 1.
 If any unconfirmed turnout has `Feedback: no`, an extra note is printed
 first clarifying that the command was sent OK and JMRI simply can't confirm
 that turnout's real position — not a sign that anything went wrong.
+
+This bare "every turnout" behavior is the CLI's formal parity equivalent of
+the MCP server's `set_all_turnouts` tool — same one-call, same-target-state
+semantics (not a per-turnout restore), confirmed by a regression test
+proving both agree against the same fixture data (see
+`docs/architecture.md`).
 
 ## `jmri-cli sensor` / `sensor list`
 

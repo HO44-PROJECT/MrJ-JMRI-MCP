@@ -190,6 +190,17 @@ boilerplate), split along the same layer boundary as the rest of the tree:
   `jmri_cli/*.py` module import, rather than each redefining them), CLI throttle-id prefixes,
   function/speed ranges, and `SORT_INDICATOR` (` ▼`, appended to a sorted column's header
   at the print call site — never baked into the header string itself).
+- **`lighting.py`** — `LIGHT_LABEL_KEYWORDS` and `is_light_label(label)`, the keyword
+  vocabulary `set_loco_lights`/`set_all_locos_lights` (and the CLI's `--lights-only`/
+  `lights-all`) use to recognize a roster function label as naming a light (English
+  light/lamp/headlight; French lumière/feu/lampe/phare, accent-folded). Deliberately a
+  flat keyword list, not the i18n `kinds` table above — a user's roster labels are free
+  text they typed themselves in JMRI's own editor, not a fixed vocabulary this project
+  controls, so matching is generous/substring-based rather than an exact i18n key.
+  Depends on `jmri_core/text.py`'s `fold()` (NFKD accent-strip + casefold), promoted there
+  from what used to be `jmri_client/roster.py`'s private `_fold()` so both `roster.py` and
+  `lighting.py` share one implementation without `constants` importing from `jmri_client`
+  (the wrong layering direction — `constants` is meant to be a leaf).
 
 `jmri_cli/light.py`, `jmri_cli/power.py`, and `jmri_cli/turnout.py`'s `_*_set()` helpers reconstruct
 the reported state name via `STATE_NAMES[ON_VALUE if flag else OFF_VALUE]` — reading the
@@ -230,6 +241,20 @@ carries a `kinds` table mapping a kind to its singular/plural/capitalized forms
 `i18n.lookup()` never raises: a missing translation falls back language → `"en"` → the
 raw key itself, so a gap in `fr.json` degrades to readable English rather than crashing,
 and a genuinely missing key is visible/greppable in output instead of silently swallowed.
+
+`lookup()` also caps how much of a resolver's `available`/`matches` kwarg it renders:
+`_cap_list_kwarg()` joins the list and, past `_MAX_LISTED = 15` entries, truncates to
+`"A, B, C, ... (+N more)"` before the final `str.format()`. A layout with dozens of
+turnouts/lights/sensors previously rendered its *entire* inventory into a single
+`unknown_entity`/`ambiguous_entity` message — a wall of text for voice/chat output that
+an LLM tends to recite back to the user verbatim rather than summarizing. This is fixed
+centrally in `lookup()`, not at each of the 6 resolver call sites, to avoid drift across
+turnout/light/sensor/signal/block/roster. Only the *rendered string* is capped —
+`exc.kwargs["available"]`/`exc.kwargs["matches"]` themselves keep the full uncapped list,
+so a caller that inspects the exception programmatically (rather than just printing it)
+still sees everything. Capping the payload doesn't by itself stop an LLM from reading a
+15-item list back as prose; that behavioral half is addressed by `_SERVER_INSTRUCTIONS`
+below ("act, don't recite").
 
 LLM-facing instruction strings (`server/__init__.py`'s server instructions,
 `tools/mode.py`'s executor-mode strings) and every docstring are **deliberately out of
@@ -406,14 +431,39 @@ system name (e.g. `"IL1"`) — **not** a locomotive's F0 headlight function
 tolerantly like `resolve_system()`/`resolve_roster_entry()`: case-
 insensitive, exact match against either JMRI's system name or its
 user-friendly `userName` first, then an unambiguous substring fragment of
-`userName`. Unlike `resolve_system()` there's no default fallback — a
-light must be named, there's no single "the" light. `compact_light()` (in
+either `userName` **or** the system name. Unlike `resolve_system()` there's
+no default fallback — a light must be named, there's no single "the" light. `compact_light()` (in
 `tools/_common.py`) prefers `userName` over the raw system name for
 display/matching, falling back to the system name only if the user never
 labeled the light in JMRI. Both MCP tool docstrings (`get_light`/
 `set_light`) and the light-domain modules explicitly flag this
 scenery-vs-headlight distinction so the LLM asks itself "did the user name
 a place or a locomotive?" before picking a tool.
+
+## `set_layout_lights`: every JMRI Light at once
+
+`tools/light.py`'s `set_layout_lights(turn_on: bool)` loops `get_lights()`
+and calls the existing `_set_light(name, turn_on)` per entry inside a
+`try/except JmriError` — one light failing doesn't stop the rest
+(catch-and-continue, the same shape as `set_all_turnouts` below). Returns
+`{"succeeded": [...], "failed": [...]}`, each `succeeded` entry shaped like
+`set_light`'s own return value (including `confirmed`) plus a `name`.
+
+This is the native, server-side bulk tool required by the standing rule
+that the LLM must never loop single-entity tool calls itself for a
+whole-layout request — see the `_SERVER_INSTRUCTIONS` section below.
+Routing is disambiguated by whether a locomotive is named in the request:
+"turn on all the lights" (no loco mentioned) → this tool; "all of the
+Autorail's lights" (a loco named) → `set_loco_lights`/`set_all_locos_lights`
+(see the throttle tool surface section), never this one. Both docstrings
+state the rule from both directions so the LLM doesn't have to infer it.
+
+No new CLI code was needed for parity: `jmri-cli light on`/`light off`
+already loop every light when `[name]` is omitted (see `docs/cli.md`) —
+that pre-existing bare-verb behavior is exactly this tool's CLI
+equivalent, confirmed by a regression test
+(`test_light_on_bare_confirms_every_light` in `packages/jmri-cli/tests/test_cli.py`)
+that both agree against the same fixture data.
 
 ## Turnouts: `list_turnouts` / `get_turnout` / `set_turnout`
 
@@ -423,8 +473,9 @@ a place or a locomotive?" before picking a tool.
 `set_turnout()` re-reads via `get_turnouts()` after the POST and reports
 `confirmed` honestly, same contract as `set_power()`/`set_light()`.
 `resolve_turnout()` uses the same tolerant case-insensitive exact-then-
-fragment match as `resolve_light()`, with no default fallback (a turnout
-must be named).
+fragment match as `resolve_light()` (fragment matching checks both
+`userName` and the system name — see the note below), with no default
+fallback (a turnout must be named).
 
 The tool surface deliberately uses JMRI/PanelPro's own **CLOSED/THROWN**
 vocabulary rather than track terminology like "open"/"closed", which would
@@ -456,6 +507,41 @@ not be reported to the user as an anomaly; it's only worth flagging when
 "Feedback" (yes/no) column on `list`/`find`/`findr`/`findg`, and
 `turnout close`/`throw`'s unconfirmed-state warning adds an extra note
 when the unconfirmed turnout(s) are sensorless, for the same reason.
+
+**Fragment matching against a JMRI system id.** All five non-roster
+resolvers (`resolve_turnout`, `resolve_light`, `resolve_sensor`,
+`resolve_signal`, `resolve_block`) had the same bug: the *exact*-match
+branch already checked both `name` (system id, e.g. `"IT100"`) and
+`userName`, but the *partial/substring fallback* checked only `userName` —
+so a fragment of a system id (e.g. `"IT10"`, or any id whose `userName` is
+unset) never matched even though the full id already resolved via exact
+match. Fixed identically in all five files: the partial-match filter now
+also checks `str(x.get("name", "")).casefold()`, one line per resolver.
+
+## `set_all_turnouts`: every turnout to the same state at once
+
+`tools/turnout.py`'s `set_all_turnouts(thrown: bool)` loops `get_turnouts()`
+and calls the existing `_set_turnout(name, thrown)` per entry, catching
+`JmriError` per turnout so one failure (a JMRI error, unsettled feedback)
+doesn't abort the rest. Returns `{"succeeded": [...], "failed": [...]}`,
+each `succeeded` entry shaped like `set_turnout`'s own return value
+(including `confirmed`) plus a `name`.
+
+**Sets every turnout to the SAME target state — this is explicitly not a
+"restore each turnout to its own previous/default position" operation**;
+there is no per-turnout memory to restore from. This ambiguity was raised
+and resolved with the user before implementation and is pinned down in the
+tool's own docstring (both to prevent relitigating it and so the LLM
+doesn't infer the wrong semantics from the tool name alone).
+
+Same native-bulk-tool rationale as `set_layout_lights` above: required so
+the LLM never loops `set_turnout` itself for a "close/throw every turnout"
+request. No new CLI code was needed — `jmri-cli turnout close`/`turnout
+throw` already loop every turnout when `[name]` is omitted (see
+`docs/cli.md`), confirmed by a regression test
+(`test_turnout_throw_bare_confirms_every_turnout` in
+`packages/jmri-cli/tests/test_cli.py`) that both agree against the same
+fixture data.
 
 ## Sensors: `list_sensors` / `get_sensor` (read-only)
 
@@ -898,6 +984,100 @@ never actually attempted). Uses the same `ensure_acquired`/`throttle_id`
 plumbing as `set_speed`/`stop`/etc., so it auto-acquires the throttle like
 every other throttle tool.
 
+### Long holds run in the background, not inline
+
+Blocking the MCP tool call for the full `hold_seconds` duration (above)
+turned out to cause a second, distinct problem once LLM routing to this
+tool actually worked: a voice client (Kira/xiaozhi) sits completely silent
+for the whole wait, since nothing is returned until the call finishes, and
+xiaozhi's own conversation-turn timeout can fire before a long hold (e.g.
+10s) completes — even though the ramp itself was working correctly
+server-side the whole time. The fix is a threshold, not a client-side
+change (nothing in this repo can alter xiaozhi's own turn timeout — see
+`packages/jmri-mcp/src/xiaozhi_wrapper`'s bridge, which has no
+request-level timeout of its own and simply relays whatever `jmri-mcp`
+writes to stdout, whenever it arrives):
+
+- `rampup_seconds + hold_seconds + rampdown_seconds` at or below
+  `jmri_core.constants.client_tuning.RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS`
+  (4.0s): unchanged, blocks and returns the real final speed/direction.
+- Above that threshold: `tools._common.run_in_background()` schedules
+  `execute_speed_change(...)` as an `asyncio.Task` on the shared, process-wide
+  `JmriWsClient` (the same connection the tool call was about to use
+  inline), and the tool returns immediately with `{"address", "status":
+  "started", "speed_percent", "direction", "seconds_total"}` — the ramp,
+  hold, and auto-stop keep running after the response is sent. The
+  locomotive still stops itself automatically; nothing further is required
+  from the caller.
+
+`run_in_background` keeps a strong reference to each task in a module-level
+`background_tasks: set` (asyncio only weakly references bare
+`create_task()` results, so an untracked task risks silent garbage
+collection mid-ramp) and self-removes on completion via
+`task.add_done_callback`. `server/__init__.py`'s `_run()` awaits whatever's
+left in `background_tasks` in its shutdown `finally`, before closing the
+`JmriWsClient` — so a clean server exit lets an in-flight background ramp
+finish (or at least run its cancellation/rampdown path) rather than
+abandoning the locomotive mid-ramp.
+
+`_SERVER_INSTRUCTIONS` (see below) explicitly tells the LLM that
+`"status": "started"` is a normal success acknowledgement, not a dropped
+request or a failure — without this, an LLM seeing a non-final-looking
+response for what it expected to be a blocking call could plausibly retry
+or report an error.
+
+## `set_loco_lights` / `set_all_locos_lights`: every light-labeled function, not just F0
+
+`tools/throttle.py`'s `set_loco_lights(address, state)` is different from
+`lights_on`/`lights_off` (which only ever touch F0): it reads the
+locomotive's roster function *labels* (`jmri_client.get_roster_function_labels`,
+the same source `get_locomotive_functions` uses) and calls the existing
+`set_function(address, n, state)` — same-module closure call, the
+established precedent from `lights_on`/`lights_off` — for every function
+number whose label matches `jmri_core.constants.lighting.is_light_label`
+(keywords like light/lamp/headlight, lumière/feu/lampe/phare,
+case-/accent-insensitive via `jmri_core.text.fold`). Motivating example,
+verified against this layout's real roster: the Autorail has F0="Lumières
+avant", F1="Lumières cabine", F2="Lumières arrière" — all three are
+light-labeled, so "turn on all the Autorail's lights" must flip all three,
+not just F0. Each function switch is attempted independently
+(catch-and-continue), returning `{"address": ..., "applied": [{"function",
+"label", "state"}...], "failed": [...]}`. A locomotive with **no**
+light-labeled functions is not an error: `applied` is empty and a `"note"`
+explains why (most locos have no roster labels set at all — see the M3
+roster work), so the LLM falls back to asking for an explicit F-number only
+in that case, not on every call.
+
+`set_all_locos_lights(state)` loops every address this MCP session
+currently holds a throttle for, via `JmriWsClient.all_throttle_states()`
+(the client's public accessor — not the private `_throttles` dict some
+older code reaches into), calling `set_loco_lights` per address and
+returning `{"locomotives": [<one set_loco_lights result per address>]}`.
+Same scope limitation as `emergency_stop_all`, stated explicitly in its
+docstring: only locomotives this session has acquired are reachable, not
+every locomotive on the layout. Returns `{"locomotives": []}`, not an
+error, if nothing has been acquired yet.
+
+Both are the native, server-side bulk tools required by the standing rule
+against the LLM looping single-entity tool calls itself (see
+`_SERVER_INSTRUCTIONS` below). Routing is the mirror image of
+`set_layout_lights`: a lighting request that **names a locomotive** routes
+here; one that doesn't routes to `set_layout_lights` instead. Both tools'
+docstrings state this rule from both directions.
+
+CLI parity is two pieces, both in `jmri_cli/throttle.py`: a `--lights-only`
+flag on `throttle on`/`throttle off` (filters `_resolve_function_numbers`'s
+label lookup through `is_light_label` before falling through to the
+existing `_throttle_set_functions` — the CLI equivalent of `set_loco_lights`),
+and a new `throttle lights-all <on|off>` verb (`throttle_lights_all`) that
+loops every address in `state.py`'s local touched-locomotive cache — the
+same population `throttle stop` with no loco given already uses — applying
+the `--lights-only`-filtered path to each, the CLI equivalent of
+`set_all_locos_lights`. A locomotive with no light-labeled functions is
+skipped with a printed note, not treated as a failure; an empty cache
+prints a note and exits 0, mirroring `set_all_locos_lights`'s
+`{"locomotives": []}` case.
+
 ## `set_power`: never re-POST a state JMRI already reports
 
 Real JMRI/DCC++ bug, found by the user on their own installation:
@@ -1069,17 +1249,64 @@ response with only `protocolVersion`, `capabilities`, `serverInfo` — no
 `instructions` key at all until one is passed in.
 
 `server/__init__.py` sets `_SERVER_INSTRUCTIONS` and passes it as
-`FastMCP("JMRI", instructions=_SERVER_INSTRUCTIONS)`. Content is scoped to
-exactly one thing: mapping the four whole-layout, no-argument tools to the
-French/English phrases that should trigger them (`emergency_stop_all`,
-`power_off_all`, `power_on_all`, `set_executor_mode`) — without this, the
-LLM has no signal connecting a generic, no-target-named command like
-"arrête tout" to the right tool until it has already read that tool's own
-docstring, which only happens if it guesses to look there first. This is
-deliberately narrow: a general safety reminder (e.g. about unauthorized
-motion commands) and general project context were both considered and
-left out, kept instead in `CLAUDE.md`/this repo's docs, not the MCP
-protocol payload.
+`FastMCP("JMRI", instructions=_SERVER_INSTRUCTIONS)`. Content started
+scoped to exactly one thing — mapping the four whole-layout, no-argument
+tools to the French/English phrases that should trigger them
+(`emergency_stop_all`, `power_off_all`, `power_on_all`, `set_executor_mode`)
+— without this, the LLM has no signal connecting a generic, no-target-named
+command like "arrête tout" to the right tool until it has already read
+that tool's own docstring, which only happens if it guesses to look there
+first. This is still deliberately narrow: a general safety reminder (e.g.
+about unauthorized motion commands) and general project context were both
+considered and left out, kept instead in `CLAUDE.md`/this repo's docs, not
+the MCP protocol payload.
+
+Card #34 added three more paragraphs to `_SERVER_INSTRUCTIONS`, in direct
+response to real user friction, not hypothetical:
+- **Act, don't recite** — when a tool call fails on an unrecognized name
+  (`unknown_entity`/`ambiguous_entity`), the instruction tells the LLM not
+  to read the tool's full available-entity list back to the user as its
+  answer (the user's own words: "un enfer d'inutilité" — a hell of
+  uselessness), and to ask one short clarifying question instead. This is
+  the behavioral half of the `i18n` list-capping fix above — capping bounds
+  the *payload*, this paragraph addresses what the LLM *does* with it.
+- **Bulk routing** — any request naming "all"/"every"/"tout(e)(s)" must go
+  to the matching whole-layout tool (now seven: `power_off_all`,
+  `power_on_all`, `emergency_stop_all`, `set_all_turnouts`,
+  `set_layout_lights`, `set_loco_lights`, `set_all_locos_lights`) in ONE
+  call — the instruction states explicitly that looping a single-entity
+  tool (`set_turnout`, `set_light`, `set_function`, ...) itself is wrong,
+  not just slow, since that is exactly the failure mode ("turn off all
+  locos" needing the user to insist/repeat) that motivated building these
+  tools as native and server-side in the first place.
+- **Loco-lights disambiguation** — restates, at the protocol-instructions
+  level, the same rule each tool's own docstring states: naming a
+  locomotive routes to `set_loco_lights`/`set_all_locos_lights`; not naming
+  one routes to `set_layout_lights`. Stated in both places deliberately,
+  same reasoning as the power/emergency_stop "NOT interchangeable" clause
+  below — a single mention doesn't reliably win against pattern-matching.
+- **Duration routing** — added after a real user report ("le LLM ne
+  comprend pas quand je lui parle de durée genre avance pendant 10s"):
+  `set_speed_ramped` with `hold_seconds` already existed and already
+  handles a duration entirely server-side (wait + auto-stop, before the
+  tool call returns), but nothing pointed the LLM at it for a plain "run
+  forward for 10 seconds" request — it would reach for `set_speed` first
+  (the obvious match for "speed"), find no duration parameter there, and
+  either give up or try to time a separate stop call itself. This
+  paragraph states the routing rule explicitly ("a duration always means
+  set_speed_ramped's hold_seconds, never plain set_speed + a separately-
+  timed stop"), and `set_speed`'s own docstring got the same forward
+  pointer, so whichever tool the LLM reads first still leads to the right
+  one. This routing fix surfaced a second, previously-latent problem: once
+  the LLM correctly reached `set_speed_ramped`, a long `hold_seconds` blocked
+  the tool call long enough to trip Kira/xiaozhi's own conversation-turn
+  timeout (reported live: "le LLM continue d'indiquer qu'il tente de faire
+  rouler pendant x secondes puis me dit timeout"). Fixed by the background-
+  task path described above ("Long holds run in the background, not
+  inline"), plus a matching instructions paragraph telling the LLM that a
+  `"status": "started"` reply is a normal success, not a timeout or dropped
+  call — a routing fix alone couldn't have caught this, since the symptom
+  only exists once routing already works.
 
 Two real limits on this mechanism, both by design of the protocol, not
 bugs here:

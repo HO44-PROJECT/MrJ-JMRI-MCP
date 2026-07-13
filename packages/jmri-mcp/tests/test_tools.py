@@ -938,11 +938,11 @@ async def test_set_all_locos_lights_with_nothing_acquired(fake_jmri):
     assert out == {"locomotives": []}
 
 
-async def test_start_locomotive_acquires_faces_forward_and_lights_on(fake_jmri, roster_fixture):
+async def test_prepare_locomotive_acquires_faces_forward_and_lights_on(fake_jmri, roster_fixture):
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
-        out = await call(mcp, "start_locomotive", address=4)
+        out = await call(mcp, "prepare_locomotive", address=4)
     finally:
         router.stop()
     assert out["address"] == 4
@@ -952,12 +952,12 @@ async def test_start_locomotive_acquires_faces_forward_and_lights_on(fake_jmri, 
     assert all(a["state"] is True for a in out["lights"]["applied"])
 
 
-async def test_start_locomotive_flips_reverse_to_forward(fake_jmri, roster_fixture):
+async def test_prepare_locomotive_flips_reverse_to_forward(fake_jmri, roster_fixture):
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
         await call(mcp, "set_direction", address=4, direction="reverse")
-        out = await call(mcp, "start_locomotive", address=4)
+        out = await call(mcp, "prepare_locomotive", address=4)
     finally:
         router.stop()
     assert out["direction"] == "forward"
@@ -967,20 +967,20 @@ async def test_start_locomotive_flips_reverse_to_forward(fake_jmri, roster_fixtu
     assert get_ws_client().throttle_state("addr4")["forward"] is True
 
 
-async def test_start_locomotive_reports_error_honestly(monkeypatch):
+async def test_prepare_locomotive_reports_error_honestly(monkeypatch):
     monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
     mcp = make_server()
-    out = await call(mcp, "start_locomotive", address=4)
+    out = await call(mcp, "prepare_locomotive", address=4)
     assert "error" in out
 
 
-async def test_stop_locomotive_ramps_down_faces_forward_lights_off_and_releases(fake_jmri, roster_fixture):
+async def test_park_locomotive_ramps_down_faces_forward_lights_off_and_releases(fake_jmri, roster_fixture):
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
-        await call(mcp, "start_locomotive", address=4)
+        await call(mcp, "prepare_locomotive", address=4)
         await call(mcp, "set_speed", address=4, speed_percent=40)
-        out = await call(mcp, "stop_locomotive", address=4)
+        out = await call(mcp, "park_locomotive", address=4)
     finally:
         router.stop()
     assert out["address"] == 4
@@ -995,18 +995,18 @@ async def test_stop_locomotive_ramps_down_faces_forward_lights_off_and_releases(
     assert "addr4" not in get_ws_client().all_throttle_states()
 
 
-async def test_stop_locomotive_flips_reverse_to_forward_at_rest(fake_jmri, roster_fixture):
+async def test_park_locomotive_flips_reverse_to_forward_at_rest(fake_jmri, roster_fixture):
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
         await call(mcp, "set_direction", address=4, direction="reverse")
-        out = await call(mcp, "stop_locomotive", address=4)
+        out = await call(mcp, "park_locomotive", address=4)
     finally:
         router.stop()
     assert out["direction"] == "forward"
 
 
-async def test_stop_locomotive_never_acquired_still_turns_off_lights_and_releases(fake_jmri, roster_fixture):
+async def test_park_locomotive_never_acquired_still_turns_off_lights_and_releases(fake_jmri, roster_fixture):
     """No prior acquire_throttle/set_speed for this address -- steps 1-2
     (ramp/direction) are skipped, but lights (which auto-acquire, like
     set_loco_lights always does) still run, and the resulting throttle is
@@ -1014,7 +1014,7 @@ async def test_stop_locomotive_never_acquired_still_turns_off_lights_and_release
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
-        out = await call(mcp, "stop_locomotive", address=4)
+        out = await call(mcp, "park_locomotive", address=4)
     finally:
         router.stop()
     assert out["stopped"] is True
@@ -1026,20 +1026,20 @@ async def test_stop_locomotive_never_acquired_still_turns_off_lights_and_release
     assert "addr4" not in get_ws_client().all_throttle_states()
 
 
-async def test_stop_locomotive_reports_error_honestly(monkeypatch):
+async def test_park_locomotive_reports_error_honestly(monkeypatch):
     monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
     mcp = make_server()
-    out = await call(mcp, "stop_locomotive", address=4)
+    out = await call(mcp, "park_locomotive", address=4)
     assert "error" in out
 
 
-async def test_stop_all_locomotives_covers_every_acquired_address(fake_jmri, roster_fixture):
+async def test_park_all_locomotives_covers_every_acquired_address(fake_jmri, roster_fixture):
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
-        await call(mcp, "start_locomotive", address=4)
+        await call(mcp, "prepare_locomotive", address=4)
         await call(mcp, "acquire_throttle", address=8)
-        out = await call(mcp, "stop_all_locomotives")
+        out = await call(mcp, "park_all_locomotives")
     finally:
         router.stop()
     by_address = {loco["address"]: loco for loco in out["locomotives"]}
@@ -1054,9 +1054,9 @@ async def test_stop_all_locomotives_covers_every_acquired_address(fake_jmri, ros
     assert get_ws_client().all_throttle_states() == {}
 
 
-async def test_stop_all_locomotives_with_nothing_acquired(fake_jmri):
+async def test_park_all_locomotives_with_nothing_acquired(fake_jmri):
     mcp = make_server()
-    out = await call(mcp, "stop_all_locomotives")
+    out = await call(mcp, "park_all_locomotives")
     assert out == {"locomotives": []}
 
 

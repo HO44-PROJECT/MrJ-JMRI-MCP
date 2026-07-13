@@ -1,4 +1,4 @@
-"""Throttle MCP tools: acquire/release_throttle, set_speed, set_speed_ramped, stop, emergency_stop, set_direction, set_function, lights_on, lights_off, set_loco_lights, set_all_locos_lights, start_locomotive, stop_locomotive, stop_all_locomotives.
+"""Throttle MCP tools: acquire/release_throttle, set_speed, set_speed_ramped, stop, emergency_stop, set_direction, set_function, lights_on, lights_off, set_loco_lights, set_all_locos_lights, prepare_locomotive, park_locomotive, park_all_locomotives.
 
 All keyed on DCC address — see jmri_mcp.tools._common.throttle_id. Talks to
 jmri_ws.py's shared, process-wide WebSocket connection (see
@@ -608,8 +608,8 @@ def register(mcp) -> None:
         return {"locomotives": [await set_loco_lights(a, state) for a in addresses]}
 
     @mcp.tool()
-    async def start_locomotive(address: int, prefix: str | None = None) -> dict:
-        """Wake up ONE locomotive for a session: acquire, face forward, lights on.
+    async def prepare_locomotive(address: int, prefix: str | None = None) -> dict:
+        """Prepare ONE locomotive for a session: acquire, face forward, lights on.
 
         Args:
             address: The locomotive's DCC address.
@@ -617,27 +617,36 @@ def register(mcp) -> None:
                 passed straight through to acquire_throttle — see that
                 tool's docstring.
 
-        Use this for "allume la loco"/"start up the 3"/"wake up the
-        autorail" — the counterpart to stop_locomotive, for beginning a
+        Use this for "prépare la loco"/"prepare the 3"/"get the autorail
+        ready" — the counterpart to park_locomotive, for beginning a
         session with a locomotive rather than a normal "go" command mid-run.
+
+        NOT the same concept as `stop`/`emergency_stop` (those only ever
+        change SPEED on an already-active session) and NOT the same concept
+        as `set_power` (that's the DCC command station's own power supply,
+        affecting every locomotive on that system regardless of who's
+        driving it). This tool only ever touches ONE locomotive's own
+        session state (throttle + lights), never system power, and never
+        implies a speed/motion command by itself.
+
         Runs three steps in order, in one call:
 
           1. Acquires the throttle (safe even if already acquired — same as
              acquire_throttle).
           2. Sets direction to forward. Locomotives start a session facing
              forward by this project's convention, matching
-             stop_locomotive's end-of-session state.
+             park_locomotive's end-of-session state.
           3. Turns on every light-related function (same as
              set_loco_lights(address, True) — F0 and any other
              roster-labeled light function, not just the headlight).
 
-        Does NOT set a speed — this only wakes the locomotive up and lights
+        Does NOT set a speed — this only prepares the locomotive and lights
         it, it does not start it moving. Follow with set_speed/
         set_speed_ramped if the user also asked it to move.
 
         This is a single call for the LLM: never call acquire_throttle,
         set_direction, and set_loco_lights yourself in sequence for a
-        "start up"/"wake up" request, use this tool instead.
+        "prepare"/"get ready" request, use this tool instead.
 
         Returns {"address": ..., "acquired": bool, "direction": "forward",
         "lights": <set_loco_lights result>}.
@@ -646,14 +655,14 @@ def register(mcp) -> None:
         try:
             data = await client.acquire_throttle(throttle_id(address), address, prefix)
         except JmriError as exc:
-            logger.warning("start_locomotive(%r, %r) acquire step failed: %s", address, prefix, exc)
+            logger.warning("prepare_locomotive(%r, %r) acquire step failed: %s", address, prefix, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
 
         if not data.get("forward", True):
             try:
                 await client.set_direction(throttle_id(address), True)
             except JmriError as exc:
-                logger.warning("start_locomotive(%r) direction step failed: %s", address, exc)
+                logger.warning("prepare_locomotive(%r) direction step failed: %s", address, exc)
 
         lights_result = await set_loco_lights(address, True)
 
@@ -665,17 +674,29 @@ def register(mcp) -> None:
         }
 
     @mcp.tool()
-    async def stop_locomotive(address: int) -> dict:
+    async def park_locomotive(address: int) -> dict:
         """Put ONE locomotive to rest for the session: smooth stop, forward, lights off, throttle released.
 
         Args:
             address: The locomotive's DCC address.
 
-        Use this for "éteins la loco"/"put the 3 to bed"/"park the
-        autorail"/"shut down the autorail" — the counterpart to
-        start_locomotive, for an end-of-session shutdown of a single
-        locomotive, not a mid-run pause (use plain stop for that). Runs
-        four steps in order, in one call:
+        Use this for "éteins la loco"/"coupe les moteurs"/"put the 3 to
+        bed"/"park the autorail"/"shut down the autorail" — the counterpart
+        to prepare_locomotive, for an end-of-session shutdown of a single
+        locomotive, not a mid-run pause (use plain `stop` for that).
+
+        NOT the same concept as `stop`/`emergency_stop` (those only change
+        SPEED — a mid-run pause, throttle stays acquired, lights stay as
+        they are) and NOT the same concept as `set_power` (that's the DCC
+        command station's own power supply, affecting every locomotive on
+        that system regardless of who's driving it, JMRI-wide). This tool
+        only ever touches ONE locomotive's own session state (speed +
+        lights + throttle release), never system power. If the user's
+        words describe ending this locomotive's session (lights off,
+        released, done for now) rather than just pausing its motion, this
+        is the tool — not `stop`.
+
+        Runs four steps in order, in one call:
 
           1. Ramps down to speed 0 (never an abrupt stop) — the rampdown
              duration scales with the loco's CURRENT speed (proportionally
@@ -685,7 +706,7 @@ def register(mcp) -> None:
           2. If it's currently in reverse, flips to forward — always at
              speed 0 by this point, so this is a safe, ordinary direction
              set, not a moving flip. Locomotives are left facing forward at
-             rest, matching start_locomotive's own forward convention.
+             rest, matching prepare_locomotive's own forward convention.
           3. Turns off every light-related function (same as
              set_loco_lights(address, False) — F0 and any other
              roster-labeled light function, not just the headlight).
@@ -700,8 +721,8 @@ def register(mcp) -> None:
 
         This is a single call for the LLM: never call set_speed/stop,
         set_direction, set_loco_lights, and release_throttle yourself in
-        sequence for a "shut down"/"put to bed" request, use this tool
-        instead.
+        sequence for a "shut down"/"put to bed"/"park" request, use this
+        tool instead.
 
         Returns {"address": ..., "stopped": bool, "direction": "forward",
         "lights": <set_loco_lights result>, "released": bool}.
@@ -726,7 +747,7 @@ def register(mcp) -> None:
                     hold_seconds=None,
                 )
             except JmriError as exc:
-                logger.warning("stop_locomotive(%r) stop step failed: %s", address, exc)
+                logger.warning("park_locomotive(%r) stop step failed: %s", address, exc)
                 stopped = False
 
         lights_result = await set_loco_lights(address, False)
@@ -736,7 +757,7 @@ def register(mcp) -> None:
         try:
             await client.release_throttle(tid)
         except JmriError as exc:
-            logger.warning("stop_locomotive(%r) release step failed: %s", address, exc)
+            logger.warning("park_locomotive(%r) release step failed: %s", address, exc)
             released = False
             release_error = i18n.t(f"errors.{exc.code}", **exc.kwargs)
 
@@ -752,16 +773,24 @@ def register(mcp) -> None:
         return out
 
     @mcp.tool()
-    async def stop_all_locomotives() -> dict:
+    async def park_all_locomotives() -> dict:
         """Put EVERY currently-acquired locomotive to rest at once: smooth stop, forward, lights off, released.
 
-        Call this for "éteins toutes les locos"/"shut down every
-        locomotive"/"put everything to bed" — the bulk counterpart to
-        stop_locomotive. Never loop stop_locomotive yourself for a request
-        like this — this tool already loops server-side, in one call, over
-        every locomotive this session has acquired, running the exact same
-        four-step sequence (proportional rampdown, face forward, lights
-        off, release) independently per locomotive.
+        Call this for "éteins toutes les locos"/"coupe tous les
+        moteurs"/"shut down every locomotive"/"put everything to bed" —
+        the bulk counterpart to park_locomotive. Never loop park_locomotive
+        yourself for a request like this — this tool already loops
+        server-side, in one call, over every locomotive this session has
+        acquired, running the exact same four-step sequence (proportional
+        rampdown, face forward, lights off, release) independently per
+        locomotive.
+
+        NOT the same concept as `emergency_stop_all` (motion-only, no
+        lights/release) and NOT the same concept as system power off (that
+        cuts every locomotive on a DCC system regardless of who's driving
+        it — this project has no single "power off everything" tool; see
+        `set_power` per system). This tool only ever touches locomotives
+        THIS session has a throttle for.
 
         IMPORTANT LIMITATION: same scope as emergency_stop_all/
         set_all_locos_lights — this only reaches locomotives THIS MCP
@@ -770,10 +799,10 @@ def register(mcp) -> None:
         been acquired yet, returns {"locomotives": []}, not an error.
 
         For a shutdown request naming ONE specific locomotive, use
-        stop_locomotive instead. For an immediate motion-only stop with no
+        park_locomotive instead. For an immediate motion-only stop with no
         lights/release side effects, use emergency_stop_all instead.
 
-        Returns {"locomotives": [<one stop_locomotive result per address>]}
+        Returns {"locomotives": [<one park_locomotive result per address>]}
         — each locomotive is stopped independently, so one loco's failure
         doesn't block the others.
         """
@@ -785,4 +814,4 @@ def register(mcp) -> None:
         })
         if not addresses:
             return {"locomotives": []}
-        return {"locomotives": [await stop_locomotive(a) for a in addresses]}
+        return {"locomotives": [await park_locomotive(a) for a in addresses]}

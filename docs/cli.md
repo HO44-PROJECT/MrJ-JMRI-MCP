@@ -683,7 +683,7 @@ function number, which is always explicit regardless of its label.
 Wake up one locomotive, or **every locomotive this CLI's local cache
 knows about** if `[loco]` is omitted: acquire the throttle, set forward
 (only if not already), turn on every light-labeled function — the CLI
-equivalent of the MCP server's `start_locomotive` tool. Does not change
+equivalent of the MCP server's `prepare_locomotive` tool. Does not change
 speed; follow with `throttle speed <loco> <percent>` if it should also
 move. Deliberately named "engine start", not "power on" — `power on/off`
 already means DCC system power (the whole layout, everyone's locomotives),
@@ -710,7 +710,7 @@ address=7 started (forward, 0 light function(s) on)
 
 Put one locomotive to rest, or **every locomotive currently known** if
 `[loco]` is omitted — the CLI equivalent of the MCP server's
-`stop_locomotive`/`stop_all_locomotives` tools. Same "loco optional,
+`park_locomotive`/`park_all_locomotives` tools. Same "loco optional,
 defaults to everything" pattern as plain `throttle stop` (see above), and
 the same naming rationale as `engine-start` above: deliberately not
 "power off", to avoid any confusion with `power off`'s DCC-system-wide

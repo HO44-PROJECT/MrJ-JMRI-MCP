@@ -24,11 +24,11 @@ RAMP_STEPS_PER_SECOND = 4.0
 # "started" acknowledgement when the wait is trivial.
 RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS = 4.0
 
-# stop_locomotive's rampdown-to-stop duration at full speed (100%), scaled
+# park_locomotive's rampdown-to-stop duration at full speed (100%), scaled
 # linearly down to ~0s for a locomotive already stopped -- current_fraction
 # * this constant. Keeps the shutdown proportional to how fast the loco is
 # actually going instead of a single fixed wait that's needlessly slow for
 # a nearly-stopped loco or too abrupt for one at full speed. Capped at this
 # value, so it never crosses RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS and
-# stop_locomotive can stay a simple blocking call.
+# park_locomotive can stay a simple blocking call.
 STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED = 3.0

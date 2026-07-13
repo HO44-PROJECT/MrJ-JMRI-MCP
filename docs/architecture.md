@@ -1070,7 +1070,7 @@ in `jmri_cli/throttle.py`: it filters `_resolve_function_numbers`'s label
 lookup through `is_light_label` before falling through to the existing
 `_throttle_set_functions`. Combined with `on`/`off`'s own "loco optional,
 defaults to `state.py`'s local touched-address cache" behavior (see the CLI
-parity paragraph in the `start_locomotive`/`stop_locomotive` section below),
+parity paragraph in the `prepare_locomotive`/`park_locomotive` section below),
 `throttle on --lights-only`/`throttle off --lights-only` with no loco is the
 CLI equivalent of `set_loco_lights` (one address) or `set_all_locos_lights`
 (every touched address) depending on whether `[loco]` is given — there is
@@ -1079,20 +1079,20 @@ skipped with a printed note rather than treated as a failure when acting on
 every touched address, and an empty cache prints a note and exits 0,
 mirroring `set_all_locos_lights`'s `{"locomotives": []}` case.
 
-## `start_locomotive` / `stop_locomotive` / `stop_all_locomotives`: session on/off for a locomotive
+## `prepare_locomotive` / `park_locomotive` / `park_all_locomotives`: session on/off for a locomotive
 
-`tools/throttle.py`'s `start_locomotive(address, prefix=None)` and
-`stop_locomotive(address)` are single-call counterparts covering the
+`tools/throttle.py`'s `prepare_locomotive(address, prefix=None)` and
+`park_locomotive(address)` are single-call counterparts covering the
 "wake up"/"put to bed" case for one locomotive, so the LLM never has to
 chain acquire/direction/lights/speed/release calls itself.
 
-`start_locomotive` runs three steps: acquire the throttle, flip to
+`prepare_locomotive` runs three steps: acquire the throttle, flip to
 forward only if not already facing that way (`data.get("forward", True)`
 — avoids an unnecessary direction call when already forward), and call
 `set_loco_lights(address, True)`. It does not touch speed — waking a
 locomotive up is distinct from starting it moving.
 
-`stop_locomotive` runs four steps: ramp down to speed 0 via the shared
+`park_locomotive` runs four steps: ramp down to speed 0 via the shared
 `execute_speed_change` (see the ramping section below) with duration
 `current_fraction * STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED`
 (`jmri_core.constants.client_tuning`, 3.0s) — proportional to the
@@ -1100,7 +1100,7 @@ locomotive's speed at the moment the call starts, so an already-slow or
 stopped locomotive doesn't wait through a fixed delay with nothing to
 ramp down from, and a locomotive at full speed still gets a smooth,
 bounded stop. This is deliberately capped below
-`RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS` (4.0s) so `stop_locomotive`
+`RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS` (4.0s) so `park_locomotive`
 can stay a simple blocking call, unlike `set_speed_ramped`'s
 background-task path. After the ramp: flip to forward (always safe here,
 since speed is 0 by construction), turn off every light-related function
@@ -1116,8 +1116,8 @@ step and the release step failed (e.g. JMRI unreachable throughout), a
 top-level `"error"` key is set rather than reporting `"released": true`
 with no basis for it.
 
-`stop_all_locomotives()` is the bulk counterpart, looping
-`stop_locomotive` over every address `JmriWsClient.all_throttle_states()`
+`park_all_locomotives()` is the bulk counterpart, looping
+`park_locomotive` over every address `JmriWsClient.all_throttle_states()`
 currently holds — same scope limitation as `emergency_stop_all`/
 `set_all_locos_lights` (only reaches locomotives this session has
 acquired), same `{"locomotives": []}` empty case.
@@ -1155,8 +1155,14 @@ specifically to avoid colliding with the pre-existing `power on/off`
 verb — DCC system power (the whole layout) and one locomotive's own
 throttle/lights are different concepts, and a name collision here risks
 the LLM confusing the two, not just CLI readability. The MCP tool names
-(`start_locomotive`, `stop_locomotive`, `stop_all_locomotives`) are
-unaffected by this CLI-only renaming. The one-shot CLI's `engine-stop`
+(`prepare_locomotive`, `park_locomotive`, `park_all_locomotives`) use
+different words again, for the same reason applied one level further: an
+LLM routing a voice/chat request also needs to distinguish a session
+start/end from `stop`/`emergency_stop` (speed-only, mid-run) — a bare
+"stop" in the tool name risked exactly that confusion in practice. The
+CLI's `engine-*` verbs and the MCP tools' `prepare`/`park` names are not
+required to match each other; each was chosen to avoid collisions within
+its own surface. The one-shot CLI's `engine-stop`
 acquires the throttle explicitly before its lights step, unlike the MCP
 tool's `set_loco_lights`/`set_function`, which auto-acquire internally —
 a fresh one-shot connection never already holds a throttle, so without an
@@ -1394,13 +1400,13 @@ response to real user friction, not hypothetical:
   call — a routing fix alone couldn't have caught this, since the symptom
   only exists once routing already works.
 
-- **Session on/off routing** — added alongside `start_locomotive`/
-  `stop_locomotive`/`stop_all_locomotives` (see the dedicated section
+- **Session on/off routing** — added alongside `prepare_locomotive`/
+  `park_locomotive`/`park_all_locomotives` (see the dedicated section
   above): maps "allume la loco"/"start up the 3"/"wake up the autorail" to
-  `start_locomotive`, "éteins la loco"/"put the 3 to bed"/"shut down the
-  autorail" to `stop_locomotive`, and "éteins toutes les locos"/"shut down
-  every locomotive"/"put everything to bed" to `stop_all_locomotives`
-  (never a loop of `stop_locomotive` calls). Explicitly tells the LLM
+  `prepare_locomotive`, "éteins la loco"/"put the 3 to bed"/"shut down the
+  autorail" to `park_locomotive`, and "éteins toutes les locos"/"shut down
+  every locomotive"/"put everything to bed" to `park_all_locomotives`
+  (never a loop of `park_locomotive` calls). Explicitly tells the LLM
   never to chain acquire_throttle/set_direction/set_loco_lights/
   set_speed(_ramped)/release_throttle itself for any of these three
   requests — each already has one native tool, the same rationale as the

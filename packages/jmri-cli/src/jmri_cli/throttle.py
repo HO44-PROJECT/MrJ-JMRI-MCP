@@ -818,7 +818,7 @@ async def _engine_start_one(address: int, prefix: str | None, *, client: JmriWsC
 async def throttle_engine_start(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
     """Wake up one loco, or every touched loco if none is given: acquire, face forward, lights on.
 
-    The CLI equivalent of the MCP server's start_locomotive tool. Does NOT
+    The CLI equivalent of the MCP server's prepare_locomotive tool. Does NOT
     start the locomotive moving — follow with `throttle speed` if the user
     also wants it to move. Deliberately named "engine start", not "power
     on"/"start" alone — this project already has `power on/off` for DCC
@@ -929,8 +929,8 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
 async def throttle_engine_stop(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
     """Put one loco to rest, or every touched loco if none is given: ramp down, forward, lights off, release.
 
-    The CLI equivalent of the MCP server's stop_locomotive/
-    stop_all_locomotives tools — same "loco optional, defaults to every
+    The CLI equivalent of the MCP server's park_locomotive/
+    park_all_locomotives tools — same "loco optional, defaults to every
     known locomotive" philosophy as plain `throttle stop`. Unlike
     `throttle_stop`, `loco` is never mandatory, not even inside the shell:
     with no `loco`, this always targets state.py's local touched-address

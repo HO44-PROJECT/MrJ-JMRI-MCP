@@ -41,6 +41,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -255,6 +256,27 @@ def load_config() -> dict:
         return {}
 
 
+def _resolve_command(command: str) -> str:
+    """Resolve a bare config `command` (e.g. "jmri-mcp") to a runnable path.
+
+    `shutil.which()` only searches `$PATH`, which doesn't necessarily
+    include the env this bridge itself was launched from (e.g. invoked via
+    an absolute path, as happens with Claude Desktop / xiaozhi launchers
+    that don't activate the env's shell first) — see the bridge's own
+    `sys.executable` directory, which is a sibling of `jmri-mcp` in any
+    venv/conda env where both were installed together (both are
+    `[project.scripts]` entry points of packages in this same workspace).
+    Falls back to the bare command unchanged if not found there either, so
+    `subprocess.Popen` raises its normal FileNotFoundError.
+    """
+    if os.path.isabs(command) or shutil.which(command):
+        return command
+    sibling = os.path.join(os.path.dirname(sys.executable), command)
+    if os.path.isfile(sibling) and os.access(sibling, os.X_OK):
+        return sibling
+    return command
+
+
 def build_server_command(target: str | None = None) -> tuple[list[str], dict]:
     """Build the [cmd, ...] argv and env for one server target.
 
@@ -301,6 +323,7 @@ def build_server_command(target: str | None = None) -> tuple[list[str], dict]:
             args = entry.get(SERVER_KEY_ARGS) or []
             if not command:
                 raise RuntimeError(f"Server '{target}' is missing 'command'")
+            command = _resolve_command(command)
             return [command, *args], child_env
 
         if typ in HTTP_LIKE_TRANSPORTS:

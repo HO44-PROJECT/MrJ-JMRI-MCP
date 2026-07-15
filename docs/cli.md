@@ -117,6 +117,36 @@ zou (test)          OFF
 
 Systems are sorted alphabetically by name.
 
+## `jmri-cli session-start` / `session-end`
+
+Composite session bookends. Both take no arguments and work identically
+one-shot or inside the interactive shell.
+
+`session-start`: `power on` (every DCC system restored), then `throttle
+engine-start` (every locomotive in `state.py`'s local touched-address
+cache woken up — forward, lights on). With an empty cache, reduces to
+just powering on.
+
+`session-end`: `throttle stop` (every cached locomotive ramped to a
+stop), then `throttle engine-stop` (faced forward, lights off,
+released), then `power off` (every DCC system cut) — strictly in that
+order, so power is never cut while a locomotive might still be moving.
+One locomotive failing doesn't abort the rest of the sequence, but a
+warning is printed and the exit code is 1 if anything failed to confirm.
+With an empty cache, reduces to just powering off.
+
+```bash
+$ jmri-cli session-start
+DCC++ Ohara         ON
+DCC++ Raijin        ON
+address=3 started (forward, 3 light function(s) on)
+
+$ jmri-cli session-end
+address=3 stopped (forward, lights off, released)
+DCC++ Ohara         OFF
+DCC++ Raijin        OFF
+```
+
 ## `jmri-cli power` / `power status`
 
 Show the power state of every system, sorted alphabetically, as a table with

@@ -76,6 +76,8 @@
             "power": "Control power to your DCC systems",
             "roster": "Browse your locomotive roster",
             "sensor": "Check your sensors",
+            "session-start": "Power on and wake up every locomotive you've been driving",
+            "session-end": "Stop, park and power off every locomotive you've been driving",
             "signal": "Control your signal masts",
             "status": "Quick health check: is JMRI reachable, and what's the power state",
             "throttle": "Drive your locomotives: speed, direction, functions, lights",
@@ -287,6 +289,7 @@
         "throttle_error_address": "Error: address={address}: {message}",
         "throttle_error_function": "Error: F{function}: {message}",
         "throttle_warning_could_not_acquire": "Warning: could not acquire {address}: {message}",
-        "no_light_labeled_functions": "{name} has no light-labeled functions in JMRI's roster (labels are checked for keywords like light/lamp/headlight/lumière/feu/phare) — nothing to switch"
+        "no_light_labeled_functions": "{name} has no light-labeled functions in JMRI's roster (labels are checked for keywords like light/lamp/headlight/lumière/feu/phare) — nothing to switch",
+        "session_end_partial_failure": "WARNING: session-end had at least one failure — check the output above (some locomotive or system may not have confirmed stopped/off)"
     }
 }

@@ -68,6 +68,8 @@ packages/
 │   │   ├── sensor.py      #   sensor [list|find|findr|findg|status] (jmri_client, read-only)
 │   │   ├── block.py       #   block [list|find|findr|findg|status] (jmri_client, read-only)
 │   │   ├── signal.py      #   signal [list|status|find|findr|findg|set] (jmri_client, signalMast only)
+│   │   ├── session.py     #   session-start / session-end: composite commands sequencing
+│   │   │                  #     power.py/throttle.py's own commands (see docs/cli.md)
 │   │   └── parser.py      #   build_parser(): wires the above into one CLI, incl. the
 │   │                      #     bare-group-default and verb-elevation patterns (see docs/cli.md)
 │   └── tests/              # tests for the jmri-cli argument parser and command execution
@@ -1476,12 +1478,13 @@ access to the layout.
 
 ## `meta.py`: layout-wide tools composing several low-level operations into one call
 
-`tools/meta.py` holds five tools that answer a request shaped around the
+`tools/meta.py` holds seven tools that answer a request shaped around the
 whole layout rather than one system/locomotive: `layout_status`,
-`secure_layout`, `release_all_locomotives`, `night_mode`, `day_mode`. Each
-is a natural-language-sized command a model railroader would actually
-give another operator ("what's happening?", "secure the layout") rather
-than the sequence of individual JMRI calls that implements it.
+`secure_layout`, `release_all_locomotives`, `night_mode`, `day_mode`,
+`start_session`, `end_session`. Each is a natural-language-sized command
+a model railroader would actually give another operator ("what's
+happening?", "secure the layout") rather than the sequence of individual
+JMRI calls that implements it.
 
 **Cross-module composition constraint.** `@mcp.tool()`-decorated
 functions are closures created inside each module's own `register(mcp)`
@@ -1553,8 +1556,48 @@ functions and every JMRI Light on or off together, in one call.
 currently-acquired addresses; a locomotive never acquired here keeps
 whatever light state it already had.
 
-No CLI equivalent was added for these five tools: `layout_status` is a
-read aggregation the CLI already exposes piecemeal (`status`, `roster`,
+`start_session()` powers on every DCC system (`power_on_all`, refused
+under the same `is_exhibition_mode()` restriction that tool itself
+enforces), then, for every address this session already holds a
+throttle for, faces it forward (only if needed) and turns on its
+light-labeled functions via `_set_loco_lights` — the same steps
+`prepare_locomotive` runs, one address at a time. Unlike the CLI's
+`session-start` (below), it has no roster-wide "every locomotive you
+usually drive" fallback: MCP sessions have no equivalent of the CLI's
+disk-persisted touched-address cache, only whichever throttles are
+already acquired in memory, which is typically none at the very start of
+a fresh session — not an error, just a no-op locomotive step. Follow up
+with `prepare_locomotive`/`acquire_throttle` once a locomotive is named.
+
+`end_session()` is `start_session`'s inverse and shares `secure_layout`'s
+per-locomotive loop (ramped stop, lights off, release — one locomotive's
+failure doesn't block the rest), but skips the layout-lights step and
+appends `power_off_all` afterward, strictly after every locomotive has
+been stopped so power is never cut mid-motion. It is deliberately
+narrower than `secure_layout` (no layout lights) and safer than calling
+`power_off_all` alone (which cuts power without a controlled stop
+first). An empty session reduces it to `power_off_all` alone.
+
+**CLI equivalent, unlike the other five tools.** `jmri-cli session-start`
+/`session-end` (`jmri_cli/session.py`) implement the same idea but
+against the CLI's own primitives and scope: `power on`/`power off` plus
+`throttle engine-start`/`engine-stop`/`stop`, each falling back to
+`state.py`'s disk-persisted touched-address cache (not an in-memory
+acquired-throttle set) when no locomotive is named — the one CLI-side
+difference from the MCP tools' scope, since the CLI has no long-lived
+session to hold throttles across process restarts the way MCP does. Pure
+orchestration: no new low-level throttle/power logic, just the existing
+`power`/`throttle` module functions called in sequence with an
+`argparse.Namespace(...)` built locally rather than routed through
+argparse dispatch. Works identically one-shot or from the interactive
+shell — `session_start`/`session_end` match the shell's established
+`async def f(args, *, client=None)` signature convention
+(`shell.py`'s `_is_ws_func` detects the `client` keyword and injects the
+shared connection automatically), so no shell.py changes were needed, the
+same way issue #45's shortcuts worked "for free."
+
+No CLI equivalent was added for the other five tools: `layout_status` is
+a read aggregation the CLI already exposes piecemeal (`status`, `roster`,
 `turnout list`, `sensor list`, `block list`), and `secure_layout`/
 `release_all_locomotives`/`night_mode`/`day_mode` all assume a
 long-lived session holding multiple throttles at once — the CLI's

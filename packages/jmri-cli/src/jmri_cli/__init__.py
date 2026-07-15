@@ -44,6 +44,10 @@ Package layout:
                   long-lived JmriWsClient, reusing build_parser() and the
                   same throttle.py command functions via their `client=`
                   kwarg instead of duplicating dispatch logic.
+    session.py    session-start / session-end: composite commands
+                  sequencing power.py/throttle.py's own commands, each
+                  falling back to its existing "every system"/"every
+                  touched locomotive" default with no explicit target.
     light.py      light [list|find|findr|findg|on|off] (jmri_client.py,
                   one-shot HTTP; layout/scenery lights, not loco headlights).
     turnout.py    turnout [list|find|findr|findg|close|throw] (jmri_client.py,
@@ -70,7 +74,7 @@ from jmri_cli.parser import build_parser
 
 __all__ = ["build_parser", "main"]
 
-_GROUP_NAMES = ["block", "light", "power", "roster", "sensor", "signal", "status", "throttle", "turnout"]
+_GROUP_NAMES = ["block", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
 _SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
 
 

@@ -1702,6 +1702,96 @@ async def test_shortcut_help_notes_it_is_a_shortcut():
     assert "shortcut for `throttle speed`" in speed_shortcut.description
 
 
+def _patch_fake_power(monkeypatch, live_state):
+    """Monkeypatch jmri_cli.power's get_systems/set_power directly against a
+    mutable {prefix: state} dict - avoids routing through real HTTP, whose
+    host fake_jmri already points at its own local WS-only server for."""
+
+    async def fake_get_systems():
+        return [
+            {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False},
+            {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True},
+        ]
+
+    names = {"O": "DCC++ Ohara", "R": "DCC++ Raijin"}
+
+    async def fake_set_power(prefix, turn_on):
+        live_state[prefix] = 2 if turn_on else 4
+        return {
+            "name": names[prefix], "prefix": prefix, "state": live_state[prefix],
+            "default": prefix == "R", "confirmed": True,
+        }
+
+    monkeypatch.setattr("jmri_cli.power.get_systems", fake_get_systems)
+    monkeypatch.setattr("jmri_cli.power.set_power", fake_set_power)
+
+
+async def test_session_start_powers_on_and_wakes_every_touched_locomotive(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+    _patch_fake_power(monkeypatch, {"O": 4, "R": 4})
+    await run(capsys, "throttle", "engine-stop", "4")
+    await run(capsys, "throttle", "engine-stop", "8")
+
+    code, out, _ = await run(capsys, "session-start")
+
+    assert code == 0
+    assert "DCC++ Ohara" in out and "ON" in out
+    assert "address=4 started" in out
+    assert "address=8 started" in out
+
+
+async def test_session_start_with_empty_cache_just_powers_on(fake_jmri, monkeypatch, capsys):
+    _patch_fake_power(monkeypatch, {"O": 4, "R": 4})
+
+    code, out, _ = await run(capsys, "session-start")
+
+    assert code == 0
+    assert "DCC++ Ohara" in out and "ON" in out
+
+
+async def test_session_end_stops_engine_stops_then_powers_off(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+    _patch_fake_power(monkeypatch, {"O": 2, "R": 2})
+    await run(capsys, "throttle", "speed", "4", "40", "--hold", "1")
+    await run(capsys, "throttle", "speed", "8", "40", "--hold", "1")
+
+    code, out, _ = await run(capsys, "session-end")
+
+    assert code == 0
+    assert "address=4 stopped" in out
+    assert "address=8 stopped" in out
+    assert "DCC++ Ohara" in out and "OFF" in out
+
+
+async def test_session_end_with_empty_cache_just_powers_off(fake_jmri, monkeypatch, capsys):
+    _patch_fake_power(monkeypatch, {"O": 2, "R": 2})
+
+    code, out, _ = await run(capsys, "session-end")
+
+    assert code == 0
+    assert "DCC++ Ohara" in out and "OFF" in out
+
+
+async def test_session_end_surfaces_partial_failure_but_still_powers_off(fake_jmri, monkeypatch, capsys):
+    """A failing engine-stop step must not prevent power-off from still
+    running, but the overall exit code must surface the failure (issue #49's
+    "one address failing doesn't abort the rest, but still surface it")."""
+    _patch_autorail_roster(monkeypatch)
+    _patch_fake_power(monkeypatch, {"O": 2, "R": 2})
+    await run(capsys, "throttle", "speed", "4", "40", "--hold", "1")
+
+    async def failing_engine_stop(args, *, client=None):
+        return 1
+
+    monkeypatch.setattr("jmri_cli.session.throttle.throttle_engine_stop", failing_engine_stop)
+
+    code, out, err = await run(capsys, "session-end")
+
+    assert code == 1
+    assert "DCC++ Ohara" in out and "OFF" in out
+    assert err.strip() != ""
+
+
 def test_every_leaf_subcommand_epilog_example_is_parseable():
     """Every leaf subcommand's `-h` epilog shows a runnable example - make
     sure each one actually parses, so the docs in --help can't drift from

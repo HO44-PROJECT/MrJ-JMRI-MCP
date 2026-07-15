@@ -1835,3 +1835,137 @@ async def test_night_mode_with_nothing_acquired_still_sets_layout_lights(fake_jm
 
     assert out["locomotives"] == []
     assert out["layout_lights"] == {"succeeded": [], "failed": []}
+
+
+def _mock_power_router(router, get_jmri_url, live_state):
+    """Mock GET/POST /json/power at get_jmri_url() against a mutable {prefix: state} dict."""
+    from httpx import Response
+
+    def get_power(request):
+        payload = [
+            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
+            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+        ]
+        return Response(200, json=payload)
+
+    def post_power(request):
+        body = json.loads(request.content)
+        live_state[body["prefix"]] = body["state"]
+        return Response(200, json={})
+
+    router.get(f"{get_jmri_url()}/json/power").mock(side_effect=get_power)
+    router.post(f"{get_jmri_url()}/json/power").mock(side_effect=post_power)
+
+
+async def test_start_session_powers_on_and_prepares_every_acquired_locomotive(fake_jmri, monkeypatch, roster_fixture):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    live_state = {"O": 4, "R": 4}
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    _mock_power_router(router, get_jmri_url, live_state)
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        await call(mcp, "set_direction", address=4, direction="reverse")
+        out = await call(mcp, "start_session")
+    finally:
+        router.stop()
+
+    assert all(s["state"] == "ON" and s["confirmed"] for s in out["systems"])
+
+    assert len(out["locomotives"]) == 1
+    loco = out["locomotives"][0]
+    assert loco["address"] == 4
+    assert loco["direction"] == "forward"
+    assert len(loco["lights"]["applied"]) == 3
+    assert all(a["state"] is True for a in loco["lights"]["applied"])
+
+    from jmri_core.jmri_ws import get_ws_client
+
+    assert get_ws_client().throttle_state("addr4")["forward"] is True
+
+
+async def test_start_session_with_nothing_acquired_just_powers_on(fake_jmri, monkeypatch):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    live_state = {"O": 4, "R": 4}
+
+    with respx.mock(assert_all_called=False) as router:
+        _mock_power_router(router, get_jmri_url, live_state)
+        mcp = make_server()
+        out = await call(mcp, "start_session")
+
+    assert out["locomotives"] == []
+    assert all(s["state"] == "ON" and s["confirmed"] for s in out["systems"])
+
+
+async def test_start_session_refused_in_exhibition_mode(fake_jmri, monkeypatch):
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+    out = await call(mcp, "start_session")
+    assert "error" in out
+
+
+async def test_end_session_stops_lights_off_releases_then_powers_off(fake_jmri, monkeypatch, roster_fixture):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    live_state = {"O": 2, "R": 2}
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    _mock_power_router(router, get_jmri_url, live_state)
+    try:
+        mcp = make_server()
+        await call(mcp, "prepare_locomotive", address=4)
+        await call(mcp, "set_speed", address=4, speed_percent=40)
+        out = await call(mcp, "end_session")
+    finally:
+        router.stop()
+
+    assert len(out["locomotives"]) == 1
+    loco = out["locomotives"][0]
+    assert loco["address"] == 4
+    assert loco["stopped"] is True
+    assert loco["released"] is True
+    assert len(loco["lights"]["applied"]) == 3
+    assert all(a["state"] is False for a in loco["lights"]["applied"])
+
+    assert all(s["state"] == "OFF" and s["confirmed"] for s in out["systems"])
+
+    from jmri_core.jmri_ws import get_ws_client
+
+    assert get_ws_client().all_throttle_states() == {}
+
+
+async def test_end_session_with_nothing_acquired_just_powers_off(fake_jmri, monkeypatch):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    live_state = {"O": 2, "R": 2}
+
+    with respx.mock(assert_all_called=False) as router:
+        _mock_power_router(router, get_jmri_url, live_state)
+        mcp = make_server()
+        out = await call(mcp, "end_session")
+
+    assert out["locomotives"] == []
+    assert all(s["state"] == "OFF" and s["confirmed"] for s in out["systems"])

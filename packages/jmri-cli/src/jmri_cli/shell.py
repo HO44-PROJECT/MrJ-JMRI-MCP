@@ -90,7 +90,7 @@ def _save_history() -> None:
         readline.write_history_file(_HISTORY_FILE)
 
 
-_GROUP_NAMES = ["light", "power", "roster", "sensor", "signal", "status", "throttle", "turnout"]
+_GROUP_NAMES = ["light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
 _SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
 
 

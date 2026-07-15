@@ -1,4 +1,4 @@
-"""Meta MCP tools: layout_status, secure_layout, release_all_locomotives, night_mode, day_mode.
+"""Meta MCP tools: layout_status, secure_layout, release_all_locomotives, night_mode, day_mode, start_session, end_session.
 
 Higher-level tools that combine several low-level operations into one call,
 matching how a model railroader would naturally ask an assistant to operate
@@ -28,6 +28,8 @@ from jmri_core.jmri_client import (
     set_light as _set_light,
 )
 from jmri_core.jmri_client import get_roster as _get_roster
+from jmri_core.jmri_client import power_off_all as _power_off_all
+from jmri_core.jmri_client import power_on_all as _power_on_all
 from jmri_core.constants.lighting import is_light_label
 from jmri_core.jmri_ws import JmriError as JmriWsError
 from jmri_core.jmri_ws import get_ws_client
@@ -41,6 +43,7 @@ from jmri_mcp.tools._common import (
     ensure_acquired,
     throttle_id,
 )
+from jmri_mcp.tools.mode import is_exhibition_mode
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -355,3 +358,120 @@ def register(mcp) -> None:
         result>...], "layout_lights": <set_layout_lights-shaped result>}.
         """
         return await _set_mode_lights(False, False)
+
+    @mcp.tool()
+    async def start_session() -> dict:
+        """Begin a driving session: power on every DCC system, then prepare every already-acquired locomotive.
+
+        Call for "let's start"/"démarre la session"/"on commence" — the
+        one-call opener. Steps: 1) power_on_all; 2) for every locomotive
+        THIS session already holds a throttle for (usually none at
+        session start — not an error), face forward + lights on, same as
+        prepare_locomotive. Does NOT acquire locomotives untouched this
+        session — follow up with prepare_locomotive/acquire_throttle by
+        name once one is named. Refused in exhibition mode like
+        power_on_all; a power-on failure skips step 2, returns "error".
+
+        Returns {"systems": [...], "locomotives": [...]}.
+        """
+        try:
+            if is_exhibition_mode():
+                raise JmriError("exhibition_power_restricted")
+            power_results = await _power_on_all()
+        except JmriError as exc:
+            logger.warning("start_session power-on step failed: %s", exc)
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+
+        client = get_ws_client()
+        addresses = sorted({
+            info["address"]
+            for info in client.all_throttle_states().values()
+            if info.get("address") is not None
+        })
+
+        locomotives: list[dict] = []
+        for address in addresses:
+            tid = throttle_id(address)
+            info = client.throttle_state(tid) or {}
+            entry: dict = {"address": address, "acquired": True}
+            if not info.get("forward", True):
+                try:
+                    await client.set_direction(tid, True)
+                except JmriWsError as exc:
+                    logger.warning("start_session direction step address=%r failed: %s", address, exc)
+            entry["direction"] = "forward"
+            entry["lights"] = await _set_loco_lights(address, True)
+            locomotives.append(entry)
+
+        return {
+            "systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in power_results],
+            "locomotives": locomotives,
+        }
+
+    @mcp.tool()
+    async def end_session() -> dict:
+        """End a driving session: stop, park and release every acquired locomotive, then cut power to every DCC system.
+
+        Call for "let's stop"/"termine la session"/"on arrête" — the
+        one-call closer, inverse of start_session. Strictly ordered so
+        power is never cut mid-motion: 1) every locomotive THIS session
+        holds a throttle for is ramped to stop, faced forward, lights
+        off, released — same as secure_layout(release_throttles=True),
+        one failure doesn't block the rest; 2) power_off_all. Layout
+        lights are NOT touched — use secure_layout/day_mode for those.
+
+        NOT secure_layout (also handles layout lights, never touches DCC
+        power) and NOT power_off_all alone (no clean stop/release first).
+        Nothing acquired reduces this to power_off_all alone.
+
+        Returns {"locomotives": [...], "systems": [...]}.
+        """
+        client = get_ws_client()
+        addresses = sorted({
+            info["address"]
+            for info in client.all_throttle_states().values()
+            if info.get("address") is not None
+        })
+
+        locomotives: list[dict] = []
+        for address in addresses:
+            tid = throttle_id(address)
+            info = client.throttle_state(tid) or {}
+            current_fraction = info.get("speed") or 0.0
+            entry: dict = {"address": address}
+            try:
+                await execute_speed_change(
+                    client,
+                    tid,
+                    target_forward=True,
+                    target_fraction=0.0,
+                    rampup=0.0,
+                    rampdown=current_fraction * 3.0,
+                    hold_seconds=None,
+                )
+                entry["stopped"] = True
+            except JmriWsError as exc:
+                logger.warning("end_session stop address=%r failed: %s", address, exc)
+                entry["stopped"] = False
+
+            entry["lights"] = await _set_loco_lights(address, False)
+
+            try:
+                await client.release_throttle(tid)
+                entry["released"] = True
+            except JmriWsError as exc:
+                logger.warning("end_session release address=%r failed: %s", address, exc)
+                entry["released"] = False
+
+            locomotives.append(entry)
+
+        try:
+            power_results = await _power_off_all()
+        except JmriError as exc:
+            logger.warning("end_session power-off step failed: %s", exc)
+            return {"locomotives": locomotives, "error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+
+        return {
+            "locomotives": locomotives,
+            "systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in power_results],
+        }

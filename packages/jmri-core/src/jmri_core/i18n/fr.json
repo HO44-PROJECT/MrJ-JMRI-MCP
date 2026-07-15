@@ -76,6 +76,8 @@
             "power": "Contrôler l'alimentation de vos systèmes DCC",
             "roster": "Parcourir votre roster de locomotives",
             "sensor": "Consulter vos capteurs",
+            "session-start": "Allumer l'alimentation et réveiller toutes les locomotives pilotées",
+            "session-end": "Arrêter, garer et couper l'alimentation de toutes les locomotives pilotées",
             "signal": "Contrôler vos mâts de signalisation",
             "status": "Vérification rapide : JMRI est-il joignable, et quel est l'état de l'alimentation",
             "throttle": "Piloter vos locomotives : vitesse, direction, fonctions, lumières",
@@ -287,6 +289,7 @@
         "throttle_error_address": "Erreur : address={address} : {message}",
         "throttle_error_function": "Erreur : F{function} : {message}",
         "throttle_warning_could_not_acquire": "Attention : impossible d'acquérir {address} : {message}",
-        "no_light_labeled_functions": "{name} n'a aucune fonction étiquetée « lumière » dans le roster JMRI (les étiquettes sont vérifiées avec des mots-clés comme lumière/feu/phare/light/lamp/headlight) — rien à basculer"
+        "no_light_labeled_functions": "{name} n'a aucune fonction étiquetée « lumière » dans le roster JMRI (les étiquettes sont vérifiées avec des mots-clés comme lumière/feu/phare/light/lamp/headlight) — rien à basculer",
+        "session_end_partial_failure": "ATTENTION : session-end a rencontré au moins un échec — vérifiez la sortie ci-dessus (une locomotive ou un système n'a peut-être pas confirmé son arrêt/extinction)"
     }
 }

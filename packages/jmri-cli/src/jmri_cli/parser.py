@@ -25,7 +25,7 @@ import argparse
 import functools
 
 from jmri_core import i18n
-from jmri_cli import block, light, power, roster, sensor, signal, throttle, turnout
+from jmri_cli import block, light, power, roster, sensor, session, signal, throttle, turnout
 
 
 def _leaf(subparsers, name: str, *, help: str, example: str, func) -> argparse.ArgumentParser:
@@ -287,6 +287,25 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     status_cmd.set_defaults(func=power.system_status)
+
+    # -- session-start / session-end: composite commands (issue #49) -----
+    session_start_help = i18n.t("help.group.session-start")
+    session_start_cmd = subparsers.add_parser(
+        "session-start", help=session_start_help,
+        description=session_start_help,
+        epilog="example:\n  jmri-cli session-start",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    session_start_cmd.set_defaults(func=session.session_start)
+
+    session_end_help = i18n.t("help.group.session-end")
+    session_end_cmd = subparsers.add_parser(
+        "session-end", help=session_end_help,
+        description=session_end_help,
+        epilog="example:\n  jmri-cli session-end",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    session_end_cmd.set_defaults(func=session.session_end)
 
     # -- roster: bare = list -----------------------------------------
     roster_cmd, roster_sub = _group(subparsers, "roster", default_func=roster.roster_list)

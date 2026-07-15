@@ -260,6 +260,7 @@
         "no_roster_entries_match": "Aucune entrée du roster ne correspond à {pattern!r}",
         "no_labeled_functions": "  aucune fonction étiquetée",
         "throttle_no_locos_touched": "Aucune locomotive touchée par ce CLI pour l'instant. Lancez par ex. `jmri-cli throttle speed <loco> <valeur>` d'abord.",
+        "throttle_roster_names_unavailable": "Attention : impossible de récupérer les noms du roster ; la colonne Nom affichera « - » pour toutes les locomotives.",
         "throttle_no_locos_to_stop": "Aucune locomotive touchée par ce CLI pour l'instant, rien à arrêter.",
         "throttle_hold_required": "Erreur : --hold est requis pour régler une vitesse non nulle en dehors du shell interactif (utilisez le shell `jmri-cli` nu pour un maintien indéfini).",
         "throttle_hold_required_address": "Erreur : l'adresse={address} est en mouvement — --hold est requis pour changer sa direction en dehors du shell interactif (utilisez le shell `jmri-cli` nu pour un maintien indéfini).",

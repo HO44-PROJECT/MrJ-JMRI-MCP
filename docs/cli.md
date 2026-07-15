@@ -364,10 +364,16 @@ below), so this is mainly for confirming what's available.
 ## `jmri-cli throttle` / `throttle list`
 
 Print last-known speed/direction/functions for every locomotive this CLI has
-touched. **Reads a local cache, not live JMRI state** — see "Why `throttle`
-has a local cache" below. Empty until at least one `throttle speed`/
-`forward`/`reverse`/`on`/`off`/etc has been run. Bare `jmri-cli throttle` is
-identical to `jmri-cli throttle list`.
+touched. **Speed/direction/functions read a local cache, not live JMRI
+state** — see "Why `throttle` has a local cache" below. Empty until at least
+one `throttle speed`/`forward`/`reverse`/`on`/`off`/etc has been run. Bare
+`jmri-cli throttle` is identical to `jmri-cli throttle list`.
+
+The **Name** column is the one exception: it's resolved from a live roster
+lookup (one HTTP call per invocation) so it's accurate even for a locomotive
+this CLI hasn't touched yet. It shows `-` for an address with no matching
+roster entry, and falls back to `-` for every row (with a warning on
+stderr, not a failing command) if JMRI is unreachable when the lookup runs.
 
 ```bash
 $ jmri-cli throttle
@@ -376,9 +382,9 @@ No locomotives touched yet by this CLI. Run e.g. `jmri-cli throttle speed <loco>
 $ jmri-cli throttle speed 3 40 --hold 5
 address=3 speed=0%
 $ jmri-cli throttle
-  Address  Speed    Direction    Functions on
----------  -------  -----------  --------------
-        3  0%       forward      -
+  Address  Name    Speed    Direction    Functions on
+---------  ------  -------  -----------  --------------
+        3  Diesel  0%       forward      -
 ```
 
 ### Why `throttle` has a local cache
@@ -398,37 +404,38 @@ JMRI's own reply.
 ## `jmri-cli throttle find <loco>`
 
 Resolve a locomotive name/fragment/address to its roster identity and
-last-known throttle state, `roster find`-style. **Read-only and never
-opens a JMRI connection** — resolves via the roster (same tolerant
-matching as `roster find`) and reads the same local cache as `throttle
-list`, so speed/direction/functions show `-` for a locomotive this CLI
-hasn't touched yet, even if it's actually moving under JMRI/another
+last-known throttle state, `roster find`-style. **Read-only** — resolves via
+the roster (same tolerant matching as `roster find`, plus a second roster
+lookup for the Name field) and reads the same local cache as `throttle
+list` for speed/direction/functions, so those show `-` for a locomotive
+this CLI hasn't touched yet, even if it's actually moving under JMRI/another
 client's control (see "Why `throttle` has a local cache" above).
 
 ```bash
 $ jmri-cli throttle find autorail
-address=4 speed=- direction=- functions_on=-
+address=4 name=Autorail speed=- direction=- functions_on=-
 ```
 
 ## `jmri-cli throttle findr <regex>` / `throttle findg <glob>`
 
 List every roster locomotive whose name matches a pattern — a filtered
 `throttle list`-style table (cached state, same caveat as `throttle find`
-above). Zero matches is not an error, just
+above; Name comes directly from the already-fetched roster match, not a
+second lookup). Zero matches is not an error, just
 `No roster entries match '<pattern>'`. Same regex (`re.search`,
 case-insensitive) vs. glob (`fnmatch`, case-insensitive) split as
 `roster findr`/`findg`.
 
 ```bash
 $ jmri-cli throttle findr '^auto'
-  Address  Speed    Direction    Functions on
----------  -------  -----------  --------------
-        4  -        -            -
+  Address  Name      Speed    Direction    Functions on
+---------  --------  -------  -----------  --------------
+        4  Autorail  -        -            -
 
 $ jmri-cli throttle findg 'Auto*'
-  Address  Speed    Direction    Functions on
----------  -------  -----------  --------------
-        4  -        -            -
+  Address  Name      Speed    Direction    Functions on
+---------  --------  -------  -----------  --------------
+        4  Autorail  -        -            -
 ```
 
 ## `jmri-cli throttle acquire <loco> [--prefix P]`

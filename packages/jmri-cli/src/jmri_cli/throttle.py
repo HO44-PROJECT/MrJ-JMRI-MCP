@@ -88,6 +88,7 @@ def _throttle_headers() -> list[str]:
     """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
     return [
         i18n.t("headers.address"),
+        i18n.t("headers.name"),
         i18n.t("headers.speed"),
         i18n.t("headers.direction"),
         i18n.t("headers.functions_on"),
@@ -114,42 +115,70 @@ async def _client_scope(client: JmriWsClient | None):
         await owned.close()
 
 
+async def _roster_names_by_address() -> dict[int, str]:
+    """Build an {address: name} lookup from the live roster, for display only.
+
+    Returns an empty dict (never raises) if JMRI is unreachable — callers
+    fall back to "-" for the Name column rather than failing outright,
+    since throttle_list/find read a local, offline-safe cache and a
+    display-only roster lookup shouldn't take away that guarantee.
+    """
+    try:
+        roster = await get_roster()
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
+        print(i18n.t("cli.throttle_roster_names_unavailable"), file=sys.stderr)
+        return {}
+    return {entry["address"]: entry["name"] for entry in roster}
+
+
 async def throttle_list(args: argparse.Namespace) -> int:
     """Print last-known speed/direction/functions for every locomotive this CLI has touched.
 
     Reads state.py's local cache, not a live JMRI query — see this
     module's docstring for why a fresh CLI connection has nothing live to
     ask between invocations. Empty until at least one `throttle speed`/
-    `direction`/`on`/`off`/etc has been run.
+    `direction`/`on`/`off`/etc has been run. The Name column is the one
+    exception: it's resolved from a live roster lookup so it stays
+    accurate even for a loco this CLI hasn't touched — falls back to "-"
+    per address (not a command failure) if JMRI is unreachable or the
+    address has no roster entry.
 
     Args:
         args: Parsed CLI arguments; no fields used.
 
     Returns:
-        0 always (an empty cache is not an error).
+        0 always (an empty cache, or JMRI being unreachable for the Name
+        lookup, is not an error).
     """
     cache = _state.load_state()
     if not cache:
         print(i18n.t("cli.throttle_no_locos_touched"))
         return 0
 
+    names = await _roster_names_by_address()
     rows = []
     for address, info in sorted(cache.items(), key=lambda kv: int(kv[0])):
-        speed = info.get("speed")
-        speed_display = "-" if speed is None else f"{speed * 100:.0f}%"
-        direction = info.get("forward")
-        direction_display = "-" if direction is None else _direction_name(direction)
-        functions = info.get("functions", {})
-        on_functions = sorted(int(n) for n, v in functions.items() if v)
-        functions_display = ", ".join(f"F{n}" for n in on_functions) or "-"
-        rows.append([address, speed_display, direction_display, functions_display])
+        rows.append(_cache_row(int(address), name=names.get(int(address), "-"), info=info))
     print(tabulate(rows, headers=_throttle_headers()))
     return 0
 
 
-def _cache_row(address: int) -> list:
-    """Build one throttle_list-style row for `address` from state.py's local cache."""
-    info = _state.load_state().get(str(address), {})
+def _cache_row(address: int, *, name: str = "-", info: dict | None = None) -> list:
+    """Build one throttle_list-style row for `address` from state.py's local cache.
+
+    Args:
+        address: DCC address to read cached throttle state for.
+        name: Roster display name, or "-" if unknown/not looked up. Callers
+            that already have a roster entry in scope (throttle_find,
+            _throttle_find_pattern) pass it directly instead of triggering
+            a second roster fetch here.
+        info: Pre-fetched cache entry for `address`, or None to look it up
+            (throttle_list already has the full cache loaded and passes
+            each entry in directly rather than reloading it per address).
+    """
+    if info is None:
+        info = _state.load_state().get(str(address), {})
     speed = info.get("speed")
     speed_display = "-" if speed is None else f"{speed * 100:.0f}%"
     direction = info.get("forward")
@@ -157,7 +186,7 @@ def _cache_row(address: int) -> list:
     functions = info.get("functions", {})
     on_functions = sorted(int(n) for n, v in functions.items() if v)
     functions_display = ", ".join(f"F{n}" for n in on_functions) or "-"
-    return [address, speed_display, direction_display, functions_display]
+    return [address, name, speed_display, direction_display, functions_display]
 
 
 async def throttle_find(args: argparse.Namespace) -> int:
@@ -186,8 +215,9 @@ async def throttle_find(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    _, speed, direction, functions = _cache_row(address)
-    print(f"address={address} speed={speed} direction={direction} functions_on={functions}")
+    names = await _roster_names_by_address()
+    _, name, speed, direction, functions = _cache_row(address, name=names.get(address, "-"))
+    print(f"address={address} name={name} speed={speed} direction={direction} functions_on={functions}")
     return 0
 
 
@@ -215,7 +245,10 @@ async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> in
     if not matches:
         print(i18n.t("cli.no_roster_entries_match", pattern=args.pattern))
         return 0
-    rows = [_cache_row(e["address"]) for e in sorted(matches, key=lambda e: _roster_label(e).casefold())]
+    rows = [
+        _cache_row(e["address"], name=_roster_label(e) or "-")
+        for e in sorted(matches, key=lambda e: _roster_label(e).casefold())
+    ]
     print(tabulate(rows, headers=_throttle_headers()))
     return 0
 

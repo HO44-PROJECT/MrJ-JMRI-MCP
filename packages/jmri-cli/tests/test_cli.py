@@ -1529,7 +1529,7 @@ async def test_throttle_engine_stop_inside_shell_with_no_loco_and_empty_cache(fa
 async def test_throttle_find_resolves_fuzzy_name(mock_roster, capsys):
     code, out, _ = await run(capsys, "throttle", "find", "autorail")
     assert code == 0
-    assert "address=4" in out and "speed=-" in out
+    assert "address=4" in out and "name=Autorail" in out and "speed=-" in out
 
 
 async def test_throttle_find_unknown_name(mock_roster, capsys):
@@ -1541,7 +1541,7 @@ async def test_throttle_find_unknown_name(mock_roster, capsys):
 async def test_throttle_findr_matches_regex(mock_roster, capsys):
     code, out, _ = await run(capsys, "throttle", "findr", "^auto")
     assert code == 0
-    assert "4" in out
+    assert "4" in out and "Autorail" in out
 
 
 async def test_throttle_findr_no_match(mock_roster, capsys):
@@ -1559,13 +1559,53 @@ async def test_throttle_findr_invalid_regex(mock_roster, capsys):
 async def test_throttle_findg_matches_glob(mock_roster, capsys):
     code, out, _ = await run(capsys, "throttle", "findg", "auto*")
     assert code == 0
-    assert "4" in out
+    assert "4" in out and "Autorail" in out
 
 
 async def test_throttle_findg_no_match(mock_roster, capsys):
     code, out, _ = await run(capsys, "throttle", "findg", "zzz*")
     assert code == 0
     assert "No roster entries match" in out
+
+
+async def test_throttle_list_shows_roster_name_for_matched_address(mock_roster, capsys):
+    from jmri_cli import state as _state
+
+    _state.update_address(4, speed=0.4, forward=True)
+    code, out, _ = await run(capsys, "throttle")
+    assert code == 0
+    assert "Autorail" in out
+
+
+async def test_throttle_list_shows_dash_for_address_with_no_roster_entry(mock_roster, capsys):
+    from jmri_cli import state as _state
+
+    _state.update_address(99, speed=0.4, forward=True)
+    code, out, _ = await run(capsys, "throttle")
+    assert code == 0
+    lines = [line for line in out.splitlines() if line.strip().startswith("99")]
+    assert len(lines) == 1
+    assert "-" in lines[0]
+
+
+async def test_throttle_list_falls_back_to_dash_when_jmri_unreachable(fake_jmri, capsys):
+    from jmri_cli import state as _state
+
+    fake_jmri["connected_sockets"]  # sanity: fixture is active, no HTTP roster server exists
+    _state.update_address(4, speed=0.4, forward=True)
+    code, out, err = await run(capsys, "throttle")
+    assert code == 0
+    assert "4" in out
+    lines = [line for line in out.splitlines() if line.strip().startswith("4")]
+    assert len(lines) == 1
+    assert "-" in lines[0]
+    assert "Warning" in err
+
+
+async def test_throttle_find_shows_dash_name_when_resolved_by_raw_address_with_no_roster_entry(mock_roster, capsys):
+    code, out, _ = await run(capsys, "throttle", "find", "99")
+    assert code == 0
+    assert "address=99" in out and "name=-" in out
 
 
 def test_every_leaf_subcommand_epilog_example_is_parseable():

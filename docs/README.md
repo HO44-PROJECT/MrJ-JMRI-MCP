@@ -2,10 +2,12 @@
 
 - [Architecture](architecture.md) — module layout, the two JMRI clients, WebSocket design notes.
 - [Installation](install.md) — requirements, `pip install`, verifying the entry points.
+- [MCP tool inventory](mcp-tools.md) — every tool the LLM can call, grouped by domain, with signatures.
 - [CLI reference](cli.md) — `jmri-cli`, every subcommand, examples.
 - [Claude setup](llm-setup-claude.md) — wiring the MCP server into Claude Desktop and Claude Code.
 - [xiaozhi/Kira setup](llm-setup-xiaozhi.md) — exposing the MCP server to a xiaozhi-based voice assistant.
 - [Testing](testing.md) — the mocked test suite vs. the opt-in live suite, and the hardware-safety config.
+- [Release procedure](release.md) — building and publishing `jmri-core`/`jmri-cli`/`jmri-mcp` to PyPI.
 - [Resources](resources.md) — reference links for JMRI, MCP, and xiaozhi/Kira.
 - [Acknowledgments](../ACKNOWLEDGMENTS.md) — thanks to the open-source projects this depends on.
 

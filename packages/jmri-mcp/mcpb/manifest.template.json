@@ -1,0 +1,29 @@
+{
+    "schema_version": "1",
+    "name": "JMRI MCP",
+    "description": "MCP server for JMRI - voice/chat control of DCC model railroads",
+    "version": "{{VERSION}}",
+    "packages": [
+        {
+            "type": "pip",
+            "package": "jmri-mcp=={{VERSION}}"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "jmri_url",
+            "type": "string",
+            "title": "JMRI Server URL",
+            "description": "URL of your JMRI Web Server"
+        }
+    ],
+    "servers": {
+        "default": {
+            "type": "stdio",
+            "command": "jmri-mcp",
+            "env": {
+                "JMRI_URL": "${input:jmri_url}"
+            }
+        }
+    }
+}

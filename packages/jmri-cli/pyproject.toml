@@ -1,18 +1,33 @@
 [project]
 name = "jmri-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "Command-line client for JMRI - control DCC model railroads from a terminal"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "AGPL-3.0-or-later" }
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "HO PROJECT", email = "HO44-PROJECT@users.noreply.github.com" },
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Home Automation",
+    "Operating System :: OS Independent",
+]
 dependencies = [
-    "jmri-core==0.1.0",
-    "tabulate>=0.9",
+    "jmri-core==1.0.0",
+    "tabulate~=0.10",
 ]
 
 [project.optional-dependencies]
 test = [
-    "jmri-core[test]==0.1.0",
+    "jmri-core[test]==1.0.0",
 ]
 
 [project.urls]

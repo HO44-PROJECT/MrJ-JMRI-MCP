@@ -18,7 +18,7 @@ REPO_URL = "https://github.com/HO44-PROJECT/MrJ-JMRI-MCP"
 
 def _version() -> str:
     try:
-        return version("jmri-mcp")
+        return version("jmri-cli")
     except PackageNotFoundError:
         return "dev"
 

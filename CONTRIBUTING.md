@@ -142,7 +142,3 @@ in the **same PR** — don't defer docs to a later pass.
   better split into several commits (see the constants/i18n refactor's history
   for an example of a multi-phase, one-commit-per-phase migration).
 
-## Legacy code
-
-`legacy/jmri_experimental.py` is a kept-for-reference prototype — don't extend
-it; new work goes in `src/jmri_mcp/`.

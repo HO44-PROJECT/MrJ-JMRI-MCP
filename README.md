@@ -1,39 +1,105 @@
-# MrJ-JMRI-MCP
+# MrJ JMRI AI Assistant
 
-MCP (Model Context Protocol) server for [JMRI](https://www.jmri.org/) — control your DCC model railroad by voice or chat, through any MCP client: [xiaozhi](https://github.com/78/xiaozhi-esp32) voice assistants, Claude Desktop, Claude Code, etc.
+**Talk to your model railroad.**
 
-> **Status: early development.** The roadmap lives in the [project board](https://github.com/orgs/HO44-PROJECT/projects) and the [issues](../../issues).
+Bring AI to your [JMRI](https://www.jmri.org/) powered layout. Connect your favorite AI assistant and control your [DCC](https://www.nmra.com/digital-command-control-dcc) model railroad using natural language through voice or chat.
 
-## Goals
+Drive locomotives, control turnouts, operate signals, manage layout accessories, and more — just by asking.
 
-- **Fully dynamic** — no hardcoded layout data. Systems (power connections), roster, turnouts, sensors, blocks and signal masts are discovered live from the JMRI server (`GET /json/power`, `{"list": ...}`).
-- **LLM-friendly** — compact tool outputs (voice assistants have small contexts), honest `success`/`error` reporting, docstrings that tell the model *when* and *how* to use each tool.
-- **One server, every client** — pure stdio MCP server: consumed directly by Claude Desktop/Code, and bridged to xiaozhi via `xiaozhi_wrapper` (`jmri-xiaozhi-bridge`), a generic stdio↔WebSocket bridge included in the `jmri-mcp` package.
+Compatible with MCP clients such as [Claude Desktop](https://claude.ai/download), [Claude Code](https://claude.com/claude-code), [xiaozhi](https://github.com/78/xiaozhi-esp32), and other MCP-compatible AI assistants.
 
-## Architecture
+## Features
 
-Pure stdio MCP server, two JMRI clients under the hood (plain HTTP for
-one-shot calls, a persistent WebSocket for throttles) — see
-[docs/architecture.md](docs/architecture.md) for the module layout and
-design notes.
+**MrJ JMRI AI Assistant provides:**
+
+- Ready-to-use package for easy installation
+- Full documentation with setup guides and usage examples
+- A complete MCP (Model Context Protocol) server for JMRI integration
+- A command-line interface (`jmri-cli`) for direct control, scripting, and automation
+- 42 MCP tools exposing the main JMRI capabilities:
+  - Power management
+  - Locomotive throttles and functions
+  - Roster management
+  - Turnouts
+  - Sensors
+  - Layout lights
+  - Signals
+  - Blocks
+  - Operating modes
+
+See the complete MCP tools reference in [mcp-tools.md](mcp-tools.md).
+
+The goal is simple: make advanced JMRI control accessible to every model railroader, from casual operators to automation enthusiasts.
+
+## Installation
+
+Getting started is designed to be simple.
+
+See the [installation guide](docs/install.md) and [quick start guide](docs/quickstart.md) for setup instructions, configuration, and first commands.
+
+## AI Assistant Setup
+
+- [Claude Desktop and Claude Code](docs/llm-setup-claude.md)
+- [xiaozhi / Kira](docs/llm-setup-xiaozhi.md)
+
+## Command Line Interface
+
+The included CLI provides direct access to your JMRI layout without requiring an AI assistant.
+
+It can be used for:
+- Manual control
+- Scripting
+- Automation
+- Testing and troubleshooting
+
+See the [CLI reference](docs/cli.md).
+
+## MCP Tools
+
+The MCP server currently exposes 42 tools covering the main JMRI capabilities.
+
+See the complete reference:
+
+- [MCP Tools Reference](mcp-tools.md)
+
+## Status
+
+**v1.0**
+
+The project is fully functional and actively maintained.
+
+Future improvements, feature requests, and roadmap items are tracked in the [project board](https://github.com/orgs/HO44-PROJECT/projects) and the [issues](../../issues).
 
 ## Requirements
 
-- Python ≥ 3.10 (developed on 3.12) — see [docs/install.md](docs/install.md) for install instructions and `environment.yml`
-- A running JMRI Web Server (tested against JMRI 5.4)
+- Python ≥ 3.10 (developed on 3.12)
+- A running JMRI Web Server (tested with JMRI 5.4)
+
+See [docs/install.md](docs/install.md) for installation details.
 
 ## Documentation
 
-- **[docs/quickstart.md](docs/quickstart.md)** — fastest path from a fresh clone to a working voice/chat command.
-- **[docs/architecture.md](docs/architecture.md)** — module layout, the two JMRI clients, WebSocket design notes.
-- **[docs/install.md](docs/install.md)** — installing the package, verifying `jmri-mcp`/`jmri-cli`.
-- **[docs/cli.md](docs/cli.md)** — `jmri-cli` command reference.
-- **[docs/llm-setup-claude.md](docs/llm-setup-claude.md)** — wiring the server into Claude Desktop and Claude Code.
-- **[docs/llm-setup-xiaozhi.md](docs/llm-setup-xiaozhi.md)** — exposing the server to xiaozhi/Kira.
-- **[docs/testing.md](docs/testing.md)** — the mocked vs. live test suites, hardware-safety config.
-- **[docs/resources.md](docs/resources.md)** — reference links for JMRI, MCP, and xiaozhi/Kira.
-- **[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md)** — thanks to the open-source projects this depends on.
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** — project conventions and hard rules before sending a PR.
+### Getting started
+
+- **[Quick start](docs/quickstart.md)** — fastest path from a fresh installation to a working voice/chat command
+- **[Installation](docs/install.md)** — package installation, configuration, and verification
+
+### AI assistants
+
+- **[Claude Desktop / Claude Code setup](docs/llm-setup-claude.md)** — connect your AI assistant to JMRI
+- **[xiaozhi / Kira setup](docs/llm-setup-xiaozhi.md)** — expose JMRI control to voice assistants
+
+### Advanced users
+
+- **[CLI reference](docs/cli.md)** — `jmri-cli` command reference
+- **[Architecture](docs/architecture.md)** — module design, JMRI clients, WebSocket implementation
+- **[Testing](docs/testing.md)** — mocked and live test suites, hardware safety configuration
+- **[Resources](docs/resources.md)** — references for JMRI, MCP, and xiaozhi/Kira
+
+### Project
+
+- **[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md)** — thanks to the open-source projects this depends on
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — contribution guidelines and project conventions
 
 ## Configuration
 
@@ -43,15 +109,16 @@ design notes.
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE). Chosen deliberately over a permissive license
-(MIT/Apache) so that anyone who modifies this project and offers it as a
-network service (not just redistributes the code) must also publish their
-modified source — see the [license text](LICENSE) for the exact terms.
+[AGPL-3.0-or-later](LICENSE)
+
+Chosen deliberately over a permissive license (MIT/Apache) so that anyone who modifies this project and offers it as a network service (not just redistributes the code) must also publish their modified source.
+
+See the [license text](LICENSE) for the exact terms.
 
 ### Third-party code
 
-`xiaozhi_wrapper` (part of the `jmri-mcp` package) is adapted from the MCP pipe example in
-[xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) (MIT License,
-Copyright (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and Project
-Contributors) — see the package docstring
-(`packages/jmri-mcp/src/xiaozhi_wrapper/__init__.py`) for the full notice.
+`xiaozhi_wrapper` (part of the `jmri-mcp` package) is adapted from the MCP pipe example in [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) (MIT License, Copyright (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and Project Contributors).
+
+See the package documentation:
+
+`packages/jmri-mcp/src/xiaozhi_wrapper/__init__.py`

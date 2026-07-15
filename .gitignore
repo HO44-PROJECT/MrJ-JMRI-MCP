@@ -10,4 +10,4 @@ venv/
 .ruff_cache/
 .DS_Store
 packages/jmri-core/tests/config/live.ini
-CLAUDE.md
+.claude/

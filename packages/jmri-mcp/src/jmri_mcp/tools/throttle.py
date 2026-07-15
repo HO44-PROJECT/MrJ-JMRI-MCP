@@ -93,16 +93,27 @@ def register(mcp) -> None:
         return {"released": True, "address": address}
 
     @mcp.tool()
-    async def set_speed(address: int, speed_percent: float) -> dict:
+    async def set_speed(address: int, speed_percent: float, direction: str | None = None) -> dict:
         """Set a locomotive's speed as a percentage of its maximum (0-100%).
 
         Args:
             address: DCC address. Auto-acquires the throttle if needed —
                 no need to call acquire_throttle first for "speed up the 3".
             speed_percent: 0-100, clamped not rejected.
+            direction: Optional "forward"/"reverse" (case-insensitive).
+                Pass this when a request names BOTH speed and direction
+                together ("avance à 40%", "go forward at 40%") so they're
+                set atomically in one call — don't call set_direction
+                separately first or after, a loco moving the wrong way
+                needs both changed at once. Omit for a pure speed change
+                that must not touch the current direction. Flips
+                instantly if needed (no ramp); for a smoother flip-and-
+                ramp use set_speed_ramped instead.
 
         Returns the actual speed JMRI reports back as a percentage — may
-        differ slightly (DCC uses discrete speed steps, rounded).
+        differ slightly (DCC uses discrete speed steps, rounded). Also
+        includes "direction" when the direction argument was passed,
+        omitted otherwise.
 
         Use stop for a controlled halt (0%) or emergency_stop for a panic
         stop — not set_speed(speed_percent=0), a different command to JMRI.
@@ -121,18 +132,40 @@ def register(mcp) -> None:
         """
         client = get_ws_client()
         speed = max(0.0, min(100.0, speed_percent)) / 100.0
+        normalized = None
         try:
+            if direction is not None:
+                normalized = direction.strip().lower()
+                if normalized not in ("forward", "reverse"):
+                    raise JmriError("invalid_direction", direction=direction)
             await ensure_acquired(client, address)
-            data = await client.set_speed(throttle_id(address), speed)
+            if normalized is not None:
+                data = await execute_speed_change(
+                    client,
+                    throttle_id(address),
+                    target_forward=(normalized == "forward"),
+                    target_fraction=speed,
+                    rampup=0.0,
+                    rampdown=0.0,
+                    hold_seconds=None,
+                )
+            else:
+                data = await client.set_speed(throttle_id(address), speed)
         except JmriError as exc:
-            logger.warning("set_speed(%r, %r) failed: %s", address, speed_percent, exc)
+            logger.warning(
+                "set_speed(%r, %r, %r) failed: %s", address, speed_percent, direction, exc
+            )
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {"address": address, "speed_percent": data.get("speed", speed) * 100}
+        result = {"address": address, "speed_percent": data.get("speed", speed) * 100}
+        if normalized is not None:
+            result["direction"] = direction_name(data.get("forward", normalized == "forward"))
+        return result
 
     @mcp.tool()
     async def set_speed_ramped(
         address: int,
         speed_percent: float,
+        direction: str | None = None,
         rampup_seconds: float = 0.0,
         rampdown_seconds: float = 0.0,
         hold_seconds: float | None = None,
@@ -141,10 +174,21 @@ def register(mcp) -> None:
 
         Args:
             address: DCC address. Auto-acquires the throttle if needed.
-            speed_percent: Target speed, 0-100%. CLI-only shorthand: a
-                NEGATIVE value means "reverse at |value|%", flipping
-                direction as part of the ramp. Unrelated to
-                emergency_stop's real decoder e-stop, never sent here.
+            speed_percent: Target speed, 0-100%. Legacy shorthand kept for
+                backward compatibility: a NEGATIVE value means "reverse at
+                |value|%", flipping direction as part of the ramp — but
+                prefer the explicit direction param below for new calls,
+                it's clearer intent. Ignored as a sign once direction is
+                given (only its magnitude, clamped 0-100, is used then).
+                Unrelated to emergency_stop's real decoder e-stop, never
+                sent here.
+            direction: Optional "forward"/"reverse" (case-insensitive) —
+                set together with speed_percent in one atomic ramped call,
+                e.g. "avance progressivement à 40%" (loco currently in
+                reverse) -> set_speed_ramped(speed_percent=40,
+                direction="forward", rampup_seconds=3). Takes precedence
+                over speed_percent's negative-sign shorthand if both are
+                somehow given.
             rampup_seconds: Seconds to climb to the target if it's higher
                 (or on a direction flip while moving). 0 = instant, like
                 plain set_speed.
@@ -181,15 +225,24 @@ def register(mcp) -> None:
         "speed_percent", "direction", "seconds_total"}.
         """
         client = get_ws_client()
-        target_forward = False if speed_percent < 0 else None
-        target_fraction = max(0.0, min(100.0, abs(speed_percent))) / 100.0
+        normalized = None
+        if direction is not None:
+            normalized = direction.strip().lower()
+        if normalized is not None:
+            target_forward = normalized == "forward"
+            target_fraction = max(0.0, min(100.0, speed_percent)) / 100.0
+        else:
+            target_forward = False if speed_percent < 0 else None
+            target_fraction = max(0.0, min(100.0, abs(speed_percent))) / 100.0
         total_seconds = rampup_seconds + rampdown_seconds + (hold_seconds or 0.0)
         try:
+            if normalized is not None and normalized not in ("forward", "reverse"):
+                raise JmriError("invalid_direction", direction=direction)
             await ensure_acquired(client, address)
         except JmriError as exc:
             logger.warning(
-                "set_speed_ramped(%r, %r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
-                address, speed_percent, rampup_seconds, rampdown_seconds, hold_seconds, exc,
+                "set_speed_ramped(%r, %r, direction=%r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
+                address, speed_percent, direction, rampup_seconds, rampdown_seconds, hold_seconds, exc,
             )
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
 
@@ -207,16 +260,16 @@ def register(mcp) -> None:
                     )
                 except JmriError as exc:
                     logger.warning(
-                        "background set_speed_ramped(%r, %r) failed: %s",
-                        address, speed_percent, exc,
+                        "background set_speed_ramped(%r, %r, direction=%r) failed: %s",
+                        address, speed_percent, direction, exc,
                     )
 
             run_in_background(_run_ramp())
             return {
                 "address": address,
                 "status": "started",
-                "speed_percent": abs(speed_percent),
-                "direction": "reverse" if target_forward is False else None,
+                "speed_percent": target_fraction * 100,
+                "direction": direction_name(target_forward),
                 "seconds_total": total_seconds,
             }
 
@@ -232,8 +285,8 @@ def register(mcp) -> None:
             )
         except JmriError as exc:
             logger.warning(
-                "set_speed_ramped(%r, %r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
-                address, speed_percent, rampup_seconds, rampdown_seconds, hold_seconds, exc,
+                "set_speed_ramped(%r, %r, direction=%r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
+                address, speed_percent, direction, rampup_seconds, rampdown_seconds, hold_seconds, exc,
             )
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
         return {

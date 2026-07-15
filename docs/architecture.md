@@ -943,8 +943,12 @@ transparently first (JMRI rejects speed/direction/function commands on a
 throttle id it's never seen an acquire for). `set_speed` takes a 0-100
 percentage from the LLM and converts to JMRI's 0.0-1.0 scale; `stop` is
 speed 0.0, `emergency_stop` is speed -1.0 (JMRI's decoder emergency stop, a
-distinct command from a controlled stop). `set_speed`/`stop`/
-`emergency_stop` go through `JmriWsClient.set_speed()`; `set_direction`
+distinct command from a controlled stop). `stop`/`emergency_stop`, and
+`set_speed` when called without its optional `direction` argument, go
+through `JmriWsClient.set_speed()` directly; `set_speed` with `direction`
+given instead routes through `jmri_ws.ramp.execute_speed_change` (see
+"Ramped speed changes" below) so speed and a direction flip land as one
+atomic call. `set_direction`
 goes through the analogous `JmriWsClient.set_direction()`; `set_function`
 goes through `JmriWsClient.set_function()` — all three check the live
 per-throttle cache (`speed`/`forward`/`functions[n]` respectively) before
@@ -983,6 +987,36 @@ reassuring language in the docstring, not a code change, since the call was
 never actually attempted). Uses the same `ensure_acquired`/`throttle_id`
 plumbing as `set_speed`/`stop`/etc., so it auto-acquires the throttle like
 every other throttle tool.
+
+### `direction` parameter: setting speed and direction atomically
+
+Speed and direction are independent JMRI decoder commands — a plain speed
+change never touches direction. This surfaced as a real bug: telling the
+assistant "avance" (forward) while a locomotive was moving in reverse just
+increased speed magnitude in whatever direction it already faced, since
+nothing called `set_direction` and no tool let the LLM set both together.
+Both `set_speed` and `set_speed_ramped` now take an optional `direction`
+("forward"/"reverse", case-insensitive) so a combined request sets both in
+one server-guaranteed call — `_SERVER_INSTRUCTIONS`' "Direction routing"
+paragraph tells the LLM to always prefer this over chaining a separate
+`set_direction` call. Both route through `execute_speed_change` when
+`direction` is given (`set_speed` with `rampup=rampdown=0` for an instant
+flip; `set_speed_ramped` with its own rampup/rampdown), which already
+ramps to 0 before flipping if the locomotive is moving the other way —
+no new ramp/flip logic was needed, this is the same primitive
+`set_speed_ramped` already used for its pre-existing negative-`speed_percent`
+CLI shorthand ("reverse at |value|%").
+
+`set_speed_ramped` keeps that legacy shorthand for backward compatibility,
+but only consults it when `direction` is omitted — an explicit `direction`
+always wins. When both are given, `speed_percent`'s magnitude is *clamped*
+(`max(0, min(100, speed_percent))`), not `abs()`'d: `direction="reverse",
+speed_percent=-40` yields 0%, not 40%. This is deliberate — mixing the old
+sign idiom with the new explicit parameter is almost certainly a caller
+mistake, and failing loud (0% speed) is safer than silently guessing which
+idiom was meant. `set_speed`'s return dict gains a `"direction"` key only
+when `direction` was passed as an argument, keeping the old 2-key shape
+byte-for-byte unchanged for every existing caller that never uses it.
 
 ### Long holds run in the background, not inline
 
@@ -1318,12 +1352,19 @@ asking the user to name a system/locomotive.
 
 ## Executor mode: `set_executor_mode` / `get_executor_mode`
 
-`tools/mode.py` answers a different kind of request — not "stop the
-layout" but "stop narrating." MCP does have one server-level channel that
-reaches the host LLM without a tool call (`instructions`, see the section
-below), but it's static and one-shot — set once at server construction,
-delivered once at `initialize`, no way to update mid-conversation — so it
-cannot carry a flag that flips on/off as the user asks for it mid-session.
+Concise, no-narration responses are the **server-wide default**, set via
+`_SERVER_INSTRUCTIONS`' "Response style" paragraph (see the section below)
+— delivered once at `initialize`, before any tool has been called, so
+terse responses hold from the very first turn without the LLM or user
+having to ask for them. `tools/mode.py` exists only for the opposite
+direction: letting the user explicitly ask for normal, explanatory
+responses instead ("explain more", "stop being so terse"), and switch back
+afterward if they want concise again.
+
+MCP's `instructions` field is static and one-shot — set once at server
+construction, delivered once at `initialize`, no way to update
+mid-conversation — so it cannot by itself carry a flag that flips
+mid-session once the user asks to change the response style.
 `@mcp.prompt()` is dynamic but opt-in and client-controlled (e.g. a user
 must manually invoke it as a slash command in Claude Desktop), not
 something a tool call can force either. The only mechanism actually
@@ -1334,14 +1375,18 @@ next.
 So "executor mode" is a module-level flag, `_executor_mode` — process-wide
 is correct here, not a bug, because this MCP server runs one process per
 stdio client session, so there's no cross-session leakage to worry about.
+It **starts `True`**, matching `_SERVER_INSTRUCTIONS`' concise-by-default
+behavior, so a fresh session needs no tool call to already be terse.
 `set_executor_mode(enabled)` flips it and returns an explicit natural-
-language instruction string (terse, no narration, no restating the
-request, report outcomes only); `get_executor_mode()` re-delivers the same
-instruction if it's on, for a caller unsure whether it's still active after
-a long gap. The instruction is re-delivered on every call rather than sent
-once and assumed to "stick," since there's no system-prompt-level way for
-this server to keep reminding the LLM otherwise — this is a behavioral
-nudge via tool output, not an enforced constraint.
+language instruction string (either the terse one — no narration, no
+restating the request, report outcomes only — or, for `enabled=False`, one
+telling the LLM to resume normal explanations); `get_executor_mode()`
+re-delivers the same instruction for whichever state is current, for a
+caller unsure whether it's still active after a long gap. The instruction
+is re-delivered on every call rather than sent once and assumed to
+"stick," since there's no system-prompt-level way for this server to keep
+reminding the LLM otherwise — this is a behavioral nudge via tool output,
+not an enforced constraint.
 
 `mode.py` deliberately has **no `jmri_client`/`jmri_ws` counterpart and no
 `jmri_cli/` equivalent** — it holds no JMRI state and makes no JMRI calls at
@@ -1454,7 +1499,9 @@ response with only `protocolVersion`, `capabilities`, `serverInfo` — no
 `FastMCP("JMRI", instructions=_SERVER_INSTRUCTIONS)`. Content started
 scoped to exactly one thing — mapping the four whole-layout, no-argument
 tools to the French/English phrases that should trigger them
-(`emergency_stop_all`, `power_off_all`, `power_on_all`, `set_executor_mode`)
+(`emergency_stop_all`, `power_off_all`, `power_on_all`, `set_executor_mode`
+— the last one's mapped phrases later narrowed, see "Response style" below,
+once conciseness became the default rather than something to opt into)
 — without this, the LLM has no signal connecting a generic, no-target-named
 command like "arrête tout" to the right tool until it has already read
 that tool's own docstring, which only happens if it guesses to look there
@@ -1462,6 +1509,16 @@ first. This is still deliberately narrow: a general safety reminder (e.g.
 about unauthorized motion commands) and general project context were both
 considered and left out, kept instead in `CLAUDE.md`/this repo's docs, not
 the MCP protocol payload.
+
+A **"Response style" paragraph** was later prepended, ahead of all the
+others: concise, no-narration responses are the default from the very
+first turn of every conversation (see "Executor mode" above), so the LLM
+doesn't need to be told or asked before responding tersely — the standing
+default lives here specifically because `instructions` is the one channel
+guaranteed to reach the LLM before its first response, unlike a tool's own
+docstring (only read once that tool is called) or `set_executor_mode`
+(only reachable via an explicit call the LLM would have no reason to make
+on a fresh session that's already meant to be terse).
 
 Card #34 added three more paragraphs to `_SERVER_INSTRUCTIONS`, in direct
 response to real user friction, not hypothetical:

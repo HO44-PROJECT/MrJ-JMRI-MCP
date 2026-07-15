@@ -300,6 +300,62 @@ async def test_set_speed_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
+async def test_set_speed_with_direction_flips_while_moving(fake_jmri):
+    """Regression test for the reported bug: saying "avance" (forward)
+    while a loco is moving in reverse must actually flip direction, not
+    just change speed magnitude in whatever direction it already faces."""
+    mcp = make_server()
+    await call(mcp, "set_direction", address=3, direction="reverse")
+    await call(mcp, "set_speed", address=3, speed_percent=30)
+    out = await call(mcp, "set_speed", address=3, speed_percent=40, direction="forward")
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "forward"}
+
+
+async def test_set_speed_with_direction_already_facing_that_way_no_extra_ramp(fake_jmri, monkeypatch):
+    """No wasted flip-through-zero when the loco already faces the
+    requested direction -- execute_speed_change must not call
+    set_direction at all in that case."""
+    from jmri_core.jmri_ws import JmriWsClient
+
+    calls = []
+    original = JmriWsClient.set_direction
+
+    async def spy(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(JmriWsClient, "set_direction", spy)
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=40, direction="forward")
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "forward"}
+    assert calls == []
+
+
+async def test_set_speed_with_direction_while_stopped_sets_both_instantly(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=40, direction="reverse")
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "reverse"}
+
+
+async def test_set_speed_invalid_direction_rejected(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=40, direction="sideways")
+    assert "error" in out
+
+
+async def test_set_speed_no_direction_preserves_old_return_shape(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=40)
+    assert out == {"address": 3, "speed_percent": 40.0}
+    assert "direction" not in out
+
+
+async def test_set_speed_direction_case_insensitive(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=40, direction="Forward")
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "forward"}
+
+
 class _FastSleepAsyncio:
     """Proxy for jmri_ws.ramp's own `asyncio` reference with `sleep` stubbed
     to instant, so a long hold_seconds doesn't actually slow the test down.
@@ -369,6 +425,47 @@ async def test_set_speed_ramped_background_ramp_actually_completes(fake_jmri, mo
     await asyncio.gather(*background_tasks, return_exceptions=True)
     state = get_ws_client().throttle_state("addr3")
     assert state["speed"] == 0.0  # auto-stopped after the hold, like the blocking path
+
+
+async def test_set_speed_ramped_direction_flips_while_moving(fake_jmri, monkeypatch):
+    """Same regression as set_speed's, via the ramped tool -- a direction
+    flip while moving must ramp to 0, flip, then ramp back up, ending
+    facing the requested direction."""
+    import asyncio
+
+    monkeypatch.setattr("jmri_core.jmri_ws.ramp.asyncio", _FastSleepAsyncio(asyncio))
+    mcp = make_server()
+    await call(mcp, "set_direction", address=3, direction="reverse")
+    await call(mcp, "set_speed", address=3, speed_percent=30)
+    out = await call(
+        mcp, "set_speed_ramped", address=3, speed_percent=40, direction="forward", rampup_seconds=1, rampdown_seconds=1
+    )
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "forward"}
+
+
+async def test_set_speed_ramped_direction_overrides_negative_sign_precedence(fake_jmri):
+    """Explicit direction wins outright over the legacy negative-sign
+    shorthand: speed_percent's magnitude is CLAMPED, not abs()'d, so a
+    negative value here yields 0%, not 40% -- deliberately failing loud
+    on a mixed idiom rather than silently guessing intent."""
+    mcp = make_server()
+    out = await call(mcp, "set_speed_ramped", address=3, speed_percent=-40, direction="reverse")
+    assert out == {"address": 3, "speed_percent": 0.0, "direction": "reverse"}
+
+
+async def test_set_speed_ramped_no_direction_keeps_negative_sign_shorthand(fake_jmri):
+    """Pure regression guard: omitting direction entirely must leave the
+    pre-existing negative-speed_percent-means-reverse CLI shorthand
+    completely unchanged."""
+    mcp = make_server()
+    out = await call(mcp, "set_speed_ramped", address=3, speed_percent=-40)
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "reverse"}
+
+
+async def test_set_speed_ramped_invalid_direction_rejected(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed_ramped", address=3, speed_percent=40, direction="sideways")
+    assert "error" in out
 
 
 async def test_set_direction_auto_acquires_and_sets_reverse(fake_jmri):
@@ -845,13 +942,23 @@ async def test_set_executor_mode_off_returns_instruction():
 
 async def test_get_executor_mode_reflects_current_state():
     mcp = make_server()
-    out = await call(mcp, "get_executor_mode")
-    assert out == {"executor_mode": False}
 
-    await call(mcp, "set_executor_mode", enabled=True)
+    # Concise responses are the server-wide default -- True with no prior
+    # set_executor_mode call, not False.
     out = await call(mcp, "get_executor_mode")
     assert out["executor_mode"] is True
     assert "instruction" in out
+
+    await call(mcp, "set_executor_mode", enabled=False)
+    out = await call(mcp, "get_executor_mode")
+    assert out == {
+        "executor_mode": False,
+        "instruction": (
+            "Executor mode is OFF. Resume normal, explanatory responses "
+            'until the user asks for concise/quiet/"just do it" responses '
+            "again and you call set_executor_mode(True)."
+        ),
+    }
 
 
 def _mock_roster_for(monkeypatch, roster_fixture):

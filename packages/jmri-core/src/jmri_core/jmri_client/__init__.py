@@ -39,6 +39,7 @@ from jmri_core.jmri_client.light import (
 from jmri_core.jmri_client.power import (
     POWER_OFF,
     POWER_ON,
+    POWER_UNKNOWN,
     get_systems,
     get_version,
     power_off_all,
@@ -74,6 +75,7 @@ __all__ = [
     "JmriError",
     "POWER_ON",
     "POWER_OFF",
+    "POWER_UNKNOWN",
     "get_version",
     "get_systems",
     "set_power",

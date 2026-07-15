@@ -1195,6 +1195,27 @@ invocation in the case where a POST does end up being sent (current state
 differs from requested) — accepted deliberately, since avoiding the
 UNKNOWN failure mode matters more than saving one HTTP round-trip.
 
+## `set_power`: OFF/wait/ON recovery when a power-ON lands in UNKNOWN
+
+A second, distinct UNKNOWN failure mode from the redundant-POST bug
+above: a command station can also reject or lose a genuine ON request,
+landing the post-POST re-read on state UNKNOWN instead of ON — and it
+does not self-recover from this on its own.
+
+When `set_power(prefix, turn_on=True)`'s post-POST re-read observes
+UNKNOWN, it posts OFF for that system, waits
+`POWER_UNKNOWN_RECOVERY_DELAY_SECONDS`, then retries ON once more and
+re-reads. Only one retry is attempted — a second failure is still
+reported honestly via `confirmed: False` rather than retried
+indefinitely. This recovery path only triggers for `turn_on=True`; a
+power-OFF that lands in UNKNOWN is reported honestly with no retry, since
+the recovery cycle itself ends in an ON state and would contradict the
+caller's OFF request.
+
+Every caller of `set_power` (the MCP tool, `jmri-cli power on`/`off`, and
+`_set_power_all` behind `power_off_all`/`power_on_all`) inherits this
+recovery automatically, same as the redundant-POST guard above.
+
 ## `get_power` / `list_systems`: connection name doubles as system description
 
 JMRI has no dedicated field for "what is this power system for" — the

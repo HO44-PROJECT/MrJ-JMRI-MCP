@@ -9,13 +9,17 @@ import logging
 from typing import Any
 
 from jmri_core.constants import endpoints
-from jmri_core.constants.client_tuning import POWER_POST_RECHECK_DELAY_SECONDS
+from jmri_core.constants.client_tuning import (
+    POWER_POST_RECHECK_DELAY_SECONDS,
+    POWER_UNKNOWN_RECOVERY_DELAY_SECONDS,
+)
 from jmri_core.jmri_client._http import JmriError, _get_json, _post_json, _unwrap
 
 logger = logging.getLogger("jmri_core.client")
 
 POWER_ON = 2
 POWER_OFF = 4
+POWER_UNKNOWN = 0
 
 
 async def get_version() -> str:
@@ -65,6 +69,14 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     current state first and skips the POST entirely if it already matches
     the request — "already ON" and "turn ON" must be indistinguishable
     from the caller's point of view, not just an optimization.
+
+    UNKNOWN-after-ON recovery: if an ON was requested and the post-POST
+    re-read observes UNKNOWN (state 0) rather than ON, the command
+    station rejected/lost the ON and does not self-recover — this posts
+    OFF, waits POWER_UNKNOWN_RECOVERY_DELAY_SECONDS, then retries ON once
+    more (verified against the user's real DCC++ station). Only one retry
+    is attempted; a second failure is still reported honestly via
+    "confirmed": False rather than retried indefinitely.
     """
     desired = POWER_ON if turn_on else POWER_OFF
 
@@ -77,14 +89,15 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     if current.get("state") == desired:
         return {**current, "confirmed": True}
 
-    await _post_json(endpoints.POWER, {"state": desired, "prefix": prefix})
-    await asyncio.sleep(POWER_POST_RECHECK_DELAY_SECONDS)
+    observed = await _post_and_reread(prefix, desired)
 
-    systems = await get_systems()
-    matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
-    if not matches:
-        raise JmriError("prefix_vanished_after_post", prefix=prefix)
-    observed = matches[0]
+    if turn_on and observed.get("state") == POWER_UNKNOWN:
+        logger.warning(
+            "set_power(%s, True): landed in UNKNOWN, recovering via OFF/wait/ON", prefix,
+        )
+        await _post_and_reread(prefix, POWER_OFF)
+        await asyncio.sleep(POWER_UNKNOWN_RECOVERY_DELAY_SECONDS)
+        observed = await _post_and_reread(prefix, POWER_ON)
 
     confirmed = observed.get("state") == desired
     if not confirmed:
@@ -93,6 +106,19 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
             prefix, turn_on, desired, observed.get("state"),
         )
     return {**observed, "confirmed": confirmed}
+
+
+async def _post_and_reread(prefix: str, desired: int) -> dict[str, Any]:
+    """POST the requested state, wait the standard recheck delay, then
+    re-read and return this prefix's observed system entry."""
+    await _post_json(endpoints.POWER, {"state": desired, "prefix": prefix})
+    await asyncio.sleep(POWER_POST_RECHECK_DELAY_SECONDS)
+
+    systems = await get_systems()
+    matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
+    if not matches:
+        raise JmriError("prefix_vanished_after_post", prefix=prefix)
+    return matches[0]
 
 
 async def _set_power_all(turn_on: bool) -> list[dict[str, Any]]:

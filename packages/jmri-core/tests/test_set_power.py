@@ -1,7 +1,7 @@
 import respx
 from httpx import Response
 
-from jmri_core.jmri_client import POWER_OFF, POWER_ON, set_power
+from jmri_core.jmri_client import POWER_OFF, POWER_ON, POWER_UNKNOWN, set_power
 from jmri_core.testing.plugin import MOCK_JMRI_URL
 
 
@@ -77,3 +77,74 @@ async def test_set_power_skips_post_when_already_desired_state(monkeypatch):
     assert post_route.call_count == 0
     assert result["confirmed"] is True
     assert result["state"] == POWER_ON
+
+
+async def test_set_power_recovers_from_unknown_after_on(monkeypatch):
+    """A power ON that lands in UNKNOWN doesn't self-recover -- set_power must
+    post OFF, wait, then retry ON once, and confirm on the final re-read."""
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_UNKNOWN_RECOVERY_DELAY_SECONDS", 0)
+    with respx.mock() as router:
+        post_route = router.post(f"{MOCK_JMRI_URL}/json/power").mock(
+            return_value=Response(200, json={})
+        )
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
+            side_effect=[
+                Response(200, json=_power_payload("R", POWER_OFF)),      # pre-check
+                Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # post-ON re-read: UNKNOWN
+                Response(200, json=_power_payload("R", POWER_OFF)),      # post-recovery-OFF re-read
+                Response(200, json=_power_payload("R", POWER_ON)),       # post-recovery-ON re-read
+            ]
+        )
+        result = await set_power("R", turn_on=True)
+
+    assert result["confirmed"] is True
+    assert result["state"] == POWER_ON
+    posted_states = [call.request.content for call in post_route.calls]
+    assert posted_states == [
+        b'{"state":2,"prefix":"R"}',
+        b'{"state":4,"prefix":"R"}',
+        b'{"state":2,"prefix":"R"}',
+    ]
+
+
+async def test_set_power_unknown_recovery_failure_reported_honestly(monkeypatch):
+    """If the retried ON still doesn't confirm, report confirmed=False rather
+    than retrying indefinitely."""
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_UNKNOWN_RECOVERY_DELAY_SECONDS", 0)
+    with respx.mock() as router:
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
+            side_effect=[
+                Response(200, json=_power_payload("R", POWER_OFF)),      # pre-check
+                Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # post-ON re-read: UNKNOWN
+                Response(200, json=_power_payload("R", POWER_OFF)),      # post-recovery-OFF re-read
+                Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # retry still UNKNOWN
+            ]
+        )
+        result = await set_power("R", turn_on=True)
+
+    assert result["confirmed"] is False
+    assert result["state"] == POWER_UNKNOWN
+
+
+async def test_set_power_no_recovery_when_turning_off(monkeypatch):
+    """The UNKNOWN recovery cycle is only for turn_on=True -- a turn-off that
+    lands in UNKNOWN must not trigger an OFF/wait/ON cycle."""
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    with respx.mock() as router:
+        post_route = router.post(f"{MOCK_JMRI_URL}/json/power").mock(
+            return_value=Response(200, json={})
+        )
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
+            side_effect=[
+                Response(200, json=_power_payload("R", POWER_ON)),       # pre-check
+                Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # post-OFF re-read: UNKNOWN
+            ]
+        )
+        result = await set_power("R", turn_on=False)
+
+    assert post_route.call_count == 1
+    assert result["confirmed"] is False
+    assert result["state"] == POWER_UNKNOWN

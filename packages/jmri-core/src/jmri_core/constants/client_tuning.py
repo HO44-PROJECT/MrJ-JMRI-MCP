@@ -3,6 +3,13 @@
 HTTP_TIMEOUT_SECONDS = 5.0
 POWER_POST_RECHECK_DELAY_SECONDS = 1.0
 
+# When a power ON is requested but the post-POST re-read observes UNKNOWN
+# (not ON, not the pre-existing OFF) -- the command station rejected/lost
+# the ON and needs a clean OFF->ON cycle to recover -- set_power posts OFF,
+# waits this long, then retries ON once. Verified against the user's real
+# DCC++ station: an ON that lands in UNKNOWN never self-recovers on its own.
+POWER_UNKNOWN_RECOVERY_DELAY_SECONDS = 2.0
+
 WS_CONNECT_TIMEOUT_SECONDS = 5.0
 WS_REQUEST_TIMEOUT_SECONDS = 5.0
 WS_RECONNECT_DELAY_SECONDS = 2.0

@@ -81,6 +81,15 @@
             "throttle": "Drive your locomotives: speed, direction, functions, lights",
             "turnout": "Control your turnouts"
         },
+        "shortcut": {
+            "speed": "Shortcut for `throttle speed`",
+            "stop": "Shortcut for `throttle stop`",
+            "estop": "Shortcut for `throttle estop`",
+            "forward": "Shortcut for `throttle forward`",
+            "reverse": "Shortcut for `throttle reverse`",
+            "engine-start": "Shortcut for `throttle engine-start`",
+            "engine-stop": "Shortcut for `throttle engine-stop`"
+        },
         "sort": {
             "byid": "Sort by system ID",
             "byname": "Sort by name",
@@ -244,6 +253,7 @@
     "cli": {
         "error_prefix": "Error: {message}",
         "commands_header": "commands:",
+        "shortcuts_header": "shortcuts (for common throttle verbs):",
         "help_hint_group": "Run `jmri-cli <command> -h` for its subcommands, or",
         "help_hint_shell_group": "Run `<command> -h` for its subcommands, or",
         "help_hint_example": "`jmri-cli <command> <subcommand> -h` for a runnable example.",

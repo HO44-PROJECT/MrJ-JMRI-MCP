@@ -45,6 +45,20 @@ async def test_shell_single_shared_connection_across_commands(fake_jmri, capsys,
     assert "address=3 speed=0%" in out
 
 
+async def test_shell_top_level_shortcut_shares_connection_like_throttle_verb(fake_jmri, capsys, monkeypatch):
+    """`speed`/`stop`/etc (issue #45's top-level shortcuts) must dispatch
+    through the shell exactly like their `throttle <verb>` equivalent,
+    including sharing this session's one connection - not just work in
+    one-shot mode."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 --hold 0.05", "stop 3"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "address=3 speed=0%" in out
+    assert "address=3 stopped" in out
+
+
 async def test_shell_second_command_on_same_address_does_not_reacquire(fake_jmri, capsys, monkeypatch):
     """Regression test: every throttle_* command in cli/throttle.py calls
     acquire_throttle() unconditionally, and a second command touching an

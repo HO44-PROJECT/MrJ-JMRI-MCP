@@ -1608,6 +1608,76 @@ async def test_throttle_find_shows_dash_name_when_resolved_by_raw_address_with_n
     assert "address=99" in out and "name=-" in out
 
 
+async def test_speed_shortcut_matches_throttle_speed(fake_jmri, capsys):
+    """`jmri-cli speed` (issue #45) must behave identically to `jmri-cli
+    throttle speed` - same func, same args, same output."""
+    code, out, _ = await run(capsys, "speed", "3", "40", "--hold", "1")
+    assert code == 0
+    assert "address=3" in out
+
+
+async def test_stop_shortcut_matches_throttle_stop(fake_jmri, capsys):
+    await run(capsys, "speed", "3", "40", "--hold", "1")
+    code, out, _ = await run(capsys, "stop", "3")
+    assert code == 0
+    assert "address=3 stopped" in out
+
+
+async def test_estop_shortcut_matches_throttle_estop(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "estop", "3")
+    assert code == 0
+    assert "address=3" in out
+
+
+async def test_forward_and_reverse_shortcuts_match_throttle_direction(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "forward", "3")
+    assert code == 0
+    assert "address=3 direction=forward" in out
+
+    code, out, _ = await run(capsys, "reverse", "3")
+    assert code == 0
+    assert "address=3 direction=reverse" in out
+
+
+async def test_engine_start_shortcut_matches_throttle_engine_start(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    code, out, _ = await run(capsys, "engine-start", "4")
+    assert code == 0
+    assert "address=4 started" in out
+
+
+async def test_engine_stop_shortcut_matches_throttle_engine_stop(fake_jmri, monkeypatch, capsys):
+    _patch_autorail_roster(monkeypatch)
+
+    await run(capsys, "engine-start", "4")
+    code, out, _ = await run(capsys, "engine-stop", "4")
+    assert code == 0
+    assert "address=4" in out
+
+
+async def test_shortcuts_do_not_add_on_off_at_top_level():
+    """on/off were deliberately excluded (issue #45) - bare `jmri-cli on`/
+    `off` would read ambiguously against the existing `power on`/`off`
+    group. Only `throttle on`/`off` should exist."""
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["on", "3", "1"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["off", "3", "1"])
+
+
+async def test_shortcut_help_notes_it_is_a_shortcut():
+    parser = build_parser()
+    speed_shortcut = None
+    for action in parser._subparsers._group_actions:
+        speed_shortcut = action.choices.get("speed")
+        if speed_shortcut:
+            break
+    assert speed_shortcut is not None
+    assert "shortcut for `throttle speed`" in speed_shortcut.description
+
+
 def test_every_leaf_subcommand_epilog_example_is_parseable():
     """Every leaf subcommand's `-h` epilog shows a runnable example - make
     sure each one actually parses, so the docs in --help can't drift from

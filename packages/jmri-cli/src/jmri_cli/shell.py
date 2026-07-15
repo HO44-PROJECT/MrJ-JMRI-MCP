@@ -91,14 +91,19 @@ def _save_history() -> None:
 
 
 _GROUP_NAMES = ["light", "power", "roster", "sensor", "signal", "status", "throttle", "turnout"]
+_SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
 
 
 def _command_list() -> str:
     """Render the top-level command list, shell-flavored (no `jmri-cli` prefix)."""
     group_help = {name: i18n.t(f"help.group.{name}") for name in _GROUP_NAMES}
-    width = max(len(name) for name in group_help)
+    shortcut_help = {name: i18n.t(f"help.shortcut.{name}") for name in _SHORTCUT_NAMES}
+    width = max(len(name) for name in {**group_help, **shortcut_help})
     lines = [i18n.t("cli.commands_header")]
     lines += [f"  {name:<{width}}  {help_text}" for name, help_text in group_help.items()]
+    lines.append("")
+    lines.append(i18n.t("cli.shortcuts_header"))
+    lines += [f"  {name:<{width}}  {help_text}" for name, help_text in shortcut_help.items()]
     lines.append("")
     lines.append(i18n.t("cli.help_hint_shell_group"))
     lines.append(i18n.t("cli.help_hint_shell_example"))

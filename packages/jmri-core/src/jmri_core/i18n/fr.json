@@ -81,6 +81,15 @@
             "throttle": "Piloter vos locomotives : vitesse, direction, fonctions, lumières",
             "turnout": "Contrôler vos aiguillages"
         },
+        "shortcut": {
+            "speed": "Raccourci pour `throttle speed`",
+            "stop": "Raccourci pour `throttle stop`",
+            "estop": "Raccourci pour `throttle estop`",
+            "forward": "Raccourci pour `throttle forward`",
+            "reverse": "Raccourci pour `throttle reverse`",
+            "engine-start": "Raccourci pour `throttle engine-start`",
+            "engine-stop": "Raccourci pour `throttle engine-stop`"
+        },
         "sort": {
             "byid": "Trier par ID système",
             "byname": "Trier par nom",
@@ -244,6 +253,7 @@
     "cli": {
         "error_prefix": "Erreur : {message}",
         "commands_header": "commandes :",
+        "shortcuts_header": "raccourcis (verbes de pilotage courants) :",
         "help_hint_group": "Lancez `jmri-cli <commande> -h` pour ses sous-commandes, ou",
         "help_hint_shell_group": "Lancez `<commande> -h` pour ses sous-commandes, ou",
         "help_hint_example": "`jmri-cli <commande> <sous-commande> -h` pour un exemple exécutable.",

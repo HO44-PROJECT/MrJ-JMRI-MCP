@@ -513,14 +513,19 @@ Ramp linearly to the target speed (or down to 0 for `--rampdown`) over the
 given number of seconds instead of jumping instantly. Both flags can be used
 together (ramp up, hold, ramp down) or independently.
 
-### Negative `speed_percent` is reverse shorthand, not emergency stop
+### Negative `speed_percent` is a direction-toggle shorthand, not emergency stop
 
-`throttle speed 3 -40` means "reverse at 40%" — a pure CLI convenience,
-resolved entirely client-side into a direction flip plus a normal
-`speed=0.4` command. It is **not** related to JMRI's real emergency-stop
-sentinel (`speed=-1.0`, sent only by `throttle estop`, below) — the two
-never share a code path, so there's no risk of a negative speed value
-accidentally triggering a decoder e-stop.
+`throttle speed 3 -40` means "flip whichever direction the loco is
+currently facing, then go at 40%" — a pure CLI convenience, resolved
+entirely client-side into a direction flip plus a normal `speed=0.4`
+command. It's a **toggle relative to the loco's current direction**, not
+an absolute "always reverse": if the loco is already reverse, `-40` flips
+it back to forward. A positive value never touches direction, whatever it
+currently is — this is what keeps `forward`/`reverse` meaningful as their
+own separate commands. This is **not** related to JMRI's real
+emergency-stop sentinel (`speed=-1.0`, sent only by `throttle estop`,
+below) — the two never share a code path, so there's no risk of a
+negative speed value accidentally triggering a decoder e-stop.
 
 ## `jmri-cli throttle stop [loco] [--rampdown S]`
 
@@ -796,6 +801,48 @@ JMRI's own live-push cache inside `jmri_ws.py`, distinct from the
 `~/.jmri-cli/throttle_state.json` local file described above — the former
 lives only within one connection's lifetime, the latter persists across CLI
 invocations.)
+
+## Top-level shortcuts: `jmri-cli speed` / `stop` / `estop` / `forward` / `reverse` / `engine-start` / `engine-stop`
+
+The everyday throttle verbs are also available directly at the top level,
+without the `throttle` prefix — `jmri-cli speed 3 40` is exactly
+`jmri-cli throttle speed 3 40`, same parser, same function, same output,
+same rules (mandatory `--hold` outside the shell, ramping, no-op/cache
+behavior, `[loco]`-optional cache fallback where the underlying command has
+one). Each shortcut is a straight mirror of its `throttle <verb>` form, so
+everything documented above for that verb applies unchanged:
+
+```bash
+$ jmri-cli speed 3 40 --hold 5
+address=3 speed=0%
+
+$ jmri-cli stop 3
+address=3 stopped
+
+$ jmri-cli estop 3
+address=3 emergency-stopped
+
+$ jmri-cli forward 3
+address=3 direction=forward
+
+$ jmri-cli engine-start 3
+address=3 started (forward, 3 light function(s) on)
+
+$ jmri-cli engine-stop 3
+address=3 stopped (forward, lights off, released)
+```
+
+These work identically one-shot and inside the interactive shell (the shell
+parses every typed line with this same parser, so no separate wiring was
+needed). `on`/`off` are **not** available as top-level shortcuts — bare
+`jmri-cli on`/`off` would read ambiguously against the already-existing
+`power on`/`power off` group, so those two stay under `throttle on [loco]
+[function]` / `throttle off [loco] [function]` only. The full `throttle
+<verb>` forms keep working unchanged; the shortcuts are purely additive and
+listed in their own `shortcuts:` block under `jmri-cli -h`'s main `commands:`
+list (and the shell's own `help`), separate from the command groups so the
+two aren't confused. `jmri-cli <shortcut> -h` gives the same full help as
+the `throttle` form.
 
 ## `jmri-cli light` / `light list`
 

@@ -52,6 +52,42 @@ def _leaf(subparsers, name: str, *, help: str, example: str, func) -> argparse.A
     return sub
 
 
+def _shortcut(subparsers, name: str, source: argparse.ArgumentParser, *, example: str) -> None:
+    """Register a top-level shortcut that mirrors an existing `throttle <leaf>` parser.
+
+    Copies `source`'s positional/optional arguments (and its `func`
+    default, including any functools.partial like forward/reverse's)
+    onto a brand-new top-level parser — so `jmri-cli speed 3 40` behaves
+    identically to `jmri-cli throttle speed 3 40`, no dispatch logic
+    duplicated. Purely additive: `source` itself is untouched, so
+    `jmri-cli throttle <leaf>` keeps working exactly as before.
+
+    Only covers the small set of everyday verbs named in issue #45
+    (speed/stop/estop/forward/reverse/engine-start/engine-stop) — `on`/
+    `off` were deliberately left out of that set, since bare `jmri-cli
+    on`/`off` at the top level would read ambiguously against the
+    already-existing `power on`/`power off` group.
+
+    Args:
+        subparsers: The root parser's subparsers action.
+        name: The shortcut's top-level name (matches `source`'s leaf name).
+        source: The already-built `throttle <name>` subparser to mirror.
+        example: A full `jmri-cli <name> ...` command string for the epilog.
+    """
+    shortcut = subparsers.add_parser(
+        name,
+        help=f"{source.description} (shortcut for `throttle {name}`)",
+        description=f"{source.description} (shortcut for `throttle {name}`)",
+        epilog=f"example:\n  {example}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    for action in source._actions:
+        if isinstance(action, argparse._HelpAction):
+            continue
+        shortcut._add_action(action)
+    shortcut.set_defaults(**source._defaults)
+
+
 def _add_ramp_args(leaf: argparse.ArgumentParser, *, rampup: bool, seconds: bool) -> None:
     """Add --rampup/--rampdown/--hold flags to a throttle leaf subparser.
 
@@ -471,6 +507,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-pong", action="store_true",
         help=i18n.t("help.throttle.sniff_show_pong"),
     )
+
+    # -- top-level shortcuts for the everyday throttle verbs (issue #45) --
+    # Additive only: each mirrors an already-built `throttle <leaf>` parser
+    # above, so `jmri-cli speed 3 40` and `jmri-cli throttle speed 3 40`
+    # are the exact same command. on/off deliberately excluded — see
+    # _shortcut()'s docstring for why.
+    _shortcut(subparsers, "speed", speed, example="jmri-cli speed 3 40")
+    _shortcut(subparsers, "stop", stop_cmd, example="jmri-cli stop")
+    _shortcut(subparsers, "estop", estop, example="jmri-cli estop 3")
+    _shortcut(subparsers, "forward", forward, example="jmri-cli forward 3")
+    _shortcut(subparsers, "reverse", reverse, example="jmri-cli reverse 3")
+    _shortcut(subparsers, "engine-start", engine_start_cmd, example="jmri-cli engine-start 3")
+    _shortcut(subparsers, "engine-stop", engine_stop_cmd, example="jmri-cli engine-stop")
 
     # -- light: bare = list; on/off take an optional fuzzy target -----
     light_cmd, light_sub = _group(subparsers, "light", default_func=light.light_list)

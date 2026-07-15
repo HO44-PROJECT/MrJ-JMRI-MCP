@@ -1040,14 +1040,38 @@ async def test_throttle_speed_negative_is_reverse_shorthand(fake_jmri, capsys, m
     assert -1.0 not in sent_speeds
 
 
-async def test_throttle_speed_negative_already_reverse_no_direction_noop(fake_jmri, capsys):
-    """Already-reverse + another negative speed shouldn't error or hang -
-    the direction no-op path (JMRI sends no reply for it) must not be
-    mistaken for a missing response."""
+async def test_throttle_speed_negative_toggles_direction_each_time(fake_jmri, capsys):
+    """`speed <loco> -N` is a TOGGLE relative to the loco's current
+    direction, not an absolute "always reverse" - regression test for a
+    real bug reported live: forward -> `-20` correctly went reverse, but a
+    second `-20` (already reverse) incorrectly stayed reverse instead of
+    flipping back to forward, because the old code unconditionally forced
+    target_forward=False on any negative value. Sequence here mirrors the
+    exact one that surfaced it: reverse (explicit) -> negative speed
+    (must flip back to forward) -> negative speed again (must flip back to
+    reverse)."""
     await run(capsys, "throttle", "reverse", "3")
     code, out, _ = await run(capsys, "throttle", "speed", "3", "-40", "--hold", "1")
     assert code == 0
-    assert "address=3 speed=0%" in out
+    assert "direction=forward" in out
+
+    code, out, _ = await run(capsys, "throttle", "speed", "3", "-40", "--hold", "1")
+    assert code == 0
+    assert "direction=reverse" in out
+
+
+async def test_throttle_speed_positive_never_touches_direction(fake_jmri, capsys):
+    """A positive speed must never flip direction, however many times it's
+    repeated - this is what keeps `forward`/`reverse` meaningful as
+    separate commands from plain `speed`."""
+    await run(capsys, "throttle", "reverse", "3")
+    code, out, _ = await run(capsys, "throttle", "speed", "3", "40", "--hold", "1")
+    assert code == 0
+    assert "direction=reverse" in out
+
+    code, out, _ = await run(capsys, "throttle", "speed", "3", "20", "--hold", "1")
+    assert code == 0
+    assert "direction=reverse" in out
 
 
 class _FastSleepAsyncio:

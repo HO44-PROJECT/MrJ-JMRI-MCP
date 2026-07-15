@@ -54,6 +54,7 @@ from jmri_core.constants.cli import (
 )
 from jmri_core.constants.client_tuning import STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED
 from jmri_core.constants.lighting import is_light_label
+from jmri_core.constants.protocol import FIELD_FORWARD
 from jmri_core.jmri_client import JmriError, get_roster, get_roster_function_labels, resolve_roster_entry
 from jmri_core.jmri_ws import JmriWsClient
 from jmri_core.jmri_ws.ramp import execute_speed_change as _execute_speed_change
@@ -355,10 +356,17 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
     With no `args.speed_percent`, this acquires the loco (which resyncs on
     JMRI's real current speed) and prints it without sending any speed
     command — a read, not a write. With a value, it sets speed as 0-100%
-    of maximum; a NEGATIVE value is CLI-only shorthand for "reverse at
-    |value|%" (e.g. `-40` means direction=reverse, speed=40%) — this is
-    resolved entirely client-side and is unrelated to JMRI's own -1.0
-    emergency-stop sentinel, which only `throttle_estop` ever sends.
+    of maximum; a NEGATIVE value is CLI-only shorthand for "flip direction
+    and go at |value|%" (e.g. `-40` means: if currently forward, switch to
+    reverse at 40%; if already reverse, switch to forward at 40% — a
+    TOGGLE relative to the loco's current direction, not an absolute
+    "always reverse"). A POSITIVE value never touches direction, whatever
+    it currently is — this is what keeps `forward`/`reverse` meaningful as
+    separate commands: a plain `speed 3 40` must never silently flip a
+    loco that's currently in reverse. This sign handling is resolved
+    entirely client-side (reading the acquired throttle's own current
+    direction) and is unrelated to JMRI's own -1.0 emergency-stop
+    sentinel, which only `throttle_estop` ever sends.
 
     In one-shot mode (client=None), setting a nonzero speed WITHOUT
     `args.seconds` is a hard, upfront error — see module docstring for why
@@ -410,7 +418,11 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
             if args.speed_percent is None:
                 data = acquired
             else:
-                target_forward = False if args.speed_percent < 0 else None
+                if args.speed_percent < 0:
+                    info = c.throttle_state(throttle_id) or {}
+                    target_forward = not info.get(FIELD_FORWARD, True)
+                else:
+                    target_forward = None
                 target_fraction = max(
                     MIN_SPEED_PERCENT, min(MAX_SPEED_PERCENT, abs(args.speed_percent))
                 ) / 100.0

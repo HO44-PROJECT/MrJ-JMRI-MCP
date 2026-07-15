@@ -192,13 +192,16 @@ def register(mcp) -> None:
         Args:
             address: DCC address. Auto-acquires the throttle if needed.
             speed_percent: Target speed, 0-100%. Legacy shorthand kept for
-                backward compatibility: a NEGATIVE value means "reverse at
-                |value|%", flipping direction as part of the ramp — but
-                prefer the explicit direction param below for new calls,
-                it's clearer intent. Ignored as a sign once direction is
-                given (only its magnitude, clamped 0-100, is used then).
-                Unrelated to emergency_stop's real decoder e-stop, never
-                sent here.
+                backward compatibility: a NEGATIVE value TOGGLES direction
+                relative to whatever the loco is currently facing (forward
+                -> reverse, or reverse -> forward) and ramps to |value|% —
+                it is not an absolute "always reverse", so calling it twice
+                in a row flips back and forth. Prefer the explicit
+                direction param below for new calls, it's clearer intent
+                and not relative to current state. Ignored as a sign once
+                direction is given (only its magnitude, clamped 0-100, is
+                used then). Unrelated to emergency_stop's real decoder
+                e-stop, never sent here.
             direction: Optional "forward"/"reverse" (case-insensitive) —
                 set together with speed_percent in one atomic ramped call,
                 e.g. "avance progressivement à 40%" (loco currently in
@@ -253,12 +256,10 @@ def register(mcp) -> None:
         normalized = None
         if direction is not None:
             normalized = direction.strip().lower()
+        target_fraction = max(0.0, min(100.0, abs(speed_percent))) / 100.0
         if normalized is not None:
             target_forward = normalized == "forward"
             target_fraction = max(0.0, min(100.0, speed_percent)) / 100.0
-        else:
-            target_forward = False if speed_percent < 0 else None
-            target_fraction = max(0.0, min(100.0, abs(speed_percent))) / 100.0
         total_seconds = rampup_seconds + rampdown_seconds + (hold_seconds or 0.0)
         try:
             if normalized is not None and normalized not in ("forward", "reverse"):
@@ -270,6 +271,13 @@ def register(mcp) -> None:
                 address, speed_percent, direction, rampup_seconds, rampdown_seconds, hold_seconds, exc,
             )
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+
+        if normalized is None:
+            if speed_percent < 0:
+                info = client.throttle_state(throttle_id(address)) or {}
+                target_forward = not info.get("forward", True)
+            else:
+                target_forward = None
 
         if total_seconds > RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS:
             async def _run_ramp() -> None:

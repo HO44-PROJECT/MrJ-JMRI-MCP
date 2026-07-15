@@ -468,6 +468,21 @@ async def test_set_speed_ramped_invalid_direction_rejected(fake_jmri):
     assert "error" in out
 
 
+async def test_set_speed_ramped_negative_sign_toggles_each_call(fake_jmri):
+    """Regression test for a real bug reported live: the legacy negative-
+    sign shorthand must TOGGLE direction relative to the loco's current
+    state, not unconditionally force reverse - otherwise a loco already in
+    reverse can never be sent back to forward via a negative speed_percent
+    again. forward (default) -> -40 (must go reverse) -> -40 again (must
+    go back to forward)."""
+    mcp = make_server()
+    out = await call(mcp, "set_speed_ramped", address=3, speed_percent=-40)
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "reverse"}
+
+    out = await call(mcp, "set_speed_ramped", address=3, speed_percent=-40)
+    assert out == {"address": 3, "speed_percent": 40.0, "direction": "forward"}
+
+
 async def test_set_direction_auto_acquires_and_sets_reverse(fake_jmri):
     mcp = make_server()
     out = await call(mcp, "set_direction", address=3, direction="reverse")

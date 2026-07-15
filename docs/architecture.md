@@ -1005,7 +1005,9 @@ flip; `set_speed_ramped` with its own rampup/rampdown), which already
 ramps to 0 before flipping if the locomotive is moving the other way —
 no new ramp/flip logic was needed, this is the same primitive
 `set_speed_ramped` already used for its pre-existing negative-`speed_percent`
-CLI shorthand ("reverse at |value|%").
+CLI shorthand ("flip whichever direction the loco currently faces, then
+go at |value|%" — a toggle relative to current state, not an absolute
+"always reverse").
 
 `set_speed_ramped` keeps that legacy shorthand for backward compatibility,
 but only consults it when `direction` is omitted — an explicit `direction`

@@ -64,8 +64,24 @@ Night/day mode is covered in [CONDUCTOR.en.md](CONDUCTOR.en.md) — it's a simpl
 locomotives nobody here is driving) and more thorough than `emergency_stop_all` (motion
 only, no lights, no release).
 
+## Exhibition mode
+
+> "Exhibition mode" · "passe en mode démo"
+
+A restricted-safety mode for public demos — kids or general visitors trying voice
+control. While it's on: power can't be turned on (turning it off still works, as an
+emergency cut), every locomotive moves forward-only at one fixed, moderate speed no
+matter what's asked, and only allow-listed DCC addresses (if you've configured any) can
+be driven. Lights and functions aren't restricted — visitors toggling a headlight or
+bell is part of the fun, not a safety concern.
+
+> "Exit exhibition mode"
+
+Requires the password you configured at install time — see
+[docs/exhibition.md](docs/exhibition.md) for setup and full details.
+
 ---
 
-Want the full 47-tool reference, session-scripting details, or JMRI/protocol internals?
+Want the full 50-tool reference, session-scripting details, or JMRI/protocol internals?
 See [ENGINEER.en.md](ENGINEER.en.md) and [mcp-tools.md](mcp-tools.md). Just want to drive
 a train? [CONDUCTOR.en.md](CONDUCTOR.en.md).

@@ -26,7 +26,11 @@
         "invalid_function_number_range": "function must be {min}-{max}, got {n}",
         "no_labeled_functions": "{name} (address={address}) has no labeled functions in JMRI's roster — specify a function number, e.g. `throttle on {address} 0`",
         "no_labeled_function_match": "No labeled function matches {query!r}. Available: {available}",
-        "no_light_labeled_functions": "{name} has no light-labeled functions in JMRI's roster (labels are checked for keywords like light/lamp/headlight/lumière/feu/phare) — nothing to switch"
+        "no_light_labeled_functions": "{name} has no light-labeled functions in JMRI's roster (labels are checked for keywords like light/lamp/headlight/lumière/feu/phare) — nothing to switch",
+        "exhibition_address_not_allowed": "Exhibition mode: address {address} is not in the allowed list ({allowed})",
+        "exhibition_power_restricted": "Exhibition mode: power cannot be turned on while active — exit exhibition mode first",
+        "exhibition_reverse_restricted": "Exhibition mode: reverse direction is disabled — forward only while active",
+        "exhibition_wrong_password": "Wrong password — exhibition mode is still active"
     },
     "kinds": {
         "signal mast": {

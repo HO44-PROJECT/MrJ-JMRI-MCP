@@ -26,7 +26,11 @@
         "invalid_function_number_range": "la fonction doit être comprise entre {min} et {max}, reçu {n}",
         "no_labeled_functions": "{name} (adresse={address}) n'a aucune fonction étiquetée dans le roster JMRI — précisez un numéro de fonction, ex. `throttle on {address} 0`",
         "no_labeled_function_match": "Aucune fonction étiquetée ne correspond à {query!r}. Disponibles : {available}",
-        "no_light_labeled_functions": "{name} n'a aucune fonction étiquetée « lumière » dans le roster JMRI (les étiquettes sont vérifiées avec des mots-clés comme lumière/feu/phare/light/lamp/headlight) — rien à basculer"
+        "no_light_labeled_functions": "{name} n'a aucune fonction étiquetée « lumière » dans le roster JMRI (les étiquettes sont vérifiées avec des mots-clés comme lumière/feu/phare/light/lamp/headlight) — rien à basculer",
+        "exhibition_address_not_allowed": "Mode exposition : l'adresse {address} n'est pas dans la liste autorisée ({allowed})",
+        "exhibition_power_restricted": "Mode exposition : impossible d'allumer le courant tant qu'il est actif — sortez d'abord du mode exposition",
+        "exhibition_reverse_restricted": "Mode exposition : la marche arrière est désactivée — avant uniquement tant qu'il est actif",
+        "exhibition_wrong_password": "Mot de passe incorrect — le mode exposition reste actif"
     },
     "kinds": {
         "signal mast": {

@@ -161,6 +161,20 @@ _SERVER_INSTRUCTIONS = (
     "mode\"/\"mode jour\" routes to day_mode() — both turn every layout "
     "light and every acquired locomotive's lights on or off together in "
     "one call, never a manual loop over set_layout_lights/set_loco_lights."
+    "\n\n"
+    "Exhibition mode is a restricted-safety mode for public demos "
+    "(exhibitions, kids trying voice control): \"mode exposition\"/"
+    "\"exhibition mode\"/\"passe en mode démo\" routes to "
+    "enter_exhibition_mode() — no password needed, always call it "
+    "immediately when asked. \"sors du mode exposition\"/\"exit "
+    "exhibition mode\"/\"désactive le mode démo\" routes to "
+    "exit_exhibition_mode(password) — REQUIRES the password; if the user "
+    "hasn't given one in the same request, ask for it, never guess or "
+    "supply one yourself. While exhibition mode is on, power_on_all/"
+    "set_power(turn_on=True) are refused (report this honestly, don't "
+    "retry), and set_speed/set_speed_ramped/set_direction silently apply "
+    "a fixed forward-only speed regardless of what was asked — tell the "
+    "user the locomotive is moving, not that the request failed."
 )
 
 mcp = FastMCP("JMRI", instructions=_SERVER_INSTRUCTIONS)

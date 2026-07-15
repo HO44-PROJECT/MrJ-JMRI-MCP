@@ -66,9 +66,26 @@ d'ambiance simple, accessible à tous. Voici la couche gestion de session autour
 locomotives que personne ici ne conduit) et plus complet que `emergency_stop_all` (juste
 le mouvement, pas de lumières, pas de relâchement).
 
+## Mode exposition
+
+> "Mode exposition" · "passe en mode démo"
+
+Un mode à sécurité restreinte pour les démonstrations publiques — enfants ou grand
+public qui essaient le contrôle vocal. Tant qu'il est actif : l'alimentation ne peut
+pas être remise sous tension (la couper reste possible, comme coupure d'urgence),
+chaque locomotive avance uniquement à une vitesse fixe et modérée quelle que soit la
+demande, et seules les adresses DCC autorisées (si tu en as configuré) peuvent être
+conduites. Les lumières et fonctions ne sont pas restreintes — un visiteur qui allume
+un phare ou une sonnette fait partie de l'animation, pas un risque de sécurité.
+
+> "Sors du mode exposition"
+
+Nécessite le mot de passe configuré à l'installation — voir
+[docs/exhibition.md](docs/exhibition.md) pour la configuration et les détails complets.
+
 ---
 
-Envie de la référence complète des 47 outils, des détails de scripting de session, ou des
+Envie de la référence complète des 50 outils, des détails de scripting de session, ou des
 détails internes JMRI/protocole ? Voir [ENGINEER.fr.md](ENGINEER.fr.md) et
 [mcp-tools.md](mcp-tools.md). Envie juste de conduire un train ?
 [CONDUCTOR.fr.md](CONDUCTOR.fr.md).

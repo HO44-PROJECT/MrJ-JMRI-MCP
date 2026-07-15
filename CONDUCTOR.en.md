@@ -11,11 +11,10 @@ internals. You talk (or type) to the assistant in plain language, and it drives.
 This page lists the phrases that work today. Say the locomotive's name if you know it
 ("the Autorail") — the assistant resolves it to the right DCC address for you.
 
-For the tools these phrases map to, see [mcp-tools.md](mcp-tools.md). For the underlying
-restrictions an exhibition/demo session should apply on top of this (speed caps,
-forward-only, no power control), see issue
-[#56 Exhibition mode](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP-backlog/issues/56) —
-this page documents what you can *say*, not what a given session is *allowed* to do.
+For the tools these phrases map to, see [mcp-tools.md](mcp-tools.md). For the
+restrictions an exhibition/demo session applies on top of this (speed caps, forward-only,
+no power control), see [docs/exhibition.md](docs/exhibition.md) — this page documents
+what you can *say*, not what a given session is *allowed* to do.
 
 ---
 

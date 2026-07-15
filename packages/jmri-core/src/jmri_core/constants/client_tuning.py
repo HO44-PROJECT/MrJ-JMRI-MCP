@@ -39,3 +39,10 @@ RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS = 4.0
 # value, so it never crosses RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS and
 # park_locomotive can stay a simple blocking call.
 STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED = 3.0
+
+# Exhibition mode's fixed speed: any requested speed_percent is replaced by
+# this constant rather than honored, so a member of the public asking for
+# "full speed" can't get one. Moderate on purpose -- fast enough to be
+# visibly a moving train, slow enough to stay safe unsupervised in a public
+# demo. See jmri_mcp.tools.mode / tools.throttle for where this is applied.
+EXHIBITION_SPEED_PERCENT = 30.0

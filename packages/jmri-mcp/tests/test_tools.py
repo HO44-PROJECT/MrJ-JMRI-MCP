@@ -961,6 +961,217 @@ async def test_get_executor_mode_reflects_current_state():
     }
 
 
+async def test_enter_exhibition_mode_returns_instruction():
+    mcp = make_server()
+    out = await call(mcp, "enter_exhibition_mode")
+    assert out["exhibition_mode"] is True
+    assert "instruction" in out
+
+
+async def test_get_exhibition_mode_reflects_current_state():
+    mcp = make_server()
+
+    out = await call(mcp, "get_exhibition_mode")
+    assert out["exhibition_mode"] is False
+
+    await call(mcp, "enter_exhibition_mode")
+    out = await call(mcp, "get_exhibition_mode")
+    assert out["exhibition_mode"] is True
+
+
+async def test_exit_exhibition_mode_wrong_password_stays_on():
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "exit_exhibition_mode", password="wrong")
+    assert out["exhibition_mode"] is True
+    assert "error" in out
+
+    out = await call(mcp, "get_exhibition_mode")
+    assert out["exhibition_mode"] is True
+
+
+async def test_exit_exhibition_mode_default_password_succeeds(monkeypatch):
+    monkeypatch.delenv("EXHIBITION_PASSWORD", raising=False)
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "exit_exhibition_mode", password="this is sparta")
+    assert out == {
+        "exhibition_mode": False,
+        "instruction": (
+            "Exhibition mode is now OFF. Full normal control is restored: "
+            "real speeds, reverse, power on/off, and any DCC address all "
+            "work again."
+        ),
+    }
+
+
+async def test_exit_exhibition_mode_custom_password(monkeypatch):
+    monkeypatch.setenv("EXHIBITION_PASSWORD", "open sesame")
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "exit_exhibition_mode", password="this is sparta")
+    assert out["exhibition_mode"] is True
+    assert "error" in out
+
+    out = await call(mcp, "exit_exhibition_mode", password="open sesame")
+    assert out["exhibition_mode"] is False
+
+
+async def test_exit_exhibition_mode_password_is_case_accent_whitespace_tolerant(monkeypatch):
+    monkeypatch.setenv("EXHIBITION_PASSWORD", "pouette")
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "exit_exhibition_mode", password="  POUETTE  ")
+    assert out["exhibition_mode"] is False
+
+
+async def test_exhibition_mode_forces_fixed_forward_speed(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "set_speed", address=3, speed_percent=90, direction="reverse")
+    assert out["address"] == 3
+    assert out["speed_percent"] == 30.0
+    assert out["direction"] == "forward"
+
+
+async def test_exhibition_mode_forces_fixed_speed_with_no_direction_given(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "set_speed", address=3, speed_percent=90)
+    assert out["address"] == 3
+    assert out["speed_percent"] == 30.0
+
+
+async def test_exhibition_mode_forces_fixed_forward_speed_ramped(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(
+        mcp, "set_speed_ramped", address=3, speed_percent=90, direction="reverse"
+    )
+    assert out["address"] == 3
+    assert out["speed_percent"] == 30.0
+    assert out["direction"] == "forward"
+
+
+async def test_exhibition_mode_rejects_reverse_direction(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "set_direction", address=3, direction="reverse")
+    assert "error" in out
+
+
+async def test_exhibition_mode_allows_forward_direction(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "set_direction", address=3, direction="forward")
+    assert out == {"address": 3, "direction": "forward"}
+
+
+async def test_exhibition_mode_off_allows_normal_speed_and_reverse(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "set_speed", address=3, speed_percent=90, direction="reverse")
+    assert out["speed_percent"] == 90.0
+    assert out["direction"] == "reverse"
+
+
+async def test_exhibition_mode_address_allowlist_blocks_acquire(monkeypatch, fake_jmri):
+    monkeypatch.setenv("EXHIBITION_ALLOWED_ADDRESSES", "4,5,6")
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "acquire_throttle", address=3)
+    assert "error" in out
+
+
+async def test_exhibition_mode_address_allowlist_allows_listed_address(monkeypatch, fake_jmri):
+    monkeypatch.setenv("EXHIBITION_ALLOWED_ADDRESSES", "3,5,6")
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "acquire_throttle", address=3)
+    assert out["acquired"] is True
+
+
+async def test_exhibition_mode_address_allowlist_blocks_auto_acquire_in_set_speed(
+    monkeypatch, fake_jmri
+):
+    monkeypatch.setenv("EXHIBITION_ALLOWED_ADDRESSES", "4,5,6")
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "set_speed", address=3, speed_percent=50)
+    assert "error" in out
+
+
+async def test_exhibition_mode_no_allowlist_configured_allows_any_address(fake_jmri):
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "acquire_throttle", address=3)
+    assert out["acquired"] is True
+
+
+async def test_exhibition_mode_blocks_power_on_all(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "power_on_all")
+    assert "error" in out
+
+
+async def test_exhibition_mode_blocks_set_power_turn_on(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    out = await call(mcp, "set_power", system=None, turn_on=True)
+    assert "error" in out
+
+
+async def test_exhibition_mode_still_allows_power_off_all(monkeypatch):
+    import respx
+    from httpx import Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
+    mcp = make_server()
+    await call(mcp, "enter_exhibition_mode")
+
+    live_state = {"O": 2, "R": 2}
+
+    def get_power(request):
+        payload = [
+            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
+            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+        ]
+        return Response(200, json=payload)
+
+    def post_power(request):
+        import json as _json
+        body = _json.loads(request.content)
+        live_state[body["prefix"]] = body["state"]
+        return Response(200, json={})
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=get_power)
+        router.post(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=post_power)
+        out = await call(mcp, "power_off_all")
+
+    assert "error" not in out
+    assert all(s["confirmed"] for s in out["systems"])
+
+
 def _mock_roster_for(monkeypatch, roster_fixture):
     """respx can't target fake_jmri's fixture port statically like MOCK_JMRI_URL,
     since fake_jmri assigns a random local WS port and repoints JMRI_URL at it;

@@ -14,7 +14,7 @@ you go past natural-language phrasing.
 
 ## Full tool reference
 
-All 47 MCP tools, by signature: **[mcp-tools.md](mcp-tools.md)**.
+All 50 MCP tools, by signature: **[mcp-tools.md](mcp-tools.md)**.
 
 Design rationale for any of them — why a tool is shaped the way it is, what JMRI quirk it
 works around: **[docs/architecture.md](docs/architecture.md)**.

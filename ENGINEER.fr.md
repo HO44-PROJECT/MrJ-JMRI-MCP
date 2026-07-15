@@ -14,7 +14,7 @@ le CLI, et les comportements que tu rencontreras une fois sorti du langage natur
 
 ## Référence complète des outils
 
-Les 47 outils MCP, par signature : **[mcp-tools.md](mcp-tools.md)**.
+Les 50 outils MCP, par signature : **[mcp-tools.md](mcp-tools.md)**.
 
 Justification de conception pour chacun — pourquoi un outil est fait ainsi, quelle
 bizarrerie JMRI il contourne : **[docs/architecture.md](docs/architecture.md)**.

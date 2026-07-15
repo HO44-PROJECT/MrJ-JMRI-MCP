@@ -16,7 +16,7 @@ Compatible with MCP clients such as [Claude Desktop](https://claude.ai/download)
 - Full documentation with setup guides and usage examples
 - A complete MCP (Model Context Protocol) server for JMRI integration
 - A command-line interface (`jmri-cli`) for direct control, scripting, and automation
-- 47 MCP tools exposing the main JMRI capabilities:
+- 50 MCP tools exposing the main JMRI capabilities:
   - Power management
   - Locomotive throttles and functions
   - Roster management
@@ -71,7 +71,7 @@ See the [CLI reference](docs/cli.md).
 
 ## MCP Tools
 
-The MCP server currently exposes 47 tools covering the main JMRI capabilities.
+The MCP server currently exposes 50 tools covering the main JMRI capabilities.
 
 See the complete reference:
 
@@ -107,6 +107,7 @@ See [docs/install.md](docs/install.md) for installation details.
 ### Advanced users
 
 - **[CLI reference](docs/cli.md)** — `jmri-cli` command reference
+- **[Exhibition mode](docs/exhibition.md)** — restricted-safety mode for public demos
 - **[Architecture](docs/architecture.md)** — module design, JMRI clients, WebSocket implementation
 - **[Testing](docs/testing.md)** — mocked and live test suites, hardware safety configuration
 - **[Resources](docs/resources.md)** — references for JMRI, MCP, and xiaozhi/Kira
@@ -121,6 +122,9 @@ See [docs/install.md](docs/install.md) for installation details.
 | Variable | Default | Description |
 |---|---|---|
 | `JMRI_URL` | `http://localhost:12080` | Base URL of the JMRI Web Server |
+| `EXHIBITION_PASSWORD` | `this is sparta` | Password required to exit exhibition mode. See [Exhibition mode](docs/exhibition.md). |
+| `EXHIBITION_ALLOWED_ADDRESSES` | (none) | Comma-separated DCC addresses locomotives are restricted to while exhibition mode is on. |
+| `EXHIBITION_START_ON` | (off) | If set to `1`/`true`/`yes`/`on`, the server starts already in exhibition mode. |
 
 ## License
 

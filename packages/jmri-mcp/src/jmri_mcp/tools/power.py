@@ -11,6 +11,7 @@ from jmri_core.jmri_client import JmriError, get_systems, get_version, resolve_s
 from jmri_core.jmri_client import power_off_all as _power_off_all
 from jmri_core.jmri_client import power_on_all as _power_on_all
 from jmri_mcp.tools._common import compact_power
+from jmri_mcp.tools.mode import is_exhibition_mode
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -86,8 +87,14 @@ def register(mcp) -> None:
         matches the request. This is not just an optimization — re-POSTing
         a state JMRI already reports is a real JMRI/DCC++ bug that knocks
         the system into UNKNOWN, which is awkward to recover from.
+
+        In exhibition mode, turn_on=True is REFUSED (returns an error,
+        power stays off) — turn_on=False (an emergency power cut) always
+        still works. See enter_exhibition_mode.
         """
         try:
+            if turn_on and is_exhibition_mode():
+                raise JmriError("exhibition_power_restricted")
             systems = await get_systems()
             match = resolve_system(system, systems)
             result = await jmri_client.set_power(match["prefix"], turn_on)
@@ -149,8 +156,14 @@ def register(mcp) -> None:
         Each system's result is re-read and confirmed the same way
         set_power does (see its docstring) — check "confirmed" per system
         rather than assuming the whole layout is now powered.
+
+        In exhibition mode this is REFUSED entirely (returns an error,
+        no system is touched) — power_off_all is unaffected. See
+        enter_exhibition_mode.
         """
         try:
+            if is_exhibition_mode():
+                raise JmriError("exhibition_power_restricted")
             results = await _power_on_all()
         except JmriError as exc:
             logger.warning("power_on_all failed: %s", exc)

@@ -13,6 +13,7 @@ import logging
 
 from jmri_core import i18n, jmri_client
 from jmri_core.constants.client_tuning import (
+    EXHIBITION_SPEED_PERCENT,
     RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS,
     STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED,
 )
@@ -22,12 +23,14 @@ from jmri_core.jmri_ws import JmriError
 from jmri_core.jmri_ws import get_ws_client
 from jmri_core.jmri_ws.ramp import execute_speed_change
 from jmri_mcp.tools._common import (
+    check_exhibition_address_allowed,
     compact_throttle,
     direction_name,
     ensure_acquired,
     run_in_background,
     throttle_id,
 )
+from jmri_mcp.tools.mode import is_exhibition_mode
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -62,9 +65,15 @@ def register(mcp) -> None:
         Release with release_throttle when done, though it's not required:
         JMRI releases every throttle this session holds automatically if
         the MCP server disconnects.
+
+        In exhibition mode with an address allowlist configured, an
+        address outside that list is refused here (and by every other
+        throttle tool, which all route through this same check on first
+        acquire) — see enter_exhibition_mode.
         """
         client = get_ws_client()
         try:
+            check_exhibition_address_allowed(address)
             data = await client.acquire_throttle(throttle_id(address), address, prefix)
         except JmriError as exc:
             logger.warning("acquire_throttle(%r, %r) failed: %s", address, prefix, exc)
@@ -129,8 +138,16 @@ def register(mcp) -> None:
         no confirmation and this returns immediately without writing
         anything — expected, not a failure; the reported speed_percent is
         still accurate, read from a cache kept live by JMRI's broadcasts.
+
+        In exhibition mode, the requested speed_percent/direction are
+        IGNORED and replaced with a fixed, moderate, forward-only speed —
+        the loco still moves, just not at the value asked for. See
+        enter_exhibition_mode.
         """
         client = get_ws_client()
+        if is_exhibition_mode():
+            speed_percent = EXHIBITION_SPEED_PERCENT
+            direction = "forward"
         speed = max(0.0, min(100.0, speed_percent)) / 100.0
         normalized = None
         try:
@@ -223,8 +240,16 @@ def register(mcp) -> None:
         Returns final speed/direction (set_speed/set_direction shape), or
         for the background path: {"address", "status": "started",
         "speed_percent", "direction", "seconds_total"}.
+
+        In exhibition mode, the requested speed_percent/direction are
+        IGNORED and replaced with a fixed, moderate, forward-only speed,
+        ramped over the requested rampup_seconds like normal — see
+        enter_exhibition_mode.
         """
         client = get_ws_client()
+        if is_exhibition_mode():
+            speed_percent = EXHIBITION_SPEED_PERCENT
+            direction = "forward"
         normalized = None
         if direction is not None:
             normalized = direction.strip().lower()
@@ -406,12 +431,19 @@ def register(mcp) -> None:
         no-ops a redundant request, and a local cache (kept fresh by
         JMRI's own broadcasts from ANY client) avoids hanging on a repeat
         or externally-set direction.
+
+        In exhibition mode, "reverse" is REFUSED outright (returns an
+        error, does not silently force forward — there's no speed change
+        here to narrate as "moving anyway") — "forward" still works
+        normally. See enter_exhibition_mode.
         """
         client = get_ws_client()
         normalized = direction.strip().lower()
         try:
             if normalized not in ("forward", "reverse"):
                 raise JmriError("invalid_direction", direction=direction)
+            if normalized == "reverse" and is_exhibition_mode():
+                raise JmriError("exhibition_reverse_restricted")
             forward = normalized == "forward"
             await ensure_acquired(client, address)
             data = await client.set_direction(throttle_id(address), forward)

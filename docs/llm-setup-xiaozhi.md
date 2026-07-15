@@ -41,7 +41,13 @@ repo as-is (not a template to copy) — it has no `env` block at all:
 **copy of the bridge's own environment**, not a replacement of it — so
 `JMRI_URL` doesn't need to be duplicated here, it just needs to already be
 exported wherever `jmri-xiaozhi-bridge` is launched from (same variable used
-everywhere else in this project).
+everywhere else in this project). This applies to every `jmri-mcp` env var,
+not just `JMRI_URL` — for example [exhibition mode](exhibition.md)'s
+`EXHIBITION_PASSWORD`/`EXHIBITION_ALLOWED_ADDRESSES`/`EXHIBITION_START_ON`
+need to be set the same way (either exported in the launching shell, or added
+to this file's `env` block) to take effect for Kira specifically. A `.mcpb`
+installer's inputs only configure the client it was run for (e.g. Claude
+Desktop) — they don't propagate here automatically.
 
 ## Run
 

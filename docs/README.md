@@ -3,6 +3,7 @@
 - [Architecture](architecture.md) — module layout, the two JMRI clients, WebSocket design notes.
 - [Installation](install.md) — requirements, `pip install`, verifying the entry points.
 - [MCP tool inventory](mcp-tools.md) — every tool the LLM can call, grouped by domain, with signatures.
+- [Exhibition mode](exhibition.md) — the restricted-safety mode for public demos: what's restricted, and how to configure it.
 - [CLI reference](cli.md) — `jmri-cli`, every subcommand, examples.
 - [Claude setup](llm-setup-claude.md) — wiring the MCP server into Claude Desktop and Claude Code.
 - [xiaozhi/Kira setup](llm-setup-xiaozhi.md) — exposing the MCP server to a xiaozhi-based voice assistant.

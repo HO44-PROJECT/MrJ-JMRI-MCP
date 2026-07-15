@@ -1395,6 +1395,83 @@ exercise; the whole point of the flag is that it persists across tool
 calls within one long-lived MCP session, which a fresh CLI invocation
 never has.
 
+## Exhibition mode: `enter_exhibition_mode` / `exit_exhibition_mode` / `get_exhibition_mode`
+
+A restricted-safety mode for public demos — exhibitions, kids trying voice
+control — where the layout must stay safe to operate unsupervised. Same
+module-level, process-wide flag pattern as executor mode above
+(`_exhibition_mode` in `tools/mode.py`, read via `is_exhibition_mode()` so
+callers always see the live value rather than a stale import-time copy),
+but **asymmetric** rather than a single toggle: `enter_exhibition_mode()`
+takes no arguments and is always callable, while `exit_exhibition_mode
+(password)` requires a password so a member of the public can't casually
+turn the restrictions back off. The password comes from
+`get_exhibition_password()` (`jmri_core.config`, `EXHIBITION_PASSWORD` env
+var), defaulting to `"this is sparta"` if unset — not a real security
+boundary, just a deterrent against casual tampering during a demo. A wrong
+password leaves the flag unchanged and returns an honest error plus an
+instruction telling the LLM not to guess or reveal the password. The
+password comparison is tolerant (case/accent/whitespace-insensitive, via
+`jmri_core.text.fold`, the same helper used for locomotive name matching)
+since this password is normally spoken aloud through voice transcription
+rather than typed — an exact-match comparison turned out to be too brittle
+in practice (an operator's spoken password can come back transcribed with
+different capitalization or stray whitespace).
+
+`_exhibition_mode` can also start already `True` instead of the normal
+`False` default, via `get_exhibition_start_on()` (`jmri_core.config`,
+`EXHIBITION_START_ON` env var — any of `"1"`/`"true"`/`"yes"`/`"on"`,
+case-insensitive) — read once at module-import time, so an exhibition
+host can configure this once at `.mcpb` install time instead of having to
+say "passe en mode exposition" at the start of every session. Test
+isolation (`reset_exhibition_mode` in `tests/conftest.py`) always resets
+to `False` regardless of this env var, since tests must not depend on
+whatever happens to be set in the environment they run in.
+
+While active, exhibition mode enforces four restrictions, each checked at
+the point closest to where it applies rather than in a central gate:
+
+- **Power stays on-only-by-cut**: `set_power(turn_on=True)` and
+  `power_on_all` (`tools/power.py`) raise `exhibition_power_restricted`
+  before touching JMRI. `set_power(turn_on=False)` and `power_off_all` are
+  untouched, so an emergency power cut always stays available.
+- **Every locomotive moves forward-only, at one fixed speed**:
+  `set_speed`/`set_speed_ramped` (`tools/throttle.py`) overwrite whatever
+  `speed_percent`/`direction` was requested with
+  `EXHIBITION_SPEED_PERCENT` (`jmri_core.constants.client_tuning`, 30%) and
+  `"forward"` right after acquiring the client, before any of the normal
+  speed logic runs — so the override is transparent to the rest of the
+  function, and the caller still gets a normal-shaped success response
+  rather than an error (the request "worked", just not at the speed
+  asked). `set_direction(direction="reverse")` is refused outright with
+  `exhibition_reverse_restricted` instead, since there's no speed value to
+  fall back to that would make "moving anyway" true.
+- **DCC addresses can be allow-listed**: `get_exhibition_allowed_addresses()`
+  (`jmri_core.config`, `EXHIBITION_ALLOWED_ADDRESSES` env var, comma-
+  separated integers) returns `None` when unset, meaning no address
+  restriction even while exhibition mode is otherwise active.
+  `check_exhibition_address_allowed()` (`tools/_common.py`) is called from
+  `ensure_acquired()` on first acquire of an address (covering every
+  throttle tool's auto-acquire path, not just `acquire_throttle` itself),
+  so a disallowed address is rejected before any WebSocket traffic is sent
+  for it.
+- **Lights and functions are intentionally NOT restricted** — an exhibition
+  visitor toggling headlights or a bell is part of the demo, not a safety
+  concern.
+
+`_SERVER_INSTRUCTIONS` (see the `server/__init__.py` section below) routes
+French/English enter/exit phrases to these three tools and tells the LLM
+to report the speed/power restrictions honestly rather than retry or claim
+failure.
+
+**No `jmri-cli` equivalent** — a deliberate, user-decided exception to this
+project's usual CLI-parity rule. Exhibition mode is a flag on the
+long-lived MCP server process; `jmri-cli` is one-shot per invocation with
+no persistent state to hold it, and exhibition mode's whole premise
+(restricting a general public audience interacting by voice/chat) has no
+realistic CLI usage scenario — anyone with CLI access already has direct
+access to the layout.
+
 ## `meta.py`: layout-wide tools composing several low-level operations into one call
 
 `tools/meta.py` holds five tools that answer a request shaped around the
@@ -1589,6 +1666,18 @@ response to real user friction, not hypothetical:
   distinction from `power_off_all`/`emergency_stop_all` here too, same
   reasoning as the power/emergency_stop "NOT interchangeable" clause
   below.
+- **Exhibition mode routing** — added alongside `tools/mode.py`'s
+  `enter_exhibition_mode`/`exit_exhibition_mode` (see the dedicated
+  section above): maps "mode exposition"/"exhibition mode"/"passe en mode
+  démo" to `enter_exhibition_mode` (no password, always call immediately),
+  and "sors du mode exposition"/"exit exhibition mode"/"désactive le mode
+  démo" to `exit_exhibition_mode(password)` — explicitly tells the LLM to
+  ask the user for the password rather than guess or supply one itself
+  when it wasn't given in the same request. Also tells the LLM how to
+  narrate the restrictions honestly while active: report a refused
+  `power_on_all`/`set_power(turn_on=True)` as a real refusal (don't retry),
+  but describe a speed/direction request that got silently overridden to
+  the fixed exhibition speed as the locomotive moving, not as a failure.
 
 Two real limits on this mechanism, both by design of the protocol, not
 bugs here:

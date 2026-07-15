@@ -13,11 +13,10 @@ si tu le connais ("l'Autorail") — l'assistant le résout vers la bonne adresse
 toi.
 
 Pour les outils derrière ces phrases, voir [mcp-tools.md](mcp-tools.md). Pour les
-restrictions à appliquer en session exposition/démo par-dessus cette page (limite de
-vitesse, marche avant seulement, pas de contrôle de l'alimentation), voir la carte
-[#56 Exhibition mode](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP-backlog/issues/56) —
-cette page documente ce que tu peux *dire*, pas ce qu'une session donnée a le *droit* de
-faire.
+restrictions qu'une session exposition/démo applique par-dessus cette page (limite de
+vitesse, marche avant seulement, pas de contrôle de l'alimentation), voir
+[docs/exhibition.md](docs/exhibition.md) — cette page documente ce que tu peux *dire*,
+pas ce qu'une session donnée a le *droit* de faire.
 
 ---
 

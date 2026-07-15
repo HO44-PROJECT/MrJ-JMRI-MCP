@@ -7,7 +7,7 @@ parity plus scripting-only flags (`--hold`/`--rampup`/`--rampdown`/etc.), see
 [cli.md](cli.md). For design rationale behind any of these tools, see
 [architecture.md](architecture.md).
 
-**47 tools**, across 10 domains:
+**50 tools**, across 10 domains:
 
 | Domain | Count |
 |---|---|
@@ -17,7 +17,7 @@ parity plus scripting-only flags (`--hold`/`--rampup`/`--rampdown`/etc.), see
 | Turnouts | 4 |
 | Roster | 3 |
 | Signals | 3 |
-| Mode | 2 |
+| Mode | 5 |
 | Sensors | 2 |
 | Blocks | 2 |
 | Meta | 5 |
@@ -91,12 +91,15 @@ JMRI Light objects (decor/building lights) — not a locomotive's own lights, se
 | `get_signal` | `(name: str) -> dict` | Get the current aspect of one signal mast. |
 | `set_signal` | `(name: str, aspect: str) -> dict` | Set a signal mast's aspect, and report the aspect actually observed. |
 
-## Mode (2)
+## Mode (5)
 
 | Tool | Signature | Description |
 |---|---|---|
 | `set_executor_mode` | `(enabled: bool) -> dict` | Turn "executor mode" on or off: a concise, no-narration response style. |
 | `get_executor_mode` | `() -> dict` | Report whether executor mode (concise, no-narration responses) is currently on. |
+| `enter_exhibition_mode` | `() -> dict` | Turn ON exhibition mode: a restricted-safety mode for public demos. No password needed. |
+| `exit_exhibition_mode` | `(password: str) -> dict` | Turn OFF exhibition mode, restoring full normal control. Requires the correct password. |
+| `get_exhibition_mode` | `() -> dict` | Report whether exhibition mode is currently on. |
 
 ## Sensors (2, read-only)
 

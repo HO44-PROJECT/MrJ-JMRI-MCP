@@ -15,6 +15,28 @@
             "type": "string",
             "title": "JMRI Server URL",
             "description": "URL of your JMRI Web Server"
+        },
+        {
+            "id": "exhibition_password",
+            "type": "string",
+            "title": "Exhibition Mode Password",
+            "description": "Password required to exit exhibition mode (a restricted, public-demo-safe mode). Leave blank to use the default password 'this is sparta'.",
+            "sensitive": true,
+            "required": false
+        },
+        {
+            "id": "exhibition_allowed_addresses",
+            "type": "string",
+            "title": "Exhibition Mode Allowed DCC Addresses",
+            "description": "Comma-separated DCC addresses locomotives are restricted to while exhibition mode is on, e.g. '4,5,6'. Leave blank to allow any address.",
+            "required": false
+        },
+        {
+            "id": "exhibition_start_on",
+            "type": "boolean",
+            "title": "Start Already in Exhibition Mode",
+            "description": "If enabled, the server starts already in exhibition mode instead of requiring a spoken/typed command to enter it.",
+            "required": false
         }
     ],
     "servers": {
@@ -22,7 +44,10 @@
             "type": "stdio",
             "command": "jmri-mcp",
             "env": {
-                "JMRI_URL": "${input:jmri_url}"
+                "JMRI_URL": "${input:jmri_url}",
+                "EXHIBITION_PASSWORD": "${input:exhibition_password}",
+                "EXHIBITION_ALLOWED_ADDRESSES": "${input:exhibition_allowed_addresses}",
+                "EXHIBITION_START_ON": "${input:exhibition_start_on}"
             }
         }
     }

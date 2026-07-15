@@ -8,6 +8,7 @@ compaction.
 
 import asyncio
 
+from jmri_core.config import get_exhibition_allowed_addresses
 from jmri_core.constants.cli import (
     BLOCK_STATE_NAMES,
     LIGHT_STATE_NAMES,
@@ -16,6 +17,7 @@ from jmri_core.constants.cli import (
     TURNOUT_STATE_NAMES,
 )
 from jmri_core.constants.protocol import FIELD_ADDRESS, FIELD_FORWARD, FIELD_SPEED
+from jmri_core.jmri_ws import JmriError
 
 
 def compact_power(system: dict) -> dict:
@@ -252,6 +254,32 @@ def run_in_background(coro) -> None:
     task.add_done_callback(background_tasks.discard)
 
 
+def check_exhibition_address_allowed(address: int) -> None:
+    """Raise JmriError if exhibition mode is on and `address` isn't allow-listed.
+
+    Args:
+        address: The DCC address about to be acquired/driven.
+
+    No-op (including when exhibition mode is off, or on with no allowlist
+    configured — get_exhibition_allowed_addresses() returns None then).
+    Called from acquire_throttle before ever opening a throttle for an
+    address, so every other throttle tool (set_speed, set_direction,
+    prepare_locomotive, ...) inherits the restriction for free via
+    ensure_acquired — no need to repeat this check in each of them.
+    """
+    from jmri_mcp.tools.mode import is_exhibition_mode
+
+    if not is_exhibition_mode():
+        return
+    allowed = get_exhibition_allowed_addresses()
+    if allowed is not None and address not in allowed:
+        raise JmriError(
+            "exhibition_address_not_allowed",
+            address=address,
+            allowed=", ".join(str(a) for a in sorted(allowed)),
+        )
+
+
 async def ensure_acquired(client, address: int) -> None:
     """Acquire the throttle for `address` if this connection doesn't hold it yet.
 
@@ -264,6 +292,14 @@ async def ensure_acquired(client, address: int) -> None:
     Args:
         client: The shared JmriWsClient (see jmri_core.jmri_ws.get_ws_client).
         address: The locomotive's DCC address.
+
+    Also enforces the exhibition-mode address allowlist (see
+    check_exhibition_address_allowed) on this first acquire, so every tool
+    that auto-acquires (set_speed, set_direction, set_function, ...)
+    inherits the restriction without checking it individually — an
+    already-acquired address is never re-checked, matching how a real
+    acquire_throttle call behaves too (see that tool's own docstring).
     """
     if throttle_id(address) not in client._throttles:
+        check_exhibition_address_allowed(address)
         await client.acquire_throttle(throttle_id(address), address)

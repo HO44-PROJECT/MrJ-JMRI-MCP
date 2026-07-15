@@ -41,3 +41,10 @@ def test_server_instructions_route_duration_requests_to_ramped_tool():
 def test_server_instructions_explain_started_status_is_not_a_failure():
     assert '"status": "started"' in _SERVER_INSTRUCTIONS
     assert "NOT an error" in _SERVER_INSTRUCTIONS
+
+
+def test_server_instructions_cover_meta_tools():
+    for tool_name in (
+        "layout_status", "secure_layout", "release_all_locomotives", "night_mode", "day_mode",
+    ):
+        assert tool_name in _SERVER_INSTRUCTIONS

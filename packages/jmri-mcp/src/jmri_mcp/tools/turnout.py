@@ -117,25 +117,22 @@ def register(mcp) -> None:
 
         Args:
             thrown: True to THROW every turnout, False to CLOSE every
-                turnout. Applies this ONE state to ALL of them — this is
-                NOT a "restore each turnout to its own previous/default
+                turnout. Applies this ONE state to ALL of them — NOT a
+                "restore each turnout to its own previous/default
                 position" operation, there is no such per-turnout memory.
 
-        Call this for "close/throw all turnouts"/"tous les aiguillages en
-        position fermée/déviée" — any request naming every turnout at
-        once. Never loop set_turnout yourself for a request like this;
-        this tool already loops server-side, in one call, over every
-        turnout JMRI reports.
+        Call for "close/throw all turnouts"/"tous les aiguillages en
+        position fermée/déviée". Never loop set_turnout yourself — this
+        loops server-side in one call over every turnout JMRI reports.
 
-        BLAST RADIUS WARNING: this moves every turnout motor on the real
-        layout at once if hardware is connected. Only call it when the
-        user has clearly asked for a layout-wide turnout change, not as a
-        shortcut for a single named turnout (use set_turnout for that).
+        BLAST RADIUS WARNING: moves every turnout motor on the real
+        layout at once if hardware is connected. Only call for a clear
+        layout-wide request, not as a shortcut for one named turnout (use
+        set_turnout for that).
 
         Returns {"succeeded": [...], "failed": [...]}, each entry shaped
-        like set_turnout's own return value plus a "name". One turnout
-        failing (e.g. JMRI error, unsettled feedback) does not stop the
-        rest — every turnout is attempted independently (catch-and-continue).
+        like set_turnout's own return value plus "name". One turnout
+        failing doesn't stop the rest (catch-and-continue).
         """
         try:
             turnouts = await get_turnouts()

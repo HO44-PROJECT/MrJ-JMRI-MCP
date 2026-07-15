@@ -32,9 +32,13 @@ Package layout:
                 richer than a plain sensor).
     mode.py     set_executor_mode, get_executor_mode (concise/no-narration
                 response style — a behavioral nudge, not a JMRI command).
+    meta.py     layout_status, secure_layout, release_all_locomotives,
+                night_mode, day_mode — higher-level tools composing
+                several low-level operations into one natural-language-
+                sized call.
 """
 
-from jmri_mcp.tools import block, light, mode, power, roster, sensor, signal, throttle, turnout
+from jmri_mcp.tools import block, light, meta, mode, power, roster, sensor, signal, throttle, turnout
 
 __all__ = ["register"]
 
@@ -54,3 +58,4 @@ def register(mcp) -> None:
     signal.register(mcp)
     block.register(mcp)
     mode.register(mcp)
+    meta.register(mcp)

@@ -101,24 +101,20 @@ def register(mcp) -> None:
                 every layout light OFF.
 
         These are JMRI `light` objects wired to the layout/scenery itself
-        — NOT a locomotive's own headlight/cabin/rear-light functions. Call
-        this tool for a lighting request that does NOT name a locomotive
+        — NOT a locomotive's own headlight/cabin/rear-light functions.
+        Call for a lighting request that does NOT name a locomotive
         ("turn on all the lights", "éteins toutes les lumières" with no
         loco mentioned). If the request DOES name a locomotive ("all of
-        the Autorail's lights", "toutes les lumières de la loco"), use
-        set_loco_lights or set_all_locos_lights instead — never this tool
-        for that case, and never this tool's name to guess what a bare
-        "lights" request meant if a locomotive was mentioned anywhere in
-        it.
+        the Autorail's lights"), use set_loco_lights or
+        set_all_locos_lights instead — never this tool for that case.
 
-        Never loop set_light yourself for a "every light"/"toutes les
-        lumières" request — this tool already loops server-side, in one
-        call, over every light JMRI reports.
+        Never loop set_light yourself for "every light"/"toutes les
+        lumières" — this loops server-side in one call over every light
+        JMRI reports.
 
         Returns {"succeeded": [...], "failed": [...]}, each entry shaped
-        like set_light's own return value plus a "name". One light failing
-        does not stop the rest — every light is attempted independently
-        (catch-and-continue).
+        like set_light's own return value plus "name". One light failing
+        doesn't stop the rest (catch-and-continue).
         """
         try:
             lights = await get_lights()

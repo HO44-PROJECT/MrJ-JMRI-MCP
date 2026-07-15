@@ -16,7 +16,7 @@ Compatible with MCP clients such as [Claude Desktop](https://claude.ai/download)
 - Full documentation with setup guides and usage examples
 - A complete MCP (Model Context Protocol) server for JMRI integration
 - A command-line interface (`jmri-cli`) for direct control, scripting, and automation
-- 42 MCP tools exposing the main JMRI capabilities:
+- 47 MCP tools exposing the main JMRI capabilities:
   - Power management
   - Locomotive throttles and functions
   - Roster management
@@ -26,6 +26,7 @@ Compatible with MCP clients such as [Claude Desktop](https://claude.ai/download)
   - Signals
   - Blocks
   - Operating modes
+  - Layout-wide meta tools (status overview, secure/night/day mode)
 
 See the complete MCP tools reference in [mcp-tools.md](mcp-tools.md).
 
@@ -56,7 +57,7 @@ See the [CLI reference](docs/cli.md).
 
 ## MCP Tools
 
-The MCP server currently exposes 42 tools covering the main JMRI capabilities.
+The MCP server currently exposes 47 tools covering the main JMRI capabilities.
 
 See the complete reference:
 

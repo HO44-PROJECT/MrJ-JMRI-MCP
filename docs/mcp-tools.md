@@ -7,7 +7,7 @@ parity plus scripting-only flags (`--hold`/`--rampup`/`--rampdown`/etc.), see
 [cli.md](cli.md). For design rationale behind any of these tools, see
 [architecture.md](architecture.md).
 
-**42 tools**, across 9 domains:
+**47 tools**, across 10 domains:
 
 | Domain | Count |
 |---|---|
@@ -20,6 +20,7 @@ parity plus scripting-only flags (`--hold`/`--rampup`/`--rampdown`/etc.), see
 | Mode | 2 |
 | Sensors | 2 |
 | Blocks | 2 |
+| Meta | 5 |
 
 ## Throttle (16)
 
@@ -110,3 +111,16 @@ JMRI Light objects (decor/building lights) — not a locomotive's own lights, se
 |---|---|---|
 | `list_blocks` | `() -> dict` | List every layout block known to JMRI, with its current OCCUPIED/UNOCCUPIED state. |
 | `get_block` | `(name: str) -> dict` | Get the current OCCUPIED/UNOCCUPIED state of one layout block. |
+
+## Meta (5)
+
+Higher-level tools that combine several low-level operations into one call, matching how
+a model railroader would naturally ask an assistant to operate the layout.
+
+| Tool | Signature | Description |
+|---|---|---|
+| `layout_status` | `() -> dict` | One-call overview of the whole layout: connectivity, power, active locomotives, blocks, sensors. |
+| `secure_layout` | `(release_throttles: bool = True) -> dict` | Put the whole layout into a known safe resting state: stop every acquired locomotive smoothly, turn off its lights, turn off every layout light, and release throttles. |
+| `release_all_locomotives` | `() -> dict` | Release this session's throttle on EVERY currently-acquired locomotive, without changing their state. |
+| `night_mode` | `() -> dict` | Set the layout to night operation mode: turn on every layout light and every acquired locomotive's lights. |
+| `day_mode` | `() -> dict` | Set the layout to daytime operation mode: turn off every layout light and every acquired locomotive's lights. |

@@ -97,35 +97,27 @@ def register(mcp) -> None:
         """Set a locomotive's speed as a percentage of its maximum (0-100%).
 
         Args:
-            address: The locomotive's DCC address.
-            speed_percent: 0-100. Values outside this range are clamped, not
-                rejected. Acquires the throttle automatically if this session
-                doesn't already hold it — no need to call acquire_throttle
-                first for a simple "speed up the 3" style voice command.
+            address: DCC address. Auto-acquires the throttle if needed —
+                no need to call acquire_throttle first for "speed up the 3".
+            speed_percent: 0-100, clamped not rejected.
 
-        Returns the actual speed JMRI reports back, as a percentage — this
-        may differ slightly from what was requested (DCC uses a small number
-        of discrete speed steps, so exact percentages get rounded).
+        Returns the actual speed JMRI reports back as a percentage — may
+        differ slightly (DCC uses discrete speed steps, rounded).
 
-        Use stop for a controlled halt (speed 0%) or emergency_stop for a
-        panic stop — don't call set_speed(speed_percent=0) for an emergency,
-        it's a different command to JMRI, not just "speed 0".
+        Use stop for a controlled halt (0%) or emergency_stop for a panic
+        stop — not set_speed(speed_percent=0), a different command to JMRI.
 
-        If the request names a DURATION ("for 10 seconds", "pendant 10
-        secondes"), do NOT use this tool followed by a separately-timed
-        stop call — use set_speed_ramped(hold_seconds=...) instead, which
-        waits and auto-stops server-side in one call. This tool is only
-        for an immediate, duration-less speed change.
+        For a DURATION ("for 10 seconds", "pendant 10 secondes"), don't
+        follow this with a separately-timed stop — use
+        set_speed_ramped(hold_seconds=...) instead, which waits and
+        auto-stops server-side in one call. This tool is only for an
+        immediate, duration-less change.
 
-        A locomotive's speed can be changed by something other than this
-        tool at any time — another JMRI panel, PanelPro, another MCP/voice
-        session controlling the same loco. If the requested speed already
-        matches the current one (whoever set it), JMRI does not send a
-        confirmation and this call returns immediately without writing
-        anything new to the layout — this is expected, not a failure; the
-        reported speed_percent in the response is still accurate because
-        it's read from a cache kept continuously up to date by JMRI's own
-        state broadcasts, not from what this tool last sent.
+        Speed can change from elsewhere (another panel/session) at any
+        time. If the requested speed already matches current, JMRI sends
+        no confirmation and this returns immediately without writing
+        anything — expected, not a failure; the reported speed_percent is
+        still accurate, read from a cache kept live by JMRI's broadcasts.
         """
         client = get_ws_client()
         speed = max(0.0, min(100.0, speed_percent)) / 100.0
@@ -148,72 +140,45 @@ def register(mcp) -> None:
         """Change a locomotive's speed gradually instead of instantly — a smooth ramp up and/or down.
 
         Args:
-            address: The locomotive's DCC address. Acquires the throttle
-                automatically if this session doesn't already hold it.
-            speed_percent: Target speed, 0-100% of maximum. As CLI-only
-                shorthand, a NEGATIVE value means "reverse at |value|%" and
-                flips direction as part of the same ramp (e.g. -30 means
-                direction=reverse, speed=30%) — this is resolved entirely
-                here and is unrelated to emergency_stop's real decoder
-                e-stop command, which this tool never sends.
-            rampup_seconds: How long to spend climbing from the current
-                speed up to the target, if the target is higher (or a
-                direction flip is needed while moving — see below). 0 (the
-                default) means jump straight to the target instantly, same
-                as plain set_speed.
-            rampdown_seconds: How long to spend descending, whenever the
-                target is lower than the current speed, when a direction
-                flip requires slowing to 0 first, and (if hold_seconds is
-                given) for the automatic stop at the end of the hold. 0 (the
-                default) means an instant drop/stop.
-            hold_seconds: If given, hold the target speed for this many
-                seconds and then AUTOMATICALLY RAMP BACK TO A STOP (using
-                rampdown_seconds) before this tool returns — use this for
-                requests like "run forward at 30% for 10 seconds". Omit
-                (the default, None) to just reach the target and keep going
-                indefinitely, like plain set_speed but ramped.
+            address: DCC address. Auto-acquires the throttle if needed.
+            speed_percent: Target speed, 0-100%. CLI-only shorthand: a
+                NEGATIVE value means "reverse at |value|%", flipping
+                direction as part of the ramp. Unrelated to
+                emergency_stop's real decoder e-stop, never sent here.
+            rampup_seconds: Seconds to climb to the target if it's higher
+                (or on a direction flip while moving). 0 = instant, like
+                plain set_speed.
+            rampdown_seconds: Seconds to descend when the target is lower,
+                on a direction-flip stop-first, and for the auto-stop at
+                the end of hold_seconds. 0 = instant.
+            hold_seconds: Hold the target this many seconds, then
+                AUTOMATICALLY RAMP TO A STOP (via rampdown_seconds) before
+                returning — for "run forward at 30% for 10 seconds". Omit
+                (None) to reach the target and keep going, like set_speed
+                but ramped. Pass the user's number straight through
+                ("pendant 10 secondes" -> hold_seconds=10); the server does
+                the waiting, not you — never refuse this as untrackable.
 
-                YOU DO NOT NEED TO TRACK OR MEASURE THIS DURATION YOURSELF.
-                Just pass through the number of seconds the user asked for
-                (e.g. "pendant 10 secondes" -> hold_seconds=10) — this MCP
-                server does the actual waiting internally on the JMRI
-                connection, not you. Never refuse or say you "can't track
-                time" for this parameter; it's a plain number, not
-                something you have to count yourself.
+        Use instead of plain set_speed for "en douceur"/"progressivement"/
+        "ramp up/down" requests or an explicit duration before stopping.
+        Use emergency_stop for any panic/safety stop — this tool never
+        sends the real e-stop sentinel even at rampdown_seconds=0.
 
-        Use this instead of plain set_speed whenever the user asks for
-        smoothness/gentleness ("en douceur", "progressivement", "ramp up/
-        down") or gives a explicit duration to run at a speed before
-        stopping ("pendant 10 secondes", "for 10 seconds"). Use plain
-        set_speed for an immediate, unqualified speed change, and
-        emergency_stop for any panic/safety stop — this tool never sends
-        JMRI's real -1.0 e-stop sentinel, even at rampdown_seconds=0.
+        Timing: a SHORT total duration blocks until finished and returns
+        final speed/direction like set_speed. A LONGER one returns
+        immediately with "status": "started" once the ramp is kicked off,
+        and keeps running server-side after you respond — the loco WILL
+        stop itself automatically, no follow-up call needed. This exists
+        so a long silent wait doesn't trip the voice/chat client's own
+        turn timeout. "started" is success, not a failure or a dropped
+        call — tell the user the action has begun, not that it finished.
 
-        NOTE on response timing: for a SHORT total duration (rampup +
-        hold_seconds + rampdown), this call blocks until it's all finished
-        and returns the real final speed/direction, same as set_speed. For
-        a LONGER total duration, this tool instead returns right away with
-        "status": "started" once the ramp has been kicked off, and the
-        ramp/hold/auto-stop keep running server-side on JMRI's already-open
-        connection after your response — the loco WILL still stop itself
-        automatically at the end, you do not need (and should not attempt)
-        a follow-up call to check on or stop it. This split exists because
-        a voice/chat turn that just sits silent for many seconds waiting on
-        one tool call can trip the CLIENT's own turn timeout even though
-        the ramp is working correctly — do not interpret "status": "started"
-        as a failure or as needing a retry. Tell the user the action has
-        begun (and for how long/what target), not that it already finished.
+        A direction flip while moving ramps to 0 first, flips, then ramps
+        back up — never flips while still rolling.
 
-        If a direction flip is needed while the locomotive is already
-        moving, this ramps down to 0 first (over rampdown_seconds), flips
-        direction, then ramps back up to the requested speed (over
-        rampup_seconds) — never flips direction while still rolling.
-
-        Returns the actual speed/direction JMRI reports back after the
-        ramp (and the auto-stop, if hold_seconds was given) completes, the
-        same shape as set_speed/set_direction's combined fields — or, for
-        the long-duration background path, {"address", "status": "started",
-        "speed_percent" (the target), "direction", "seconds_total"}.
+        Returns final speed/direction (set_speed/set_direction shape), or
+        for the background path: {"address", "status": "started",
+        "speed_percent", "direction", "seconds_total"}.
         """
         client = get_ws_client()
         target_forward = False if speed_percent < 0 else None
@@ -282,22 +247,17 @@ def register(mcp) -> None:
         """Bring a locomotive to a controlled stop (speed 0%), like releasing the throttle.
 
         Args:
-            address: The locomotive's DCC address. Acquires the throttle
-                automatically if this session doesn't already hold it.
+            address: DCC address. Auto-acquires the throttle if needed.
 
-        For a panic/safety stop (derailment risk, collision course, or any
-        "stop it NOW") use emergency_stop instead — JMRI treats it as a
-        distinct decoder command (an immediate power cut to the motor), not
-        just "speed 0". Use this `stop` tool for a normal, intentional halt
-        (end of a run, waiting at a signal, user just says "stop the 3").
+        For a panic/safety stop (derailment risk, collision course, "stop
+        it NOW") use emergency_stop instead — a distinct decoder command
+        (immediate motor power cut), not just "speed 0". Use this `stop`
+        for a normal, intentional halt (end of run, waiting at a signal).
 
-        Safe to call repeatedly, including when the loco is already
-        stopped: JMRI silently ignores a redundant "already at this speed"
-        request instead of replying, and this tool's client keeps a local
-        speed cache continuously refreshed by JMRI's own state broadcasts
-        (which fire for ANY client's changes, not just this tool's), so a
-        repeat call still returns the correct current speed_percent (very
-        likely 0) without hanging or erroring.
+        Safe to call repeatedly, even when already stopped: JMRI silently
+        ignores a redundant request, and a local speed cache (kept fresh
+        by JMRI's own broadcasts from ANY client) still returns the
+        correct current speed_percent without hanging.
         """
         client = get_ws_client()
         try:
@@ -313,23 +273,19 @@ def register(mcp) -> None:
         """Emergency-stop a locomotive immediately (JMRI's decoder e-stop command).
 
         Args:
-            address: The locomotive's DCC address. Acquires the throttle
-                automatically if this session doesn't already hold it.
+            address: DCC address. Auto-acquires the throttle if needed.
 
-        Use this ONLY for safety-critical stops: derailment risk, imminent
-        collision, or any situation calling for an immediate halt rather than
-        a smooth deceleration. This is JMRI's actual decoder emergency-stop
-        command (speed -1.0 on the wire, distinct from a normal speed
-        command) — it cuts power abruptly rather than ramping down, which is
-        rougher on the mechanism/cargo, so don't use it as a synonym for a
-        routine `stop`.
+        Use ONLY for safety-critical stops: derailment risk, imminent
+        collision, or any situation needing an immediate halt rather than
+        smooth deceleration. This is JMRI's actual decoder e-stop (speed
+        -1.0 on the wire, distinct from a normal speed command) — cuts
+        power abruptly, rougher on the mechanism, so don't use as a
+        synonym for routine `stop`.
 
-        Returns `stopped: true` once JMRI confirms the e-stop speed. Safe to
-        call repeatedly: like `stop`, a redundant emergency_stop on an
-        already-e-stopped loco is a silent no-op on JMRI's side, and this
-        tool's local throttle-state cache (kept fresh from JMRI's broadcasts,
-        including e-stops triggered by any OTHER client) reports the correct
-        current status instead of hanging.
+        Returns `stopped: true` once confirmed. Safe to call repeatedly:
+        a redundant e-stop is a silent no-op on JMRI's side, and a local
+        cache (kept fresh from JMRI's broadcasts from any client) reports
+        correct status instead of hanging.
         """
         client = get_ws_client()
         try:
@@ -344,32 +300,23 @@ def register(mcp) -> None:
     async def emergency_stop_all() -> dict:
         """Emergency-stop EVERY locomotive currently under this session's control at once.
 
-        No arguments — this is the panic button for "stop everything NOW"
-        (derailment, collision risk, or any situation where you can't take
-        the time to name individual locomotives). Call this for phrases
-        like "stop everything", "stop all trains", "arrête tout",
-        "arrête toutes les locos" — any request to stop MOTION generically,
-        without a specific locomotive named. Sends the same decoder e-stop
-        as emergency_stop(address) to every address this session has
-        acquired (via acquire_throttle or any prior set_speed/stop/
-        emergency_stop/set_direction/set_function call), not just one.
+        No arguments — panic button for "stop everything NOW" (derailment,
+        collision risk, no time to name individual locomotives). Call for
+        "stop everything"/"stop all trains"/"arrête tout"/"arrête toutes
+        les locos" — stop MOTION generically, no locomotive named. Sends
+        the same decoder e-stop as emergency_stop(address) to every
+        address this session has acquired.
 
-        Do NOT use this for "cut the power"/"coupe le courant"/"kill the
-        power"/"coupe tout" — those mean power_off_all instead (a real
-        power cut to every DCC system, reaching locomotives regardless of
-        who's driving them). This tool only sends a throttle command, never
-        touches track power, and only reaches locomotives already acquired
-        by this session — see the limitation below.
+        NOT "cut the power"/"coupe le courant"/"coupe tout" — that means
+        power_off_all (real power cut to every DCC system, reaching
+        locomotives regardless of who's driving them). This only sends a
+        throttle command, never touches track power.
 
-        IMPORTANT LIMITATION: this only reaches locomotives THIS MCP
-        session has acquired a throttle for. A locomotive being driven only
-        from a JMRI panel, PanelPro, or another MCP/voice session — never
-        acquired here — is NOT stopped by this call, because JMRI has no
-        "stop every throttle in the whole system" command; only the
-        connection holding a throttle can command it. If you need to
-        guarantee everything on the layout stops regardless of who's
-        driving it, use power_off_all to cut power to every DCC system
-        instead — that's the only real "stop absolutely everything" tool.
+        LIMITATION: only reaches locomotives THIS session has acquired. A
+        locomotive driven only from a JMRI panel or another session is NOT
+        stopped, since only the connection holding a throttle can command
+        it. For a guarantee covering everything regardless of driver, use
+        power_off_all instead.
 
         Returns {"stopped": [...addresses e-stopped...], "failed": [...]}.
         An address with no error is confirmed at emergency-stop speed
@@ -389,34 +336,23 @@ def register(mcp) -> None:
         """Set a locomotive's direction of travel: "forward" or "reverse".
 
         Args:
-            address: The locomotive's DCC address. Acquires the throttle
-                automatically if this session doesn't already hold it.
-            direction: Must be exactly "forward" or "reverse" (case-
-                insensitive). "forward"/"reverse" here mean the loco's own
-                notion of front/back as wired in its decoder — not compass
-                direction or "toward/away from the operator" — so if a user
-                says "turn it around" or "go the other way", flip whatever
-                the current reported direction is rather than guessing.
+            address: DCC address. Auto-acquires the throttle if needed.
+            direction: Exactly "forward" or "reverse" (case-insensitive) —
+                the decoder's own front/back, not compass direction. For
+                "turn it around"/"go the other way", flip the current
+                reported direction rather than guessing.
 
-        Best practice: for a moving loco, bring it to a stop first — DCC
-        decoders generally accept a direction change at speed, but it can
-        cause a rough jolt or be ignored/delayed by the decoder depending
-        on its configuration; this tool does not enforce that, it just
-        forwards the request.
+        Best practice: stop a moving loco first — a direction change at
+        speed can jolt or be ignored depending on the decoder; this tool
+        doesn't enforce that, just forwards the request.
 
-        Returns the direction JMRI actually reports back as "forward" or
-        "reverse" (translated from JMRI's own true/false), not "stopped" —
-        direction and speed are independent fields on the same throttle, so
-        set_direction never changes speed and doesn't report one.
+        Returns direction as "forward"/"reverse" (translated from JMRI's
+        true/false) — independent of speed, never changed here.
 
-        Like set_speed/stop/emergency_stop, this is safe to call repeatedly
-        with the same direction: JMRI silently no-ops a redundant "already
-        going this way" request instead of replying, and this tool checks a
-        local direction cache — kept fresh by JMRI's own broadcasts of
-        state changes from ANY client, not just this one — before deciding
-        whether to send anything, so a repeat call (or a direction that was
-        actually last changed by a JMRI panel/PanelPro, not this session)
-        still reports the correct current direction instead of hanging.
+        Safe to call repeatedly with the same direction: JMRI silently
+        no-ops a redundant request, and a local cache (kept fresh by
+        JMRI's own broadcasts from ANY client) avoids hanging on a repeat
+        or externally-set direction.
         """
         client = get_ws_client()
         normalized = direction.strip().lower()
@@ -436,30 +372,23 @@ def register(mcp) -> None:
         """Turn one of a locomotive's decoder functions (F0-F28) on or off.
 
         Args:
-            address: The locomotive's DCC address. Acquires the throttle
-                automatically if this session doesn't already hold it.
-            function: Function number, 0-28 inclusive (validated; anything
-                outside that range returns an error rather than being sent
-                to JMRI). What each number actually controls is decoder/
-                roster-specific — F0 is almost universally the headlight(s)
-                (see lights_on/lights_off below for that common case), but
-                F1-F28 vary loco to loco (bell, horn, sound effects,
-                couplers, etc.). If a user names a function by effect
-                ("turn on the bell", "rear lights") rather than a number,
-                call get_locomotive_functions(name) FIRST to check for a
-                user-set label before guessing or asking — only fall back
-                to asking the user for the F-number if that loco has no
-                label matching what they described.
+            address: DCC address. Auto-acquires the throttle if needed.
+            function: 0-28 inclusive (validated locally; out-of-range
+                returns an error without contacting JMRI). What each number
+                controls is decoder/roster-specific — F0 is almost always
+                headlight(s) (see lights_on/lights_off), F1-F28 vary loco
+                to loco (bell, horn, sounds, couplers...). If the user
+                names a function by effect ("turn on the bell", "rear
+                lights") rather than a number, call
+                get_locomotive_functions(name) FIRST to check for a
+                user-set label before guessing or asking — only ask for
+                the F-number if no label matches.
             state: True to turn the function on, False to turn it off.
 
-        Safe to call repeatedly with the same state: like set_speed/
-        set_direction, JMRI silently no-ops a redundant "already in this
-        state" request instead of replying, and this tool checks a local
-        per-function cache — kept fresh by JMRI's own broadcasts from ANY
-        client holding this address, not just this one — before deciding
-        whether to send anything, so a repeat call (or a function last
-        toggled by a JMRI panel/PanelPro) still reports the correct current
-        state instead of hanging.
+        Safe to call repeatedly with the same state: JMRI silently no-ops
+        a redundant request, and a local per-function cache (kept fresh by
+        JMRI's own broadcasts from ANY client holding this address) avoids
+        hanging on a repeat or externally-toggled function.
         """
         client = get_ws_client()
         try:
@@ -504,40 +433,29 @@ def register(mcp) -> None:
         """Turn ON/OFF EVERY light-related function of ONE locomotive in a single call.
 
         Args:
-            address: The locomotive's DCC address. Acquires the throttle
-                automatically if this session doesn't already hold it.
-            state: True to turn every light-related function on, False to
-                turn them all off.
+            address: DCC address. Auto-acquires the throttle if needed.
+            state: True to turn every light-related function on, False off.
 
-        Different from lights_on/lights_off, which only ever touch F0. This
-        tool reads the locomotive's roster function LABELS (as set by the
-        user in JMRI's roster editor — see get_locomotive_functions) and
-        switches every function whose label names a light: keywords like
-        "light"/"lamp"/"headlight" (English) or "lumière"/"feu"/"lampe"/
-        "phare" (French), case- and accent-insensitive. Real example from
-        this layout: the Autorail has F0="Lumières avant", F1="Lumières
-        cabine", F2="Lumières arrières" — all three are light-labeled, so
-        "turn on all the Autorail's lights" must flip all three, not just
-        F0. Use THIS tool (not lights_on/lights_off) whenever the request
-        says "all"/"every"/"toutes les lumières" together with a named
-        locomotive — never loop set_function yourself, this tool already
-        does that server-side in one call.
+        Different from lights_on/lights_off (F0 only). Reads the roster
+        function LABELS (set by the user in JMRI's roster editor — see
+        get_locomotive_functions) and switches every function whose label
+        names a light: "light"/"lamp"/"headlight" (EN) or "lumière"/"feu"/
+        "lampe"/"phare" (FR), case/accent-insensitive. Example: Autorail
+        has F0="Lumières avant", F1="Lumières cabine", F2="Lumières
+        arrières" — all three light-labeled, so "all lights" must flip all
+        three, not just F0. Use for "all"/"every"/"toutes les lumières"
+        with a named locomotive — never loop set_function yourself.
 
-        If the locomotive has no light-labeled functions at all, this is
-        NOT an error: it returns an empty "applied" list with a "note"
-        explaining why (most locos have no labels set — see
-        get_locomotive_functions). Only ask the user for an explicit
-        F-number as a fallback in that case.
+        No light-labeled functions is NOT an error: returns an empty
+        "applied" list with a "note". Only ask for an explicit F-number as
+        a fallback then.
 
-        For "all locos"/"toutes les locos" (no single locomotive named),
-        use set_all_locos_lights instead. For layout/scenery lighting
-        (depot, street lamps — JMRI Light objects, not a locomotive's own
-        functions), use set_layout_lights instead — never this tool.
+        For "all locos" (no locomotive named), use set_all_locos_lights.
+        For layout/scenery lighting (JMRI Light objects), use
+        set_layout_lights instead.
 
-        Returns {"address": ..., "applied": [{"function", "label", "state"}...],
-        "failed": [...]} — each individual function switch is attempted even
-        if another one fails (catch-and-continue), so a single bad function
-        doesn't block the rest of the loco's lights.
+        Returns {"address", "applied": [{"function", "label", "state"}...],
+        "failed": [...]} — catch-and-continue per function.
         """
         try:
             roster = await jmri_client.get_roster()
@@ -574,28 +492,25 @@ def register(mcp) -> None:
             state: True to turn every light-related function on for every
                 locomotive, False to turn them all off.
 
-        Call this for "turn on/off all the lights of all the locos"/"allume/
-        éteins toutes les lumières de toutes les locos" — any lighting
-        request that mentions locomotives in bulk, with no single one
-        named. Never loop set_loco_lights or set_function yourself for a
-        request like this — this tool already loops server-side, in one
-        call, over every locomotive this session has acquired.
+        Call for "turn on/off all the lights of all the locos"/"allume/
+        éteins toutes les lumières de toutes les locos" — locomotives in
+        bulk, no single one named. Never loop set_loco_lights/set_function
+        yourself — this loops server-side in one call, over every
+        locomotive this session has acquired.
 
-        IMPORTANT LIMITATION: same scope as emergency_stop_all — this only
-        reaches locomotives THIS MCP session has acquired a throttle for
-        (via acquire_throttle or any prior set_speed/stop/set_function/
-        etc. call). A locomotive being driven only from a JMRI panel or
-        another session is not touched. If nothing has been acquired yet,
-        returns {"locomotives": []}, not an error.
+        Same scope limitation as emergency_stop_all: only reaches
+        locomotives THIS session has acquired a throttle for. A
+        locomotive driven only from a JMRI panel or another session is
+        untouched. Nothing acquired yet returns {"locomotives": []}, not
+        an error.
 
-        For a lighting request that names ONE specific locomotive, use
-        set_loco_lights instead. For layout/scenery lighting (JMRI Light
-        objects — depot, street lamps, no locomotive involved), use
+        For ONE named locomotive use set_loco_lights. For layout/scenery
+        lighting (JMRI Light objects, no locomotive involved), use
         set_layout_lights instead — never this tool.
 
-        Returns {"locomotives": [<one set_loco_lights result per address>]}
-        — each locomotive's lights are attempted independently, so one
-        loco's failure doesn't block the others.
+        Returns {"locomotives": [<one set_loco_lights result per
+        address>]} — attempted independently, one failure doesn't block
+        the others.
         """
         client = get_ws_client()
         addresses = sorted({
@@ -614,41 +529,29 @@ def register(mcp) -> None:
         Args:
             address: The locomotive's DCC address.
             prefix: Optional command station prefix (e.g. "O", "Z", "R"),
-                passed straight through to acquire_throttle — see that
-                tool's docstring.
+                passed straight through to acquire_throttle.
 
-        Use this for "prépare la loco"/"prepare the 3"/"get the autorail
-        ready" — the counterpart to park_locomotive, for beginning a
-        session with a locomotive rather than a normal "go" command mid-run.
+        Use for "prépare la loco"/"prepare the 3"/"get the autorail ready"
+        — counterpart to park_locomotive, beginning a session rather than
+        a normal "go" mid-run.
 
-        NOT the same concept as `stop`/`emergency_stop` (those only ever
-        change SPEED on an already-active session) and NOT the same concept
-        as `set_power` (that's the DCC command station's own power supply,
-        affecting every locomotive on that system regardless of who's
-        driving it). This tool only ever touches ONE locomotive's own
-        session state (throttle + lights), never system power, and never
-        implies a speed/motion command by itself.
+        NOT `stop`/`emergency_stop` (speed only, active session) and NOT
+        `set_power` (DCC station power, JMRI-wide). Only touches this
+        locomotive's session state (throttle + lights), never power or
+        speed/motion.
 
-        Runs three steps in order, in one call:
+        Three steps, one call: (1) acquire the throttle (safe if already
+        held); (2) set direction forward (session-start convention,
+        matching park_locomotive's end-of-session state); (3) turn on
+        every light-related function, same as set_loco_lights(address, True).
 
-          1. Acquires the throttle (safe even if already acquired — same as
-             acquire_throttle).
-          2. Sets direction to forward. Locomotives start a session facing
-             forward by this project's convention, matching
-             park_locomotive's end-of-session state.
-          3. Turns on every light-related function (same as
-             set_loco_lights(address, True) — F0 and any other
-             roster-labeled light function, not just the headlight).
+        Does NOT set a speed. Follow with set_speed/set_speed_ramped if
+        the user also asked it to move.
 
-        Does NOT set a speed — this only prepares the locomotive and lights
-        it, it does not start it moving. Follow with set_speed/
-        set_speed_ramped if the user also asked it to move.
+        Never call acquire_throttle, set_direction, and set_loco_lights
+        yourself in sequence for a "prepare" request — use this tool.
 
-        This is a single call for the LLM: never call acquire_throttle,
-        set_direction, and set_loco_lights yourself in sequence for a
-        "prepare"/"get ready" request, use this tool instead.
-
-        Returns {"address": ..., "acquired": bool, "direction": "forward",
+        Returns {"address", "acquired": bool, "direction": "forward",
         "lights": <set_loco_lights result>}.
         """
         client = get_ws_client()
@@ -680,51 +583,30 @@ def register(mcp) -> None:
         Args:
             address: The locomotive's DCC address.
 
-        Use this for "éteins la loco"/"coupe les moteurs"/"put the 3 to
-        bed"/"park the autorail"/"shut down the autorail" — the counterpart
-        to prepare_locomotive, for an end-of-session shutdown of a single
-        locomotive, not a mid-run pause (use plain `stop` for that).
+        Use for "éteins la loco"/"coupe les moteurs"/"put the 3 to bed"/
+        "park the autorail"/"shut down the autorail" — end-of-session
+        shutdown for one locomotive, not a mid-run pause (use `stop`).
 
-        NOT the same concept as `stop`/`emergency_stop` (those only change
-        SPEED — a mid-run pause, throttle stays acquired, lights stay as
-        they are) and NOT the same concept as `set_power` (that's the DCC
-        command station's own power supply, affecting every locomotive on
-        that system regardless of who's driving it, JMRI-wide). This tool
-        only ever touches ONE locomotive's own session state (speed +
-        lights + throttle release), never system power. If the user's
-        words describe ending this locomotive's session (lights off,
-        released, done for now) rather than just pausing its motion, this
-        is the tool — not `stop`.
+        NOT `stop`/`emergency_stop` (speed only, throttle stays acquired,
+        lights untouched) and NOT `set_power` (DCC station's own power,
+        JMRI-wide). This tool only touches this one locomotive's session
+        state (speed + lights + release), never system power.
 
-        Runs four steps in order, in one call:
+        Four steps, one call: (1) ramp down to 0, duration scaled to
+        current speed (up to ~3s at full speed, shorter/none if already
+        slow); (2) flip to forward if in reverse (safe, since speed is 0
+        by now); (3) turn off every light-related function, same as
+        set_loco_lights(address, False); (4) release the throttle.
 
-          1. Ramps down to speed 0 (never an abrupt stop) — the rampdown
-             duration scales with the loco's CURRENT speed (proportionally
-             shorter for a loco already slow/stopped, up to ~3s at full
-             speed), so stopping an already-stationary loco doesn't wait
-             around for a fixed delay that has nothing to ramp down from.
-          2. If it's currently in reverse, flips to forward — always at
-             speed 0 by this point, so this is a safe, ordinary direction
-             set, not a moving flip. Locomotives are left facing forward at
-             rest, matching prepare_locomotive's own forward convention.
-          3. Turns off every light-related function (same as
-             set_loco_lights(address, False) — F0 and any other
-             roster-labeled light function, not just the headlight).
-          4. Releases this session's throttle on the locomotive, freeing it
-             for other JMRI clients.
+        If never acquired, steps 1-2 are skipped, but step 3 still
+        auto-acquires (like set_loco_lights always does) so step 4 always
+        has something to release.
 
-        If this session never acquired the locomotive (nothing to stop),
-        steps 1-2 are skipped — but step 3 (lights) still auto-acquires the
-        throttle the same way set_loco_lights always does, so step 4 always
-        runs and releases it regardless, leaving nothing acquired behind
-        either way.
+        Never call set_speed/stop, set_direction, set_loco_lights, and
+        release_throttle yourself in sequence for a shutdown request — use
+        this tool.
 
-        This is a single call for the LLM: never call set_speed/stop,
-        set_direction, set_loco_lights, and release_throttle yourself in
-        sequence for a "shut down"/"put to bed"/"park" request, use this
-        tool instead.
-
-        Returns {"address": ..., "stopped": bool, "direction": "forward",
+        Returns {"address", "stopped": bool, "direction": "forward",
         "lights": <set_loco_lights result>, "released": bool}.
         """
         client = get_ws_client()
@@ -776,35 +658,27 @@ def register(mcp) -> None:
     async def park_all_locomotives() -> dict:
         """Put EVERY currently-acquired locomotive to rest at once: smooth stop, forward, lights off, released.
 
-        Call this for "éteins toutes les locos"/"coupe tous les
-        moteurs"/"shut down every locomotive"/"put everything to bed" —
-        the bulk counterpart to park_locomotive. Never loop park_locomotive
-        yourself for a request like this — this tool already loops
-        server-side, in one call, over every locomotive this session has
-        acquired, running the exact same four-step sequence (proportional
-        rampdown, face forward, lights off, release) independently per
-        locomotive.
+        Call for "éteins toutes les locos"/"coupe tous les moteurs"/"shut
+        down every locomotive"/"put everything to bed" — the bulk
+        counterpart to park_locomotive. Never loop park_locomotive
+        yourself — this loops server-side in one call, running the same
+        four-step sequence (proportional rampdown, face forward, lights
+        off, release) independently per locomotive.
 
-        NOT the same concept as `emergency_stop_all` (motion-only, no
-        lights/release) and NOT the same concept as system power off (that
-        cuts every locomotive on a DCC system regardless of who's driving
-        it — this project has no single "power off everything" tool; see
-        `set_power` per system). This tool only ever touches locomotives
-        THIS session has a throttle for.
+        NOT `emergency_stop_all` (motion-only, no lights/release) and NOT
+        system power off (cuts every locomotive on a DCC system regardless
+        of driver — no single "power off everything" tool exists, see
+        set_power per system). Only touches locomotives THIS session has a
+        throttle for — one driven only from a JMRI panel or another
+        session is untouched; nothing acquired yet returns
+        {"locomotives": []}, not an error.
 
-        IMPORTANT LIMITATION: same scope as emergency_stop_all/
-        set_all_locos_lights — this only reaches locomotives THIS MCP
-        session has acquired a throttle for. A locomotive being driven only
-        from a JMRI panel or another session is not touched. If nothing has
-        been acquired yet, returns {"locomotives": []}, not an error.
+        For ONE named locomotive use park_locomotive. For motion-only with
+        no lights/release, use emergency_stop_all.
 
-        For a shutdown request naming ONE specific locomotive, use
-        park_locomotive instead. For an immediate motion-only stop with no
-        lights/release side effects, use emergency_stop_all instead.
-
-        Returns {"locomotives": [<one park_locomotive result per address>]}
-        — each locomotive is stopped independently, so one loco's failure
-        doesn't block the others.
+        Returns {"locomotives": [<one park_locomotive result per
+        address>]} — each stopped independently, one failure doesn't
+        block the others.
         """
         client = get_ws_client()
         addresses = sorted({

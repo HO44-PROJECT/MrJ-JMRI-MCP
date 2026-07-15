@@ -30,24 +30,20 @@ def register(mcp) -> None:
     async def list_signals() -> dict:
         """List every signal mast known to JMRI, with its current aspect.
 
-        Use this to discover what signal masts exist before calling
+        Use to discover what signal masts exist before calling
         get_signal/set_signal, or to answer "what signals are there?"/
         "what aspect is signal X showing?". No side effects.
 
-        A signal mast is a trackside signal (e.g. a German Hauptsignal),
-        distinct from a turnout (a switch/points) or a layout light
-        (scenery lighting) — don't confuse "set the signal" with
-        set_turnout or set_light. This tool only covers signalMast
-        objects; JMRI's lower-level signalHead objects (individual lamps
-        that a mast is built from) are not exposed, since most layouts —
-        including this one — never interact with them directly once a
-        mast is configured in PanelPro.
+        A signal mast is a trackside signal (e.g. German Hauptsignal),
+        distinct from a turnout (switch/points) or a layout light
+        (scenery) — don't confuse with set_turnout/set_light. Only
+        covers signalMast objects, not JMRI's lower-level signalHead
+        objects (rarely used directly once a mast is configured).
 
-        Each mast's "aspect" is a name like "Hp0"/"Hp1"/"Hp2" (German
-        Hauptsignal aspects) or a different vocabulary entirely, depending
-        on which signal system the mast was configured with in PanelPro —
-        this project never hardcodes or translates aspect names, it passes
-        through whatever JMRI reports for that specific mast.
+        "aspect" is a name like "Hp0"/"Hp1"/"Hp2" (German Hauptsignal) or
+        a different vocabulary depending on the mast's configured signal
+        system — aspect names are never hardcoded/translated, just
+        passed through from JMRI.
         """
         try:
             signals = await get_signals()
@@ -81,29 +77,24 @@ def register(mcp) -> None:
         """Set a signal mast's aspect, and report the aspect actually observed.
 
         Args:
-            name: Signal mast name (JMRI system name, or its user-friendly
-                label if one is set) or an unambiguous fragment of the
-                label. Case-insensitive.
+            name: Signal mast name (JMRI system name or user-friendly
+                label) or an unambiguous fragment. Case-insensitive.
             aspect: The aspect to request, e.g. "Hp0" (stop), "Hp1"
-                (proceed), "Hp2" (proceed with reduced speed) for a German
-                DB-HV-1969 mast — the exact valid names depend on this
-                specific mast's configured signal system and are NOT
-                validated locally by this tool (JMRI doesn't expose the
-                valid-aspect list over its JSON API) — JMRI validates it
-                server-side instead and this tool reports that as an error
-                if the name is unknown. If unsure what aspects a mast
-                supports, call get_signal/list_signals first to see its
-                current aspect as an example of the naming style in use,
-                or ask the user rather than guessing an aspect name.
+                (proceed), "Hp2" (proceed reduced speed) for a German
+                DB-HV-1969 mast — valid names depend on this mast's
+                configured signal system and are NOT validated locally
+                (JMRI doesn't expose a valid-aspect list); JMRI validates
+                server-side and this tool reports rejection as an error.
+                If unsure, call get_signal/list_signals first to see the
+                current aspect as a naming-style example, or ask the user
+                rather than guessing.
 
-        This writes to JMRI (and, on masts driven by external hardware —
-        e.g. a DCC accessory decoder or a custom microcontroller — changes
-        what the physical signal displays on the real layout). An unknown
-        aspect name is reported as an "error" (JMRI rejects it outright).
-        A *valid* aspect is re-read after the command; if the observed
-        aspect still doesn't match the request, "confirmed" will be false
-        and that should be reported honestly rather than assumed as
-        success — unresponsive external hardware can cause this even when
+        Writes to JMRI, and on masts driven by external hardware (DCC
+        accessory decoder, microcontroller) changes the real physical
+        signal. An unknown aspect is reported as an "error". A valid
+        aspect is re-read after the command; if the observed aspect still
+        doesn't match, "confirmed" is false — report that honestly, not as
+        success, since unresponsive hardware can cause this even when
         JMRI itself accepted the change.
         """
         try:

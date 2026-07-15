@@ -1350,6 +1350,95 @@ exercise; the whole point of the flag is that it persists across tool
 calls within one long-lived MCP session, which a fresh CLI invocation
 never has.
 
+## `meta.py`: layout-wide tools composing several low-level operations into one call
+
+`tools/meta.py` holds five tools that answer a request shaped around the
+whole layout rather than one system/locomotive: `layout_status`,
+`secure_layout`, `release_all_locomotives`, `night_mode`, `day_mode`. Each
+is a natural-language-sized command a model railroader would actually
+give another operator ("what's happening?", "secure the layout") rather
+than the sequence of individual JMRI calls that implements it.
+
+**Cross-module composition constraint.** `@mcp.tool()`-decorated
+functions are closures created inside each module's own `register(mcp)`
+call, not plain importable module-level functions — `park_all_locomotives`
+can call `park_locomotive` directly only because both are defined in the
+same `register()` scope in `throttle.py`. `FastMCP` itself exposes no API
+to look up and invoke an already-registered tool as a plain callable from
+another module (only `add_tool`/`call_tool`/`list_tools`/`remove_tool`/
+`tool` exist, and `call_tool` requires JSON-serialized arguments and
+returns protocol-wrapped content blocks — the wrong shape for internal
+composition). So `meta.py` cannot import `set_loco_lights` from
+`throttle.py` or `set_layout_lights` from `light.py` and call them
+directly. Instead it composes on the same low-level `jmri_client`/
+`jmri_ws` functions every other tool module builds on — exactly the
+existing convention that `light.py` and `turnout.py` already follow
+(sibling tool modules never import each other, each composes
+independently on the shared client layer). `meta.py` reimplements a
+private `_set_loco_lights(address, state)` helper, field-for-field
+identical in output shape to `throttle.py`'s `set_loco_lights` tool
+(same `applied`/`failed`/`label`/`note` keys), rather than depending on
+that module.
+
+`layout_status()` is read-only: version + reachability, every DCC
+system's power state, every locomotive this session currently holds a
+throttle for (via `JmriWsClient.all_throttle_states()`), every block, and
+every sensor. Each section is fetched independently and wrapped in its
+own `try/except JmriError`, so one JMRI subsystem being unreachable
+(e.g. `/json/blocks` erroring) reports a `<section>_error` key for that
+section alone without blocking the others — the same
+independent-failure-reporting shape used elsewhere in this codebase
+(`secure_layout`'s per-locomotive/per-light loops below). If JMRI itself
+is unreachable, the function returns immediately after `version` fails,
+with `reachable: False` and a top-level `error`, since nothing else is
+worth attempting.
+
+`secure_layout(release_throttles=True)` is the "I'm done for today"
+command: for every address this session holds a throttle for, it ramps
+speed down to 0 via the same shared `execute_speed_change` state machine
+`park_locomotive` uses (`rampdown = current_fraction *
+STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED`, proportional to current
+speed), turns off that locomotive's light-labeled functions via
+`_set_loco_lights`, and — unless the caller passes
+`release_throttles=False` — releases the throttle. It then turns off
+every JMRI Light on the layout via `get_lights()`/`set_light()`,
+reporting `succeeded`/`failed` per light the same way `set_layout_lights`
+does. This is deliberately distinct from both existing whole-layout stop
+tools: `power_off_all` cuts power (reaching locomotives with no throttle
+held here too, but a more drastic, harder-to-undo action) and
+`emergency_stop_all` only stops motion (no lights, no release, no
+controlled ramp — a decoder e-stop). `secure_layout` is the routine,
+gentle "put everything away" tool; the other two remain for their own
+distinct cases (see their own sections above). Its scope is the same as
+`park_all_locomotives`/`emergency_stop_all`: only locomotives *this*
+session has acquired a throttle for.
+
+`release_all_locomotives()` releases every held throttle without
+touching speed, direction, or lights at all — the narrow case where a
+user wants to hand control back (e.g. to a JMRI panel or another
+session) without changing anything about the layout's current state,
+distinct from `secure_layout`'s full shutdown sequence.
+
+`night_mode()`/`day_mode()` share a private `_set_mode_lights(loco_state,
+layout_state)` helper: turn every acquired locomotive's light-labeled
+functions and every JMRI Light on or off together, in one call.
+`night_mode()` is `_set_mode_lights(True, True)`, `day_mode()` is
+`_set_mode_lights(False, False)` — thin wrappers, same shape as
+`power_off_all`/`power_on_all` sharing `_set_power_all`. Like
+`secure_layout`, the locomotive side only reaches this session's
+currently-acquired addresses; a locomotive never acquired here keeps
+whatever light state it already had.
+
+No CLI equivalent was added for these five tools: `layout_status` is a
+read aggregation the CLI already exposes piecemeal (`status`, `roster`,
+`turnout list`, `sensor list`, `block list`), and `secure_layout`/
+`release_all_locomotives`/`night_mode`/`day_mode` all assume a
+long-lived session holding multiple throttles at once — the CLI's
+one-shot commands don't have that (see the `throttle speed` connection-
+lifetime limitation documented above), and its interactive shell already
+covers the same ground per-address via the existing `throttle stop`/
+`engine-stop`/`light on`/`light off` verbs with no `loco` argument.
+
 ## `server/__init__.py`: MCP `instructions` — standing guidance delivered at `initialize`
 
 `FastMCP`'s `instructions` constructor argument flows through the
@@ -1432,6 +1521,17 @@ response to real user friction, not hypothetical:
   set_speed(_ramped)/release_throttle itself for any of these three
   requests — each already has one native tool, the same rationale as the
   bulk-routing paragraph above.
+- **Meta-tools routing** — added alongside `meta.py` (see its dedicated
+  section above): maps a general status question ("what's happening on
+  the layout", "donne-moi l'état du layout") to `layout_status`, an
+  end-of-session command ("secure the layout", "sécurise le layout") to
+  `secure_layout`, a throttle-only handback ("release the locomotives",
+  "libère les locos") to `release_all_locomotives`, and a whole-layout
+  lighting mode ("night mode"/"mode nuit", "day mode"/"mode jour") to
+  `night_mode`/`day_mode`. Explicitly restates `secure_layout`'s
+  distinction from `power_off_all`/`emergency_stop_all` here too, same
+  reasoning as the power/emergency_stop "NOT interchangeable" clause
+  below.
 
 Two real limits on this mechanism, both by design of the protocol, not
 bugs here:

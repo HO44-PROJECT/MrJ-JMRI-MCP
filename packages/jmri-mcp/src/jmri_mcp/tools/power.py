@@ -100,30 +100,26 @@ def register(mcp) -> None:
     async def power_off_all() -> dict:
         """Cut power to EVERY DCC system at once — the real "stop absolutely everything" button.
 
-        No arguments. Call this for phrases like "cut the power", "cut
-        everything", "kill the power", "coupe le courant", "coupe tout",
-        "coupe l'alimentation" — any request to cut POWER generically,
-        without a specific system named. This is the tool for those phrases
-        even if they sound like a stop command — "coupe le courant"/"cut
-        the power" means THIS tool, not emergency_stop_all, because the
-        user is naming power, not motion. Use this for a genuine layout-wide
-        emergency where you need every locomotive to stop NOW regardless of
-        who's driving it — including locomotives controlled from a JMRI
-        panel, PanelPro, or another MCP/voice session that this tool has no
-        other way to reach. Unlike emergency_stop_all (which only e-stops
-        locomotives THIS session has acquired a throttle for, and does not
-        touch power), cutting power stops every decoder on every system
-        unconditionally, because they lose track power entirely.
+        No arguments. Call for "cut the power", "cut everything", "kill
+        the power", "coupe le courant", "coupe tout", "coupe
+        l'alimentation" — any generic power-cut request with no specific
+        system named. Use this even when the phrase sounds like a stop
+        command — "coupe le courant" means THIS tool, not
+        emergency_stop_all, since the user is naming power, not motion.
+        For a genuine layout-wide emergency, this reaches every
+        locomotive regardless of who's driving it (JMRI panel, PanelPro,
+        another session) — unlike emergency_stop_all, which only e-stops
+        locomotives THIS session has acquired and never touches power.
 
-        This is more drastic than emergency_stop_all: it also stops
-        anything with no throttle acquired at all, but re-powering
-        afterward requires an explicit set_power(system, turn_on=True) per
-        system before any locomotive can move again — don't reach for this
-        for a routine "stop the train", only for a real emergency.
+        More drastic than emergency_stop_all: also stops anything with no
+        throttle acquired, but re-powering afterward requires an explicit
+        set_power(system, turn_on=True) per system before any locomotive
+        can move again — don't use this for a routine "stop the train",
+        only a real emergency.
 
-        Each system's result is re-read and confirmed the same way
-        set_power does (see its docstring) — check "confirmed" per system
-        rather than assuming the whole layout is now unpowered.
+        Each system's result is re-read and confirmed like set_power —
+        check "confirmed" per system rather than assuming the whole
+        layout is now unpowered.
         """
         try:
             results = await _power_off_all()

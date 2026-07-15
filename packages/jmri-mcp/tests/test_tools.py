@@ -1192,3 +1192,313 @@ async def test_set_layout_lights_reports_error_honestly(monkeypatch):
     mcp = make_server()
     out = await call(mcp, "set_layout_lights", turn_on=True)
     assert "error" in out
+
+
+async def test_layout_status_reports_reachability_systems_locomotives_blocks_sensors(
+    fake_jmri, roster_fixture, version_fixture, power_fixture, blocks_fixture, sensors_fixture,
+):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/version").mock(return_value=Response(200, json=version_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    router.get(f"{get_jmri_url()}/json/blocks").mock(return_value=Response(200, json=blocks_fixture))
+    router.get(f"{get_jmri_url()}/json/sensors").mock(return_value=Response(200, json=sensors_fixture))
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        out = await call(mcp, "layout_status")
+    finally:
+        router.stop()
+
+    assert out["reachable"] is True
+    assert out["version"] == "5.4.0"
+    assert len(out["systems"]) == 3
+    assert len(out["locomotives"]) == 1
+    assert out["locomotives"][0]["address"] == 4
+    assert len(out["blocks"]) == 2
+    assert len(out["sensors"]) == 3
+
+
+async def test_layout_status_no_locomotives_acquired_yet(
+    fake_jmri, version_fixture, power_fixture, blocks_fixture, sensors_fixture,
+):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{get_jmri_url()}/json/version").mock(return_value=Response(200, json=version_fixture))
+        router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+        router.get(f"{get_jmri_url()}/json/blocks").mock(return_value=Response(200, json=blocks_fixture))
+        router.get(f"{get_jmri_url()}/json/sensors").mock(return_value=Response(200, json=sensors_fixture))
+        mcp = make_server()
+        out = await call(mcp, "layout_status")
+
+    assert out["locomotives"] == []
+
+
+async def test_layout_status_unreachable_reports_honestly():
+    import respx
+    from httpx import ConnectError
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/version").mock(side_effect=ConnectError("refused"))
+        out = await call(mcp, "layout_status")
+
+    assert out["reachable"] is False
+    assert "error" in out
+    assert "systems" not in out
+    assert "locomotives" not in out
+
+
+async def test_layout_status_one_section_failing_does_not_block_others(
+    version_fixture, power_fixture, sensors_fixture,
+):
+    import respx
+    from httpx import ConnectError, Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/version").mock(return_value=Response(200, json=version_fixture))
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
+        router.get(f"{MOCK_JMRI_URL}/json/blocks").mock(side_effect=ConnectError("refused"))
+        router.get(f"{MOCK_JMRI_URL}/json/sensors").mock(return_value=Response(200, json=sensors_fixture))
+        out = await call(mcp, "layout_status")
+
+    assert out["reachable"] is True
+    assert len(out["systems"]) == 3
+    assert "blocks_error" in out
+    assert "blocks" not in out
+    assert len(out["sensors"]) == 3
+
+
+async def test_release_all_locomotives_covers_every_acquired_address(fake_jmri, roster_fixture):
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        await call(mcp, "acquire_throttle", address=8)
+        out = await call(mcp, "release_all_locomotives")
+    finally:
+        router.stop()
+
+    by_address = {loco["address"]: loco for loco in out["released"]}
+    assert sorted(by_address) == [4, 8]
+    assert by_address[4]["released"] is True
+    assert by_address[8]["released"] is True
+
+    from jmri_core.jmri_ws import get_ws_client
+
+    assert get_ws_client().all_throttle_states() == {}
+
+
+async def test_release_all_locomotives_does_not_change_speed_or_lights(fake_jmri, roster_fixture):
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        await call(mcp, "set_speed", address=4, speed_percent=50)
+
+        from jmri_core.jmri_ws import get_ws_client
+
+        speed_before = get_ws_client().throttle_state("addr4")["speed"]
+        await call(mcp, "release_all_locomotives")
+    finally:
+        router.stop()
+    assert speed_before == 0.5
+
+
+async def test_release_all_locomotives_with_nothing_acquired(fake_jmri):
+    mcp = make_server()
+    out = await call(mcp, "release_all_locomotives")
+    assert out == {"released": []}
+
+
+async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fixture):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    live_state = {"IL1": 2, "IL2": 2}
+
+    def get_lights(request):
+        payload = [
+            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
+            {"type": "light", "data": {"name": "IL2", "userName": "Street Lamps", "state": live_state["IL2"]}},
+        ]
+        return Response(200, json=payload)
+
+    def post_light(name):
+        def handler(request):
+            live_state[name] = json.loads(request.content)["state"]
+            return Response(200, json={})
+        return handler
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
+    router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light("IL1"))
+    router.post(f"{get_jmri_url()}/json/light/IL2").mock(side_effect=post_light("IL2"))
+    try:
+        mcp = make_server()
+        await call(mcp, "prepare_locomotive", address=4)
+        await call(mcp, "set_speed", address=4, speed_percent=40)
+        out = await call(mcp, "secure_layout")
+    finally:
+        router.stop()
+
+    assert len(out["locomotives"]) == 1
+    loco = out["locomotives"][0]
+    assert loco["address"] == 4
+    assert loco["stopped"] is True
+    assert loco["released"] is True
+    assert len(loco["lights"]["applied"]) == 3
+    assert all(a["state"] is False for a in loco["lights"]["applied"])
+
+    assert out["layout_lights"]["failed"] == []
+    assert all(s["state"] == "OFF" and s["confirmed"] for s in out["layout_lights"]["succeeded"])
+
+    from jmri_core.jmri_ws import get_ws_client
+
+    assert get_ws_client().all_throttle_states() == {}
+
+
+async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(fake_jmri, roster_fixture):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/lights").mock(return_value=Response(200, json=[]))
+    try:
+        mcp = make_server()
+        await call(mcp, "prepare_locomotive", address=4)
+        out = await call(mcp, "secure_layout", release_throttles=False)
+    finally:
+        router.stop()
+
+    assert "released" not in out["locomotives"][0]
+
+    from jmri_core.jmri_ws import get_ws_client
+
+    assert "addr4" in get_ws_client().all_throttle_states()
+
+
+async def test_secure_layout_nothing_acquired_still_turns_off_layout_lights(fake_jmri):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{get_jmri_url()}/json/lights").mock(return_value=Response(200, json=[
+            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": 4}},
+        ]))
+        router.post(f"{get_jmri_url()}/json/light/IL1").mock(return_value=Response(200, json={}))
+        mcp = make_server()
+        out = await call(mcp, "secure_layout")
+
+    assert out["locomotives"] == []
+    assert out["layout_lights"]["succeeded"][0]["state"] == "OFF"
+
+
+async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roster_fixture):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    live_state = {"IL1": 4}
+
+    def get_lights(request):
+        return Response(200, json=[
+            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
+        ])
+
+    def post_light(request):
+        live_state["IL1"] = json.loads(request.content)["state"]
+        return Response(200, json={})
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
+    router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light)
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        out = await call(mcp, "night_mode")
+    finally:
+        router.stop()
+
+    assert len(out["locomotives"][0]["applied"]) == 3
+    assert all(a["state"] is True for a in out["locomotives"][0]["applied"])
+    assert out["layout_lights"]["succeeded"][0]["state"] == "ON"
+    assert out["layout_lights"]["succeeded"][0]["confirmed"] is True
+
+
+async def test_day_mode_turns_off_locomotive_and_layout_lights(fake_jmri, roster_fixture):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    live_state = {"IL1": 2}
+
+    def get_lights(request):
+        return Response(200, json=[
+            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
+        ])
+
+    def post_light(request):
+        live_state["IL1"] = json.loads(request.content)["state"]
+        return Response(200, json={})
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
+    router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light)
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        out = await call(mcp, "day_mode")
+    finally:
+        router.stop()
+
+    assert len(out["locomotives"][0]["applied"]) == 3
+    assert all(a["state"] is False for a in out["locomotives"][0]["applied"])
+    assert out["layout_lights"]["succeeded"][0]["state"] == "OFF"
+    assert out["layout_lights"]["succeeded"][0]["confirmed"] is True
+
+
+async def test_night_mode_with_nothing_acquired_still_sets_layout_lights(fake_jmri):
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{get_jmri_url()}/json/lights").mock(return_value=Response(200, json=[]))
+        mcp = make_server()
+        out = await call(mcp, "night_mode")
+
+    assert out["locomotives"] == []
+    assert out["layout_lights"] == {"succeeded": [], "failed": []}

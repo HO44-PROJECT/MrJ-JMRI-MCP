@@ -55,7 +55,7 @@ async def test_shell_top_level_shortcut_shares_connection_like_throttle_verb(fak
 
     await shell.run_shell()
     out, _ = capsys.readouterr()
-    assert "address=3 speed=0%" in out
+    assert "address=3 speed=40%" in out
     assert "address=3 stopped" in out
 
 
@@ -93,7 +93,11 @@ async def test_shell_seconds_bounded_speed_auto_stops_inside_shell(fake_jmri, ca
 
     await shell.run_shell()
     out, _ = capsys.readouterr()
-    assert "address=3 speed=0%" in out
+    assert "address=3 speed=40%" in out
+    assert "holding 0.05s, then auto-stop" in out
+
+    from jmri_cli import state as _state
+    assert _state.load_state().get("3", {}).get("speed") == 0.0
 
 
 async def test_shell_non_throttle_command_runs_unchanged(mock_power, capsys, monkeypatch):

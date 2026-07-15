@@ -57,7 +57,7 @@ except ImportError:
     readline = None
 
 from jmri_core import i18n
-from jmri_cli._common import cli_throttle_id
+from jmri_cli._common import background_holds, cli_throttle_id
 from jmri_cli.banner import banner
 from jmri_core.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_cli.parser import build_parser
@@ -136,6 +136,30 @@ def _moving_addresses(client: JmriWsClient) -> list[int]:
     return sorted(addresses)
 
 
+async def _cancel_pending_holds() -> None:
+    """Cancel every background `--hold` task still pending and wait for
+    each to unwind, so nothing keeps driving a throttle after the shell
+    has decided to stop it (or is about to close the connection outright).
+
+    Cancelling before `_confirm_exit`'s own ramp-down avoids racing two
+    separate speed-changing sequences against the same throttle; awaiting
+    with return_exceptions=True absorbs the CancelledError each task
+    raises on its way out (see _background_hold in throttle.py, which
+    ramps back to 0 on cancellation same as a Ctrl-C mid-hold) without
+    letting one task's cancellation stop the others from being awaited.
+    """
+    pending = [t for t in background_holds.values() if not t.done()]
+    if not pending:
+        return
+    # Give every task at least one scheduler tick before cancelling: a task
+    # cancelled before its coroutine ever starts raises CancelledError at
+    # the task boundary without running any of its own code, so a hold
+    # cancelled the instant it's created would skip execute_speed_change's
+    # ramp-to-0-on-cancel step entirely and leave the locomotive at speed.
+    await asyncio.sleep(0)
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def _confirm_exit(client: JmriWsClient) -> bool:
     """Prompt for confirmation if anything's moving; ramp it down on yes.
 
@@ -144,6 +168,8 @@ async def _confirm_exit(client: JmriWsClient) -> bool:
         (only possible if the user is re-prompted and changes their mind —
         currently every path returns True, "no" just skips the ramp-down).
     """
+    await _cancel_pending_holds()
+
     moving = _moving_addresses(client)
     if not moving:
         return True
@@ -176,6 +202,13 @@ async def run_shell() -> None:
     bad line or `-h`/`--help` triggers argparse's own SystemExit, which is
     caught here so it doesn't kill the session (one-shot mode wants that
     same SystemExit to propagate to the OS exit code — the shell doesn't).
+
+    A `throttle speed`/`forward`/`reverse --hold` runs its ramp/hold/
+    auto-stop in the background (see throttle.py's _background_hold) so
+    it doesn't block this loop — any such task still pending is cancelled
+    and awaited before the connection closes, on every exit path
+    (_confirm_exit and this function's own `finally`), so a hold is never
+    silently abandoned mid-flight.
     """
     parser = build_parser()
     client = JmriWsClient()
@@ -240,4 +273,5 @@ async def run_shell() -> None:
                 print(i18n.error(exc), file=sys.stderr)
     finally:
         _save_history()
+        await _cancel_pending_holds()
         await client.close()

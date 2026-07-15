@@ -280,6 +280,7 @@
         "throttle_no_locos_to_stop": "Aucune locomotive touchée par ce CLI pour l'instant, rien à arrêter.",
         "throttle_hold_required": "Erreur : --hold est requis pour régler une vitesse non nulle en dehors du shell interactif (utilisez le shell `jmri-cli` nu pour un maintien indéfini).",
         "throttle_hold_required_address": "Erreur : l'adresse={address} est en mouvement — --hold est requis pour changer sa direction en dehors du shell interactif (utilisez le shell `jmri-cli` nu pour un maintien indéfini).",
+        "throttle_hold_started_suffix": " (maintien {seconds:g}s, puis arrêt automatique)",
         "sniff_acquired_for_observation": "(adresse={address} acquise pour observation)",
         "sniff_could_not_acquire": "Attention : impossible d'acquérir {address} : {exc}",
         "sniff_listening": "Écoute des messages JMRI, Ctrl-C pour arrêter...",

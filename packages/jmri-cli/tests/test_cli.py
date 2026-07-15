@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from jmri_cli import build_parser, main
@@ -1220,6 +1222,166 @@ async def test_throttle_speed_ctrl_c_during_hold_ramps_to_zero(fake_jmri, capsys
         assert state.get("speed") == 0.0
     finally:
         await client.close()
+
+
+async def test_throttle_speed_hold_in_shell_returns_immediately(fake_jmri, capsys):
+    """`speed --hold` inside the shell (client given) must print a
+    "started"-style line and return right away, not block for the hold's
+    duration - the core regression test for issue #47."""
+    import time
+
+    from jmri_cli.throttle import throttle_speed
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        args = build_parser().parse_args(["throttle", "speed", "3", "40", "--hold", "30"])
+        started = time.monotonic()
+        code = await throttle_speed(args, client=client)
+        elapsed = time.monotonic() - started
+        assert code == 0
+        assert elapsed < 2.0
+
+        out, _ = capsys.readouterr()
+        assert "address=3 speed=40%" in out
+        assert "holding 30s, then auto-stop" in out
+
+        from jmri_cli._common import background_holds
+        assert 3 in background_holds
+        task = background_holds[3]
+        await asyncio.sleep(0)  # let _run() start before cancelling it
+        task.cancel()
+        await task  # swallows its own CancelledError, see _background_hold
+    finally:
+        await client.close()
+
+
+async def test_throttle_speed_hold_in_shell_auto_stops_in_background(fake_jmri, capsys):
+    """The backgrounded hold must still really ramp to the target and
+    auto-stop after it elapses, exactly as the blocking one-shot path
+    does - only the *waiting* moved off the shell's main loop."""
+    import asyncio
+
+    from jmri_cli._common import background_holds
+    from jmri_cli.throttle import throttle_speed
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        args = build_parser().parse_args(["throttle", "speed", "3", "40", "--hold", "0.2"])
+        code = await throttle_speed(args, client=client)
+        assert code == 0
+        capsys.readouterr()
+
+        task = background_holds.get(3)
+        assert task is not None
+        await asyncio.wait_for(task, timeout=2.0)
+
+        throttle_id = "cli3"
+        state = client.throttle_state(throttle_id) or {}
+        assert state.get("speed") == 0.0
+    finally:
+        await client.close()
+
+
+async def test_throttle_speed_hold_supersedes_pending_hold_same_address(fake_jmri, capsys):
+    """A second `speed --hold` on the same address while one is still
+    pending must cancel/replace it rather than let both race - the
+    issue's own explicit requirement."""
+    import asyncio
+
+    from jmri_cli._common import background_holds
+    from jmri_cli.throttle import throttle_speed
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        args1 = build_parser().parse_args(["throttle", "speed", "3", "40", "--hold", "30"])
+        await throttle_speed(args1, client=client)
+        capsys.readouterr()
+        first_task = background_holds[3]
+        assert not first_task.done()
+
+        args2 = build_parser().parse_args(["throttle", "speed", "3", "80", "--hold", "0.2"])
+        code = await throttle_speed(args2, client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=3 speed=80%" in out
+
+        second_task = background_holds[3]
+        assert second_task is not first_task
+
+        await first_task  # swallows its own CancelledError, see _background_hold
+
+        await asyncio.wait_for(second_task, timeout=2.0)
+        state = client.throttle_state("cli3") or {}
+        assert state.get("speed") == 0.0
+    finally:
+        await client.close()
+
+
+async def test_throttle_direction_hold_in_shell_returns_immediately(fake_jmri, capsys):
+    """`forward`/`reverse --hold` gets the identical shell-mode
+    backgrounding treatment as `speed --hold`, for consistency (the
+    issue's own suggestion)."""
+    import time
+
+    from jmri_cli.throttle import throttle_direction
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        await client.acquire_throttle("cli3", 3)
+        await client.set_speed("cli3", 0.5)
+
+        args = build_parser().parse_args(["throttle", "reverse", "3", "--hold", "30"])
+        started = time.monotonic()
+        code = await throttle_direction(args, forward=False, client=client)
+        elapsed = time.monotonic() - started
+        assert code == 0
+        assert elapsed < 2.0
+
+        out, _ = capsys.readouterr()
+        assert "address=3 direction=reverse" in out
+        assert "holding 30s, then auto-stop" in out
+
+        from jmri_cli._common import background_holds
+        task = background_holds[3]
+        await asyncio.sleep(0)  # let _run() start before cancelling it
+        task.cancel()
+        await task  # swallows its own CancelledError, see _background_hold
+    finally:
+        await client.close()
+
+
+async def test_shell_exit_awaits_pending_hold_before_closing(fake_jmri, capsys, monkeypatch):
+    """A pending background hold must be cancelled and awaited (ramping
+    the loco back to 0) as part of shell exit, not abandoned when the
+    connection closes - mirrors the MCP server's own shutdown guarantee
+    for its background ramps."""
+    monkeypatch.setattr("builtins.input", lambda *a, **k: (_ for _ in ()).throw(EOFError))
+
+    from jmri_cli.shell import run_shell
+    from jmri_cli._common import background_holds
+    from jmri_cli.throttle import throttle_speed
+    from jmri_core.jmri_ws import JmriWsClient
+
+    holder = JmriWsClient()
+    try:
+        args = build_parser().parse_args(["throttle", "speed", "3", "40", "--hold", "30"])
+        await throttle_speed(args, client=holder)
+        capsys.readouterr()
+        assert 3 in background_holds
+        task = background_holds[3]
+        assert not task.done()
+
+        await run_shell()
+
+        assert task.done()
+        state = holder.throttle_state("cli3") or {}
+        assert state.get("speed") == 0.0
+    finally:
+        await holder.close()
 
 
 async def test_throttle_on_with_function_number(fake_jmri, capsys):

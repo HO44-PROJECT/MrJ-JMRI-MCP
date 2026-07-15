@@ -42,7 +42,7 @@ from tabulate import tabulate
 
 from jmri_core import i18n
 from jmri_cli import state as _state
-from jmri_cli._common import cli_throttle_id
+from jmri_cli._common import cli_throttle_id, run_hold_in_background
 from jmri_cli._match import find_glob, find_regex
 from jmri_core.constants.cli import (
     IDLE_POLL_SECONDS,
@@ -114,6 +114,37 @@ async def _client_scope(client: JmriWsClient | None):
         yield owned
     finally:
         await owned.close()
+
+
+def _background_hold(address: int, change) -> None:
+    """Run a ramp/hold/auto-stop sequence for `address` in the background
+    (shell mode with `--hold` only — see throttle_speed/_direction_one),
+    updating state.py's cache with the real final state once it completes
+    instead of the estimate printed immediately at dispatch time.
+
+    Errors and cancellation (superseded by a newer command on the same
+    address, or the shell exiting — see run_hold_in_background and
+    shell.py's run_shell()) are swallowed here deliberately: nothing is
+    left awaiting this task directly, so an unhandled exception would
+    otherwise only surface via asyncio's default background-task
+    exception logging instead of a clean CLI-style message.
+    """
+    async def _run() -> None:
+        try:
+            data = await change
+        except asyncio.CancelledError:
+            return
+        except JmriError as exc:
+            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            return
+        speed = data.get("speed")
+        forward = data.get("forward")
+        _state.update_address(address, **{
+            **({"speed": speed} if speed is not None else {}),
+            **({"forward": forward} if forward is not None else {}),
+        })
+
+    run_hold_in_background(address, _run())
 
 
 async def _roster_names_by_address() -> dict[int, str]:
@@ -375,15 +406,28 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
     `args.seconds` is optional — omitting it holds the speed indefinitely
     (until another command or shell exit), same as today.
 
-    Whenever `args.seconds` IS given (one-shot or shell), the loco holds
-    that speed for that long, then always auto-stops before this function
-    returns (ramped via `args.rampdown` if given, else instantly) — this
-    applies in both modes: a one-shot invocation must never exit leaving
-    the layout moving with no connection left to control it, and inside
-    the shell `--hold N` means "hold for N seconds, then stop", not
-    "hold forever after N seconds" (bug found live: it used to only
-    auto-stop in one-shot mode, silently leaving the loco moving forever
-    after the hold when run inside the shell).
+    Whenever `args.seconds` IS given, the loco holds that speed for that
+    long, then always auto-stops (ramped via `args.rampdown` if given,
+    else instantly) — a one-shot invocation must never exit leaving the
+    layout moving with no connection left to control it, and inside the
+    shell `--hold N` means "hold for N seconds, then stop", not "hold
+    forever after N seconds" (bug found live: it used to only auto-stop in
+    one-shot mode, silently leaving the loco moving forever after the hold
+    when run inside the shell).
+
+    In one-shot mode this ramp/hold/auto-stop sequence is awaited inline
+    (the process must stay alive for it regardless). Inside the shell,
+    though, `--hold N` runs as a BACKGROUND task instead of blocking the
+    prompt: this function prints an immediate "started"-style
+    acknowledgement (estimated final speed/direction plus the hold
+    duration) and returns right away, while the actual ramp/hold/auto-stop
+    continues under the shell's shared connection — see
+    _common.run_hold_in_background. A second `speed`/`forward`/`reverse
+    --hold` on the SAME address cancels/supersedes any hold already
+    pending for it rather than letting both race. Any hold still pending
+    when the shell exits is awaited to completion during shutdown (see
+    shell.py's run_shell()), same guarantee the MCP server gives its own
+    background ramps.
 
     Args:
         args: Parsed CLI arguments; uses `args.loco`, `args.speed_percent`
@@ -426,6 +470,25 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
                 target_fraction = max(
                     MIN_SPEED_PERCENT, min(MAX_SPEED_PERCENT, abs(args.speed_percent))
                 ) / 100.0
+
+                if not one_shot and args.seconds is not None:
+                    _background_hold(
+                        address,
+                        _execute_speed_change(
+                            c, throttle_id,
+                            target_forward=target_forward, target_fraction=target_fraction,
+                            rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
+                        ),
+                    )
+                    forward = target_forward if target_forward is not None else acquired.get("forward")
+                    _state.update_address(
+                        address, speed=target_fraction, **({"forward": forward} if forward is not None else {})
+                    )
+                    direction_suffix = f" direction={_direction_name(forward)}" if forward is not None else ""
+                    hold_suffix = i18n.t("cli.throttle_hold_started_suffix", seconds=args.seconds)
+                    print(f"address={address} speed={target_fraction * 100:.0f}%{direction_suffix}{hold_suffix}")
+                    return 0
+
                 data = await _execute_speed_change(
                     c, throttle_id,
                     target_forward=target_forward, target_fraction=target_fraction,
@@ -561,7 +624,13 @@ async def throttle_estop(args: argparse.Namespace, *, client: JmriWsClient | Non
 async def _direction_one(
     address: int, args: argparse.Namespace, *, forward: bool, one_shot: bool, client: JmriWsClient
 ) -> int:
-    """Set direction for one address. Returns 0 on success, 1 on JMRI error, 2 if --hold was required but missing."""
+    """Set direction for one address. Returns 0 on success, 1 on JMRI error, 2 if --hold was required but missing.
+
+    Same shell-mode `--hold` backgrounding as throttle_speed (see its
+    docstring) when a hold is requested and this isn't one-shot mode: an
+    immediate "started"-style line is printed with the estimated final
+    state instead of blocking the shell prompt for the hold's duration.
+    """
     throttle_id = cli_throttle_id(address)
     try:
         acquired = await client.acquire_throttle(throttle_id, address)
@@ -570,6 +639,20 @@ async def _direction_one(
         if one_shot and current_fraction > 0.0 and args.seconds is None:
             print(i18n.t("cli.throttle_hold_required_address", address=address), file=sys.stderr)
             return 2
+
+        if not one_shot and args.seconds is not None:
+            _background_hold(
+                address,
+                _execute_speed_change(
+                    client, throttle_id,
+                    target_forward=forward, target_fraction=current_fraction,
+                    rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
+                ),
+            )
+            _state.update_address(address, forward=forward, speed=current_fraction)
+            hold_suffix = i18n.t("cli.throttle_hold_started_suffix", seconds=args.seconds)
+            print(f"address={address} direction={_direction_name(forward)}{hold_suffix}")
+            return 0
 
         data = await _execute_speed_change(
             client, throttle_id,
@@ -614,6 +697,12 @@ async def throttle_direction(
     mandatory in the shell either. A per-address `--hold`-required
     rejection (one-shot mode, that address moving) does not abort the
     rest of the loop.
+
+    In the shell, `--hold` backgrounds each address's ramp/hold/auto-stop
+    independently (see _direction_one and throttle_speed's docstring for
+    the full backgrounding design) — with multiple addresses, this
+    function returns as soon as every one of them has been dispatched,
+    not when their holds finish.
 
     Args:
         args: Parsed CLI arguments; uses `args.loco` (name, fragment, or

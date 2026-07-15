@@ -543,6 +543,34 @@ Ramp linearly to the target speed (or down to 0 for `--rampdown`) over the
 given number of seconds instead of jumping instantly. Both flags can be used
 together (ramp up, hold, ramp down) or independently.
 
+### Inside the shell, `--hold` runs in the background
+
+Everything above describes one-shot mode, which blocks for the whole
+ramp/hold/ramp-down sequence because the process has nothing else to do.
+Inside the [interactive shell](#interactive-shell-jmri-cli-with-no-arguments),
+blocking would freeze the prompt for the hold's entire duration, so
+`speed`/`forward`/`reverse` with `--hold` instead start the sequence in the
+background and return immediately with a "started" line:
+
+```
+jmri-cli> throttle speed 3 40 --hold 30
+address=3 speed=40% direction=forward (holding 30s, then auto-stop)
+jmri-cli>
+```
+
+The prompt is available again right away; the ramp, hold, and auto-stop
+keep running underneath. No further message is printed when the hold
+actually ends — the "(holding Ns, then auto-stop)" line is the only
+acknowledgement, matching the one-shot examples' own `--hold` semantics
+(always auto-stops at the end) minus the wait.
+
+A new `--hold` on the same loco **supersedes** any hold already running for
+it — the old sequence is cancelled (ramping back to 0 first, same as a
+Ctrl-C mid-hold) and the new one takes over, rather than the two racing
+each other. Exiting the shell (`exit`, Ctrl-D, Ctrl-C) cancels and waits for
+every pending background hold before closing the connection, so a hold is
+never abandoned mid-flight.
+
 ### Negative `speed_percent` is a direction-toggle shorthand, not emergency stop
 
 `throttle speed 3 -40` means "flip whichever direction the loco is

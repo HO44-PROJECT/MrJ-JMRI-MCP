@@ -32,6 +32,20 @@ See the complete MCP tools reference in [mcp-tools.md](mcp-tools.md).
 
 The goal is simple: make advanced JMRI control accessible to every model railroader, from casual operators to automation enthusiasts.
 
+## What can I say?
+
+Pick the page that matches what you want to do — each links to the next. Available in
+English and French:
+
+- **🚂 Conductor** — just want to drive trains? Start here.
+  [English](CONDUCTOR.en.md) · [Français](CONDUCTOR.fr.md)
+- **🔧 Tinkerer** — managing power, turnouts, signals, and the whole layout.
+  [English](TINKERER.en.md) · [Français](TINKERER.fr.md)
+- **🛠️ Engineer** — full tool reference, CLI, scripting, and JMRI internals.
+  [English](ENGINEER.en.md) · [Français](ENGINEER.fr.md)
+
+The conductor/tinkerer/engineer split is borrowed from [DCC-EX](https://dcc-ex.com/begin/levels.html), who came up with this framing first.
+
 ## Installation
 
 Getting started is designed to be simple.

@@ -307,6 +307,8 @@ def test_completion_top_level_empty_includes_groups_shortcuts_and_exit_help(monk
     assert "throttle" in results
     assert "cache" in results
     assert "speed" in results  # shortcut
+    assert "acquire" in results  # shortcut
+    assert "release" in results  # shortcut
     assert "exit" in results
     assert "quit" in results
     assert "help" in results

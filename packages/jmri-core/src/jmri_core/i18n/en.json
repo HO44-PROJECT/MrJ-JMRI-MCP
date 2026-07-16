@@ -85,6 +85,8 @@
             "turnout": "Control your turnouts"
         },
         "shortcut": {
+            "acquire": "Shortcut for `throttle acquire`",
+            "release": "Shortcut for `throttle release`",
             "speed": "Shortcut for `throttle speed`",
             "stop": "Shortcut for `throttle stop`",
             "estop": "Shortcut for `throttle estop`",

@@ -112,7 +112,7 @@ def _save_history() -> None:
 
 
 _GROUP_NAMES = ["cache", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
-_SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
+_SHORTCUT_NAMES = ["acquire", "release", "speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
 
 
 def _subparsers_action(parser) -> argparse._SubParsersAction | None:

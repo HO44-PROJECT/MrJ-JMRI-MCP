@@ -555,6 +555,8 @@ def build_parser() -> argparse.ArgumentParser:
     # above, so `jmri-cli speed 3 40` and `jmri-cli throttle speed 3 40`
     # are the exact same command. on/off deliberately excluded — see
     # _shortcut()'s docstring for why.
+    _shortcut(subparsers, "acquire", acquire, example="jmri-cli acquire 3")
+    _shortcut(subparsers, "release", release, example="jmri-cli release 3")
     _shortcut(subparsers, "speed", speed, example="jmri-cli speed 3 40")
     _shortcut(subparsers, "stop", stop_cmd, example="jmri-cli stop")
     _shortcut(subparsers, "estop", estop, example="jmri-cli estop 3")

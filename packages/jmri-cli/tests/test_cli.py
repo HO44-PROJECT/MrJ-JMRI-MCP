@@ -1794,6 +1794,22 @@ async def test_throttle_find_shows_dash_name_when_resolved_by_raw_address_with_n
     assert "address=99" in out and "name=-" in out
 
 
+async def test_acquire_shortcut_matches_throttle_acquire(fake_jmri, capsys):
+    """`jmri-cli acquire` (issue #61) must behave identically to `jmri-cli
+    throttle acquire` - same func, same args, same output."""
+    code, out, _ = await run(capsys, "acquire", "3")
+    assert code == 0
+    assert "address=3" in out and "(acquired)" in out
+
+
+async def test_release_shortcut_matches_throttle_release(fake_jmri, capsys):
+    code, out, _ = await run(capsys, "acquire", "3")
+    assert code == 0
+    code, out, _ = await run(capsys, "release", "3")
+    assert code == 0
+    assert "address=3 released" in out
+
+
 async def test_speed_shortcut_matches_throttle_speed(fake_jmri, capsys):
     """`jmri-cli speed` (issue #45) must behave identically to `jmri-cli
     throttle speed` - same func, same args, same output."""

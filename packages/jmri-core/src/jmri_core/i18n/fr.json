@@ -85,6 +85,8 @@
             "turnout": "Contrôler vos aiguillages"
         },
         "shortcut": {
+            "acquire": "Raccourci pour `throttle acquire`",
+            "release": "Raccourci pour `throttle release`",
             "speed": "Raccourci pour `throttle speed`",
             "stop": "Raccourci pour `throttle stop`",
             "estop": "Raccourci pour `throttle estop`",

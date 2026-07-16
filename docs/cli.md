@@ -964,7 +964,7 @@ JMRI's own live-push cache inside `jmri_ws.py`, distinct from the
 lives only within one connection's lifetime, the latter persists across CLI
 invocations.)
 
-## Top-level shortcuts: `jmri-cli speed` / `stop` / `estop` / `forward` / `reverse` / `engine-start` / `engine-stop`
+## Top-level shortcuts: `jmri-cli acquire` / `release` / `speed` / `stop` / `estop` / `forward` / `reverse` / `engine-start` / `engine-stop`
 
 The everyday throttle verbs are also available directly at the top level,
 without the `throttle` prefix — `jmri-cli speed 3 40` is exactly
@@ -975,6 +975,12 @@ one). Each shortcut is a straight mirror of its `throttle <verb>` form, so
 everything documented above for that verb applies unchanged:
 
 ```bash
+$ jmri-cli acquire 3
+address=3 speed=0.0 forward=True (acquired)
+
+$ jmri-cli release 3
+address=3 released
+
 $ jmri-cli speed 3 40 --hold 5
 address=3 speed=0%
 

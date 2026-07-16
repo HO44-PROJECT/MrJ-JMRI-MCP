@@ -5,9 +5,18 @@ server fixture also used by test_cli.py), scripting the sequence of typed
 lines by monkeypatching shell._read_line directly rather than stdin - the
 shell's own dispatch, parsing, and exit-confirmation logic all run for
 real.
+
+TAB-completion tests (bottom of file) are the exception: _make_completer/
+_leaf_names/_subparsers_action are pure argparse-tree introspection with
+no JMRI contact at all, so they're exercised directly rather than through
+run_shell()'s scripted-input flow - there's no connection or dispatch
+involved for readline to hook into.
 """
 
+import pytest
+
 from jmri_cli import shell
+from jmri_cli.parser import build_parser
 
 
 def _scripted_lines(monkeypatch, lines):
@@ -260,3 +269,135 @@ def test_shell_history_persists_across_load_save_cycles(monkeypatch, tmp_path):
     shell._load_history()
     assert shell.readline.get_current_history_length() == 2
     assert shell.readline.get_history_item(1) == "throttle acquire 3"
+
+
+# -- TAB completion -----------------------------------------------------
+#
+# _make_completer's closure reads the in-progress line via
+# readline.get_line_buffer()/get_endidx(); these tests fake both with a
+# tiny stand-in object rather than requiring a real readline session; the
+# completer only ever calls those two functions on the `readline` module,
+# so monkeypatching them is enough to drive complete(text, state) exactly
+# as a real TAB press would.
+
+
+def _completions(monkeypatch, buffer, text):
+    """All candidates complete() would offer for `text` at end of `buffer`."""
+    if shell.readline is None:
+        pytest.skip("readline not available on this platform")
+    monkeypatch.setattr(shell.readline, "get_line_buffer", lambda: buffer)
+    monkeypatch.setattr(shell.readline, "get_endidx", lambda: len(buffer))
+    complete = shell._make_completer(build_parser())
+    results = []
+    state = 0
+    while (match := complete(text, state)) is not None:
+        results.append(match)
+        state += 1
+    return results
+
+
+def test_completion_top_level_prefix_match(monkeypatch):
+    # A sole match gets a trailing space appended (see _make_completer's
+    # docstring) so the next character typed doesn't glue onto its tail.
+    assert _completions(monkeypatch, "thr", "thr") == ["throttle "]
+
+
+def test_completion_top_level_empty_includes_groups_shortcuts_and_exit_help(monkeypatch):
+    results = _completions(monkeypatch, "", "")
+    assert "throttle" in results
+    assert "cache" in results
+    assert "speed" in results  # shortcut
+    assert "exit" in results
+    assert "quit" in results
+    assert "help" in results
+
+
+def test_completion_subcommand_prefix_match(monkeypatch):
+    assert _completions(monkeypatch, "throttle sp", "sp") == ["speed "]
+
+
+def test_completion_subcommand_full_listing_on_trailing_space(monkeypatch):
+    results = _completions(monkeypatch, "throttle ", "")
+    assert "speed" in results
+    assert "acquire" in results
+    assert "release" in results
+    assert "sniff" in results
+
+
+def test_completion_flag_prefix_match_on_a_leaf(monkeypatch):
+    results = _completions(monkeypatch, "throttle speed 3 --ram", "--ram")
+    assert set(results) == {"--rampup", "--rampdown"}
+
+
+def test_completion_flag_full_listing_on_a_leaf(monkeypatch):
+    results = _completions(monkeypatch, "throttle speed 3 --", "--")
+    assert {"--rampup", "--rampdown", "--hold", "--help"} == set(results)
+
+
+def test_completion_flag_after_a_positional_value_still_resolves_leaf(monkeypatch):
+    """A positional (the address `3`) mid-line must not be mistaken for an
+    unknown subcommand token and abort the tree-walk - the cursor is still
+    under `throttle speed`, so its flags must be offered."""
+    results = _completions(monkeypatch, "throttle speed 3 --rampup 5 --h", "--h")
+    assert results == ["--help", "--hold"]
+
+
+def test_completion_flag_on_a_group_offers_only_help(monkeypatch):
+    results = _completions(monkeypatch, "throttle --", "--")
+    assert results == ["--help "]
+
+
+def test_completion_bare_tab_after_positionals_offers_flags(monkeypatch):
+    """After all of a leaf's positionals are already typed (loco + percent
+    for `throttle speed`), a bare TAB (empty text, no leading "-" typed
+    yet) must still offer that leaf's own flags - not just once the user
+    has already typed a literal "-" themselves."""
+    results = _completions(monkeypatch, "throttle speed 3 40", "")
+    assert {"--rampup", "--rampdown", "--hold"} <= {r.strip() for r in results}
+
+
+def test_completion_unambiguous_match_gets_trailing_space(monkeypatch):
+    """GNU readline doesn't reliably auto-append a space after a sole
+    match in this project's target environments, so complete() appends
+    one itself - otherwise the next character typed lands glued to the
+    tail of the just-completed word (e.g. "throttlespeed")."""
+    assert _completions(monkeypatch, "thr", "thr") == ["throttle "]
+
+
+def test_completion_ambiguous_match_gets_no_trailing_space(monkeypatch):
+    """Multiple candidates (a real ambiguity) must not get a trailing
+    space on any of them - the user still needs to keep typing/TAB again
+    to disambiguate, same as a normal shell."""
+    results = _completions(monkeypatch, "throttle speed 3 --ram", "--ram")
+    assert results == ["--rampdown", "--rampup"]
+    assert all(not r.endswith(" ") for r in results)
+
+
+def test_completion_nested_group(monkeypatch):
+    assert _completions(monkeypatch, "cache cl", "cl") == ["clean "]
+
+
+def test_completion_unknown_top_level_token_yields_nothing(monkeypatch):
+    assert _completions(monkeypatch, "foo bar", "bar") == []
+
+
+def test_completion_exit_word_offered(monkeypatch):
+    assert _completions(monkeypatch, "ex", "ex") == ["exit "]
+
+
+def test_leaf_names_matches_parser_choices():
+    parser = build_parser()
+    action = shell._subparsers_action(parser)
+    assert shell._leaf_names(parser) == sorted(action.choices.keys())
+
+
+def test_leaf_names_empty_for_a_leaf_command():
+    parser = build_parser()
+    throttle_parser = shell._subparsers_action(parser).choices["throttle"]
+    speed_parser = shell._subparsers_action(throttle_parser).choices["speed"]
+    assert shell._leaf_names(speed_parser) == []
+
+
+def test_install_completer_noop_without_readline(monkeypatch):
+    monkeypatch.setattr(shell, "readline", None)
+    shell._install_completer(build_parser())  # must not raise

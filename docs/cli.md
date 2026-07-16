@@ -108,6 +108,48 @@ just doesn't remember history between sessions or support arrow-key
 recall. Capped at 1000 lines (oldest entries drop off first). See
 "`jmri-cli cache`" below for how to clear this file.
 
+**TAB completion**: pressing TAB at the prompt completes the command word
+or subcommand you're currently typing. A completion that resolves to
+exactly one candidate gets a trailing space added automatically, so you
+can keep typing the next argument right away with no manual space:
+
+```
+jmri-cli> thr<TAB>
+jmri-cli> throttle 
+jmri-cli> throttle sp<TAB>
+jmri-cli> throttle speed 
+jmri-cli> throttle speed 3
+```
+
+With nothing typed yet, TAB lists every top-level group and shortcut
+(`cache`, `power`, `throttle`, ..., `speed`, `stop`, `forward`, ...) plus
+`exit`/`quit`/`help`. When more than one candidate matches (an ambiguous
+prefix), TAB fills in only the common part and rings the terminal bell —
+same as a normal shell — with no trailing space added, since the word
+isn't finished yet. Once the word you're typing starts with `-`, TAB
+completes that command's own `--flags` instead of subcommand names —
+including with nothing typed yet right after a leaf's positionals, e.g.
+after `throttle speed 3 40`, a bare TAB offers `--rampup`/`--rampdown`/
+`--hold`/`--help`:
+
+```
+jmri-cli> throttle speed 3 40 --ram<TAB>
+jmri-cli> throttle speed 3 40 --ramp
+jmri-cli> throttle speed 3 40 --rampu<TAB>
+jmri-cli> throttle speed 3 40 --rampup 
+```
+
+Positional values already typed on the line (a loco address, a
+percentage) don't affect this — TAB still knows you're completing
+`throttle speed`'s own flags, not starting a new subcommand. Completion
+candidates (both subcommand names and flags) are derived directly from the
+same argparse command tree the shell parses your line with, so they can
+never fall out of sync with the real command set — a new subcommand or
+flag is completable automatically, with no separate list to maintain.
+Like history, this relies on the stdlib `readline` module and is silently
+unavailable on platforms without it (the shell still works, just without
+TAB completion).
+
 ## `jmri-cli cache` / `cache info` / `cache clean`
 
 `jmri-cli` keeps two independent local files under `~/.jmri-cli/`, neither

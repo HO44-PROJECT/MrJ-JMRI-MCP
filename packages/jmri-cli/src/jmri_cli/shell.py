@@ -42,8 +42,32 @@ on the next launch. Import is wrapped in a try/except: readline is in the
 stdlib on macOS/Linux but not universally available (notably absent by
 default on some Windows Python builds) - falling back to plain input()
 without history there is preferable to crashing the whole CLI.
+
+TAB completion is wired the same way (_install_completer, guarded by the
+same `readline is None` check): the completer walks build_parser()'s own
+argparse subparser tree (_leaf_names/_subparsers_action) rather than a
+hand-maintained word list, so it can never drift out of sync with the
+real command set. It re-parses the in-progress line with shlex on every
+keypress to find which node of that tree the cursor is under, then
+offers that node's own subcommand names - or, once the word being typed
+starts with "-", that node's own --flags (_option_strings), e.g.
+--rampup/--rampdown/--hold on `throttle speed`. A positional token
+already typed (a loco address, a percentage) doesn't advance the
+tree-walk past a leaf the way a subcommand name does, so a node's flags
+stay completable no matter how many positional values precede them on
+the line. Two readline quirks needed explicit handling, found by testing
+against a real pseudo-terminal rather than trusting the docs: readline's
+default word-delimiter set includes "-", which splits "--rampup" into a
+bare word after the dashes and breaks flag matching, so
+_install_completer strips "-" from `completer_delims`; and readline does
+not reliably auto-append a trailing space after completing to a sole
+unambiguous match, so complete() appends one itself whenever exactly one
+candidate remains - otherwise the next character typed lands glued to
+the tail of the just-completed word (confirmed live: "throttle spe"+TAB
+produced "throttle speed3" instead of "throttle speed 3" without this).
 """
 
+import argparse
 import asyncio
 import contextlib
 import inspect
@@ -89,6 +113,117 @@ def _save_history() -> None:
 
 _GROUP_NAMES = ["cache", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
 _SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
+
+
+def _subparsers_action(parser) -> argparse._SubParsersAction | None:
+    """The `_SubParsersAction` directly below `parser`, or None if it's a leaf."""
+    for action in parser._subparsers._group_actions if parser._subparsers else []:
+        if isinstance(action, argparse._SubParsersAction):
+            return action
+    return None
+
+
+def _leaf_names(parser) -> list[str]:
+    """Every subcommand name one level below `parser`, or [] if it has none.
+
+    Walks argparse's own `_SubParsersAction.choices` rather than a
+    hand-maintained list, so completion never drifts from parser.py's
+    actual command tree (unlike _GROUP_NAMES/_SHORTCUT_NAMES above, which
+    only cover the front page and are fine to hand-maintain since they're
+    also just decorative help text).
+    """
+    action = _subparsers_action(parser)
+    return sorted(action.choices.keys()) if action else []
+
+
+def _option_strings(parser) -> list[str]:
+    """Every `--flag`/`-f` string this parser node accepts (e.g. `--rampup`,
+    `-h`), read from argparse's own optionals group - same rationale as
+    _leaf_names: derived from the real tree, not a hand-maintained list, so
+    a leaf's flags (throttle speed's --rampup/--rampdown/--hold, etc.) are
+    completable without this file needing to know they exist.
+    """
+    names = []
+    for action in parser._optionals._group_actions:
+        names.extend(action.option_strings)
+    return sorted(names)
+
+
+def _make_completer(parser):
+    """Build a readline completer function closed over `parser`.
+
+    Re-parses the in-progress line (via shlex, same as the real dispatch
+    path) on every TAB press to find which subparser node the cursor is
+    currently under, then offers that node's own subcommand names and
+    `--flags` (or, at the top level, the group/shortcut names plus
+    exit/help words) as completions for the word being typed. Unlike
+    run_shell()'s own argv rewrite, an unparseable partial line (unbalanced
+    quotes, still being typed) falls back to no completions rather than
+    erroring — TAB is pressed mid-edit far more often than a line is
+    actually ready.
+    """
+    top_level = {*_leaf_names(parser), *_EXIT_WORDS, *_HELP_WORDS}
+
+    def complete(text: str, state: int) -> str | None:
+        buffer = readline.get_line_buffer()[: readline.get_endidx()]
+        try:
+            tokens = shlex.split(buffer)
+        except ValueError:
+            tokens = buffer.split()
+        # If the buffer doesn't end in whitespace, the last token is the
+        # word being completed, not yet a completed command component.
+        typed_tokens = tokens if buffer.endswith((" ", "\t")) or not tokens else tokens[:-1]
+
+        node = parser
+        for token in typed_tokens:
+            # Only positional subcommand tokens walk the tree - a --flag
+            # (or a value consumed by one) mid-line doesn't change which
+            # node the cursor is under.
+            if token.startswith("-"):
+                continue
+            action = _subparsers_action(node)
+            if action is None or token not in action.choices:
+                break
+            node = action.choices[token]
+
+        if node is parser:
+            candidates = top_level
+        elif text.startswith("-"):
+            candidates = _option_strings(node)
+        else:
+            # A leaf's subcommand names (usually none - _leaf_names is []
+            # for a true leaf) plus its own flags: an empty/non-dash text
+            # at a leaf still needs its --flags offered (e.g. "speed 3 40"
+            # then bare TAB), not just once the user has already typed "-".
+            candidates = {*_leaf_names(node), *_option_strings(node)}
+        matches = sorted(name for name in candidates if name.startswith(text))
+        # GNU readline doesn't reliably auto-append a trailing space after
+        # an unambiguous single-match completion (observed empirically,
+        # not just in theory - readline_delims tweaks alone don't fix it),
+        # so this appends one explicitly: with exactly one candidate, the
+        # word is done and the cursor should land ready for the next
+        # token, not glued to the tail of the one just completed.
+        if len(matches) == 1:
+            return matches[0] + " " if state == 0 else None
+        return matches[state] if state < len(matches) else None
+
+    return complete
+
+
+def _install_completer(parser) -> None:
+    """Enable TAB completion at the shell prompt, if readline is available."""
+    if readline is None:
+        return
+    readline.set_completer(_make_completer(parser))
+    # readline's default completer_delims treats "-" as a word boundary,
+    # which splits "--rampup" into a bare word after the dashes - this is
+    # what silently broke both flag matching and the trailing space
+    # readline normally appends after an unambiguous completion. Dropping
+    # "-" (leaving the rest of the defaults untouched) makes "--rampup" one
+    # complete word, matching how it's actually typed and how the rest of
+    # this completer already reasons about it via shlex tokens.
+    readline.set_completer_delims(readline.get_completer_delims().replace("-", ""))
+    readline.parse_and_bind("tab: complete")
 
 
 def _command_list() -> str:
@@ -210,6 +345,7 @@ async def run_shell() -> None:
     parser = build_parser()
     client = JmriWsClient()
     _load_history()
+    _install_completer(parser)
     print(banner())
     print(i18n.t("cli.shell_welcome"))
 

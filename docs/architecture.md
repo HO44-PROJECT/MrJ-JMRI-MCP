@@ -869,6 +869,56 @@ constant for every address (deliberately no per-address memory of past
 current state with an explicit stderr warning; JMRI does not stop a loco
 just because its throttle's owning connection closes.
 
+**TAB completion** (`_install_completer`, `_make_completer`, guarded by the
+same `readline is None` check as history) derives its candidates from
+`build_parser()`'s own argparse tree rather than a hand-maintained word
+list, via two small helpers: `_subparsers_action(parser)` returns the
+`argparse._SubParsersAction` directly below a given parser node (or `None`
+at a leaf), and `_leaf_names(parser)` sorts its `.choices` keys. This is
+deliberately not the same pattern as the pre-existing `_GROUP_NAMES`/
+`_SHORTCUT_NAMES` module constants used for the front-page command list —
+those are acceptable to hand-maintain since they're purely decorative help
+text, but a functional completion feature drifting out of sync with the
+real command tree would be a real bug, so it walks the tree directly
+instead. `_make_completer(parser)` closes over the parser once and returns
+readline's expected `complete(text, state)` signature: on every TAB press
+it re-slices `readline.get_line_buffer()` up to `readline.get_endidx()`
+(the text left of the cursor, ignoring anything after it), re-tokenizes
+with the same `shlex.split()` the real dispatch path uses (falling back to
+plain `.split()` on `ValueError`, since TAB is pressed mid-edit — with
+unbalanced quotes — far more often than on a fully-valid line), then walks
+the parser tree one token at a time via `_subparsers_action` to find which
+node the cursor is currently under — skipping any token that starts with
+`-` (a flag, or a value already consumed by one) during the walk, since
+those don't advance which subcommand node the cursor is under; hitting an
+unrecognized *positional* token stops the walk (`break`, not an early
+`return None`) rather than discarding all completions, so a value already
+typed (a loco address, a percentage) doesn't prevent that node's own
+flags from still being offered afterward. Once the word being completed
+starts with `-`, the candidates are that node's own `--flag`/`-f` strings
+(`_option_strings`, reading `parser._optionals._group_actions` the same
+way `_leaf_names` reads the subparsers action — e.g. `--rampup`/
+`--rampdown`/`--hold` on `throttle speed`); at the top level they're
+groups + shortcuts + `exit`/`quit`/`help`; anywhere else (a leaf, with the
+in-progress word not yet starting with `-`) they're the union of that
+node's own `_leaf_names` (usually empty for a true leaf) and its
+`_option_strings` — a bare TAB right after `throttle speed 3 40`, with
+nothing typed yet, must still offer `--rampup`/`--rampdown`/`--hold`, not
+just once the user has already typed a literal `-`. Either way, candidates
+are filtered by the in-progress word's prefix and returned one at a time
+as `state` increments, per readline's completer contract — except when
+exactly one candidate matches, where `complete()` appends a trailing space
+to it before returning: GNU readline was found empirically (via a real
+pseudo-terminal, not just its documented behavior) to not reliably
+auto-append one itself in this project's target environments, and without
+it the next character typed lands glued to the tail of the just-completed
+word (e.g. "throttle spe"+TAB+"3" producing "throttle speed3" instead of
+"throttle speed 3"). `_install_completer` also strips `-` from
+`readline.get_completer_delims()`'s default set — GNU readline treats
+delimiter characters as word boundaries for completion purposes, and `-`
+being one by default splits a flag like `--rampup` into a bare word after
+the dashes, breaking prefix matching against `_option_strings`.
+
 **Ramping** (`ramp_speed`, `execute_speed_change`, both in the shared module
 `jmri_ws/ramp.py` — moved out of `jmri_cli/throttle.py` when `tools/throttle.py`
 gained its own ramped MCP tool, see "Ramped speed changes over MCP" below;

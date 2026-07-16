@@ -98,6 +98,66 @@ them moving until something else (another client, physical intervention)
 stops them, since releasing the throttle does not stop the loco. If nothing
 is moving, you're not prompted at all.
 
+**Command history**: the shell persists every line you type to
+`~/.jmri-cli/shell_history`, and reloads it the next time you launch the
+shell — up/down arrow at the prompt recalls previous commands, including
+ones from earlier sessions, exactly like a regular Unix shell. This is
+provided by the stdlib `readline` module; on a platform where `readline`
+isn't available (some Windows Python builds), the shell still works, it
+just doesn't remember history between sessions or support arrow-key
+recall. Capped at 1000 lines (oldest entries drop off first). See
+"`jmri-cli cache`" below for how to clear this file.
+
+## `jmri-cli cache` / `cache info` / `cache clean`
+
+`jmri-cli` keeps two independent local files under `~/.jmri-cli/`, neither
+of which is a source of truth for anything JMRI-side — both are safe to
+delete at any time; they just regenerate empty and refill from normal use:
+
+| File | Written by | Contents |
+| --- | --- | --- |
+| `~/.jmri-cli/throttle_state.json` | every `throttle speed`/`stop`/`forward`/`reverse`/`on`/`off`/etc | Last-known speed/direction/functions per DCC address this CLI has touched. Read by `throttle list` and the "Why `throttle` has a local cache" cache described above. |
+| `~/.jmri-cli/shell_history` | the interactive shell (see above) | Persisted readline command history, up to 1000 lines. |
+
+Neither `cache info` nor `cache clean` ever contacts JMRI — no WebSocket or
+HTTP call is made by either, so both work identically one-shot or typed at
+the shell prompt.
+
+**`cache info`** (also the bare-`jmri-cli cache` default) prints the full
+path of both files and whether each currently exists on disk:
+
+```bash
+$ jmri-cli cache info
+throttle state: /home/user/.jmri-cli/throttle_state.json (exists)
+shell history: /home/user/.jmri-cli/shell_history (not present)
+```
+
+**`cache clean`** deletes them. With no flags, both files are removed — the
+common case, a full reset. `--state` clears only `throttle_state.json`;
+`--history` clears only `shell_history`; giving both flags together is the
+same as giving neither. The printed message explicitly lists the full path
+of every file actually deleted, so it's never ambiguous what changed on
+disk. A file that doesn't already exist is silently skipped (not an error):
+
+```bash
+$ jmri-cli cache clean
+Cleared:
+  /home/user/.jmri-cli/throttle_state.json
+  /home/user/.jmri-cli/shell_history
+
+$ jmri-cli cache clean
+Nothing to clean — cache files don't exist.
+
+$ jmri-cli cache clean --state
+Cleared:
+  /home/user/.jmri-cli/throttle_state.json
+```
+
+Clearing `throttle_state.json` only affects what `jmri-cli throttle list`
+displays locally — it has no effect on JMRI or on any locomotive's actual
+state, moving or otherwise. Clearing `shell_history` only affects up/down
+arrow recall in future shell sessions.
+
 ## `jmri-cli status`
 
 One-call diagnostic: is JMRI reachable, what version is it, and what state is
@@ -430,6 +490,8 @@ truth — another client (a JMRI panel, an MCP session) changing a loco's
 speed between two `jmri-cli` calls won't be reflected here until the next
 `jmri-cli throttle ...` command touches that address again and resyncs from
 JMRI's own reply.
+
+See "`jmri-cli cache`" below for the exact file path and how to clear it.
 
 ## `jmri-cli throttle find <loco>`
 

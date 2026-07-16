@@ -72,6 +72,7 @@
     "help": {
         "group": {
             "block": "Consulter les blocs (sections de voie) de votre réseau",
+            "cache": "Gérer les fichiers locaux propres à jmri-cli (état des locomotives, historique du shell)",
             "light": "Contrôler les lumières de votre réseau",
             "power": "Contrôler l'alimentation de vos systèmes DCC",
             "roster": "Parcourir votre roster de locomotives",
@@ -128,6 +129,12 @@
             "ramp_up": "Monter en régime jusqu'à la vitesse cible sur ce nombre de secondes, au lieu d'un saut instantané",
             "ramp_down": "Descendre en régime jusqu'à la vitesse cible sur ce nombre de secondes, au lieu d'un saut instantané",
             "hold_seconds": "Maintenir la vitesse non nulle obtenue pendant ce temps, puis arrêter automatiquement (obligatoire hors du shell dès que la vitesse cible est non nulle)"
+        },
+        "cache": {
+            "info": "Afficher le chemin et l'état sur disque de chaque fichier de cache local",
+            "clean": "Supprimer les fichiers de cache locaux de jmri-cli (état des locomotives et/ou historique du shell)",
+            "clean_state_only": "Ne vider que l'état de vitesse/direction/fonctions en cache par adresse, sans toucher à l'historique du shell",
+            "clean_history_only": "Ne vider que l'historique des commandes du shell, sans toucher à l'état des locomotives en cache"
         },
         "power": {
             "status": "Afficher l'état d'alimentation de tous les systèmes",
@@ -291,6 +298,13 @@
         "throttle_error_function": "Erreur : F{function} : {message}",
         "throttle_warning_could_not_acquire": "Attention : impossible d'acquérir {address} : {message}",
         "no_light_labeled_functions": "{name} n'a aucune fonction étiquetée « lumière » dans le roster JMRI (les étiquettes sont vérifiées avec des mots-clés comme lumière/feu/phare/light/lamp/headlight) — rien à basculer",
-        "session_end_partial_failure": "ATTENTION : session-end a rencontré au moins un échec — vérifiez la sortie ci-dessus (une locomotive ou un système n'a peut-être pas confirmé son arrêt/extinction)"
+        "session_end_partial_failure": "ATTENTION : session-end a rencontré au moins un échec — vérifiez la sortie ci-dessus (une locomotive ou un système n'a peut-être pas confirmé son arrêt/extinction)",
+        "cache_target_state": "état des locomotives",
+        "cache_target_history": "historique du shell",
+        "cache_exists": "présent",
+        "cache_missing": "absent",
+        "cache_info_line": "{label} : {path} ({exists})",
+        "cache_cleaned": "Effacé :\n  {paths}",
+        "cache_already_clean": "Rien à nettoyer — les fichiers de cache n'existent pas."
     }
 }

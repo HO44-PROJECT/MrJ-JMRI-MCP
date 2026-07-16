@@ -33,6 +33,11 @@ Package layout:
     roster.py     roster [list|find|findr|findg|functions] (jmri_client.py).
     state.py      Local ~/.jmri-cli/throttle_state.json cache (last known
                   speed/direction/functions per address).
+    cache.py      cache [info|clean]: info shows the path/status of
+                  state.py's throttle_state.json and shell.py's
+                  shell_history; clean deletes one or both. Pure local
+                  file I/O, no JMRI contact - works identically one-shot
+                  or from the shell.
     throttle.py   throttle [list|find|findr|findg|acquire|release|speed|
                   stop|estop|forward|reverse|on|off|sniff] (jmri_ws.py +
                   state.py). find/findr/findg are read-only and never open
@@ -74,7 +79,7 @@ from jmri_cli.parser import build_parser
 
 __all__ = ["build_parser", "main"]
 
-_GROUP_NAMES = ["block", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
+_GROUP_NAMES = ["block", "cache", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
 _SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
 
 

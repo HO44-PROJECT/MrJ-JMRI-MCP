@@ -49,7 +49,6 @@ import contextlib
 import inspect
 import shlex
 import sys
-from pathlib import Path
 
 try:
     import readline
@@ -57,7 +56,7 @@ except ImportError:
     readline = None
 
 from jmri_core import i18n
-from jmri_cli._common import background_holds, cli_throttle_id
+from jmri_cli._common import HISTORY_FILE, HISTORY_MAX_LINES, background_holds, cli_throttle_id
 from jmri_cli.banner import banner
 from jmri_core.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_cli.parser import build_parser
@@ -68,29 +67,27 @@ from jmri_core.jmri_ws.ramp import ramp_speed
 _PROMPT = "jmri-cli> "
 _EXIT_WORDS = {"exit", "quit"}
 _HELP_WORDS = {"help", "-h", "--help"}
-_HISTORY_FILE = Path.home() / ".jmri-cli" / "shell_history"
-_HISTORY_MAX_LINES = 1000
 
 
 def _load_history() -> None:
     """Load persisted command history into readline, if available."""
     if readline is None:
         return
-    _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     with contextlib.suppress(FileNotFoundError):
-        readline.read_history_file(_HISTORY_FILE)
+        readline.read_history_file(HISTORY_FILE)
 
 
 def _save_history() -> None:
     """Persist command history for the next session, if readline is available."""
     if readline is None:
         return
-    readline.set_history_length(_HISTORY_MAX_LINES)
+    readline.set_history_length(HISTORY_MAX_LINES)
     with contextlib.suppress(OSError):
-        readline.write_history_file(_HISTORY_FILE)
+        readline.write_history_file(HISTORY_FILE)
 
 
-_GROUP_NAMES = ["light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
+_GROUP_NAMES = ["cache", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
 _SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
 
 

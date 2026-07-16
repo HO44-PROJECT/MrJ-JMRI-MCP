@@ -1,8 +1,17 @@
 """Small helpers shared across jmri-cli's command modules."""
 
 import asyncio
+from pathlib import Path
 
 from jmri_core.constants.cli import CLI_THROTTLE_ID_PREFIX
+
+HISTORY_FILE = Path.home() / ".jmri-cli" / "shell_history"
+"""Persisted readline command history for the interactive shell (shell.py).
+Lives here rather than in shell.py itself so cache.py's `cache clean` can
+reference it without importing shell.py, which would create a cycle
+(parser.py -> cache.py -> shell.py -> parser.py)."""
+
+HISTORY_MAX_LINES = 1000
 
 
 def cli_throttle_id(address: int) -> str:

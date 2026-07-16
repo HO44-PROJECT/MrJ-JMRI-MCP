@@ -246,7 +246,7 @@ def test_shell_history_persists_across_load_save_cycles(monkeypatch, tmp_path):
         pytest.skip("readline not available on this platform")
 
     history_file = tmp_path / "shell_history"
-    monkeypatch.setattr(shell, "_HISTORY_FILE", history_file)
+    monkeypatch.setattr(shell, "HISTORY_FILE", history_file)
     shell.readline.clear_history()
     shell.readline.add_history("throttle acquire 3")
     shell.readline.add_history("throttle speed 3 40 --hold 5")

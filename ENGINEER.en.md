@@ -52,6 +52,11 @@ lifecycle explicitly instead of relying on auto-acquire.
 - **State can change outside your session** — another JMRI panel, PanelPro, or a second
   MCP/CLI session can move a locomotive you're watching. Every read this project shows
   you is live, not self-referentially cached from only your own commands.
+- **`jmri-cli throttle list` and shell command history are local files, not JMRI state**
+  — `~/.jmri-cli/throttle_state.json` and `~/.jmri-cli/shell_history` are `jmri-cli`'s own
+  bookkeeping and can go stale or just get in the way during repeated test runs. `jmri-cli
+  cache info` shows their paths/status, `jmri-cli cache clean` resets one or both; neither
+  touches JMRI. See `docs/cli.md`.
 
 See `docs/architecture.md` for the full detail behind each of these, including how
 they're tested.

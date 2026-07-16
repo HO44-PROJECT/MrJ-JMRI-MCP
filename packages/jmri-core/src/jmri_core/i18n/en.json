@@ -72,6 +72,7 @@
     "help": {
         "group": {
             "block": "Check your layout blocks (track sections)",
+            "cache": "Manage jmri-cli's own local files (throttle state, shell history)",
             "light": "Control your layout lights",
             "power": "Control power to your DCC systems",
             "roster": "Browse your locomotive roster",
@@ -128,6 +129,12 @@
             "ramp_up": "Ramp up to the target speed over this many seconds, instead of jumping instantly",
             "ramp_down": "Ramp down to the target speed over this many seconds, instead of jumping instantly",
             "hold_seconds": "Hold the resulting nonzero speed this long, then auto-stop (mandatory outside the shell whenever the target speed is nonzero)"
+        },
+        "cache": {
+            "info": "Show the path and on-disk status of each local cache file",
+            "clean": "Delete jmri-cli's local cache files (throttle state and/or shell history)",
+            "clean_state_only": "Only clear the cached throttle state (last-known speed/direction/functions per address), leave shell history alone",
+            "clean_history_only": "Only clear the shell command history, leave the cached throttle state alone"
         },
         "power": {
             "status": "Show power state of every system",
@@ -291,6 +298,13 @@
         "throttle_error_function": "Error: F{function}: {message}",
         "throttle_warning_could_not_acquire": "Warning: could not acquire {address}: {message}",
         "no_light_labeled_functions": "{name} has no light-labeled functions in JMRI's roster (labels are checked for keywords like light/lamp/headlight/lumière/feu/phare) — nothing to switch",
-        "session_end_partial_failure": "WARNING: session-end had at least one failure — check the output above (some locomotive or system may not have confirmed stopped/off)"
+        "session_end_partial_failure": "WARNING: session-end had at least one failure — check the output above (some locomotive or system may not have confirmed stopped/off)",
+        "cache_target_state": "throttle state",
+        "cache_target_history": "shell history",
+        "cache_exists": "exists",
+        "cache_missing": "not present",
+        "cache_info_line": "{label}: {path} ({exists})",
+        "cache_cleaned": "Cleared:\n  {paths}",
+        "cache_already_clean": "Nothing to clean — cache files don't exist."
     }
 }

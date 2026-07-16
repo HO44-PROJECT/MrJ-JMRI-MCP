@@ -58,6 +58,8 @@ packages/
 │   │   ├── _match.py      #   find_regex/find_glob: shared matching for findr/findg leaves
 │   │   ├── _sort.py       #   sortable "by*" sibling subcommands shared across list/find
 │   │   ├── state.py       #   local throttle-state cache (~/.jmri-cli/throttle_state.json)
+│   │   ├── cache.py       #   cache [info|clean]: inspect/reset the local ~/.jmri-cli/ files
+│   │   │                  #     (throttle_state.json, shell_history) — no JMRI contact
 │   │   ├── power.py       #   power [status|on|off|get|find|findr|findg|default] (jmri_client)
 │   │   ├── roster.py      #   roster [list|find|findr|findg|functions] (jmri_client)
 │   │   ├── throttle.py    #   throttle [list|find|findr|findg|acquire|release|speed|
@@ -731,7 +733,13 @@ throttle` calls. `jmri_cli/state.py` is a small local JSON cache
 throttle-touching command writes to and that `throttle list`/`speed`
 (no value)/`stop` (no address) read from — a convenience cache the CLI
 keeps for itself, not a live source of truth (see `docs/cli.md` for the
-staleness caveat). `throttle on`/`off` with no function number resolves
+staleness caveat). This file, plus the interactive shell's own
+`~/.jmri-cli/shell_history` (readline command history), are inspected and
+cleared by `jmri_cli/cache.py`'s `cache info`/`cache clean` — see
+`docs/cli.md` for the full command reference; neither touches JMRI, so
+both work identically one-shot or from inside the shell.
+
+`throttle on`/`off` with no function number resolves
 against the loco's roster-set function labels
 (`get_roster_function_labels`, from M3) and raises an explicit error
 rather than falling back to F0 if the loco has none labeled — a

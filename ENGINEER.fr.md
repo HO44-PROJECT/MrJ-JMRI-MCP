@@ -56,6 +56,12 @@ throttle JMRI plutôt que de compter sur l'acquisition automatique.
   une seconde session MCP/CLI peut faire bouger une locomotive que tu observes. Chaque
   lecture que ce projet t'affiche est en direct, jamais un cache auto-référentiel limité
   à tes propres commandes.
+- **`jmri-cli throttle list` et l'historique de commandes du shell sont des fichiers
+  locaux, pas de l'état JMRI** — `~/.jmri-cli/throttle_state.json` et
+  `~/.jmri-cli/shell_history` sont la propre comptabilité de `jmri-cli` et peuvent devenir
+  périmés ou gêner lors de tests répétés. `jmri-cli cache info` affiche leur chemin/statut,
+  `jmri-cli cache clean` réinitialise l'un ou l'autre ; aucun des deux ne touche JMRI. Voir
+  `docs/cli.md`.
 
 Voir `docs/architecture.md` pour le détail complet derrière chacun de ces points, y
 compris comment ils sont testés.

@@ -25,7 +25,7 @@ import argparse
 import functools
 
 from jmri_core import i18n
-from jmri_cli import block, light, power, roster, sensor, session, signal, throttle, turnout
+from jmri_cli import block, cache, light, power, roster, sensor, session, signal, throttle, turnout
 
 
 def _leaf(subparsers, name: str, *, help: str, example: str, func) -> argparse.ArgumentParser:
@@ -306,6 +306,29 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     session_end_cmd.set_defaults(func=session.session_end)
+
+    # -- cache: local ~/.jmri-cli/ files, no JMRI contact -----------------
+    cache_cmd, cache_sub = _group(subparsers, "cache", default_func=cache.cache_info)
+    cache_cmd.epilog = "example:\n  jmri-cli cache"
+    cache_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
+
+    _leaf(
+        cache_sub, "info", help=i18n.t("help.cache.info"),
+        example="jmri-cli cache info", func=cache.cache_info,
+    )
+
+    cache_clean_cmd = _leaf(
+        cache_sub, "clean", help=i18n.t("help.cache.clean"),
+        example="jmri-cli cache clean", func=cache.cache_clean,
+    )
+    cache_clean_cmd.add_argument(
+        "--state", action="store_true",
+        help=i18n.t("help.cache.clean_state_only"),
+    )
+    cache_clean_cmd.add_argument(
+        "--history", action="store_true",
+        help=i18n.t("help.cache.clean_history_only"),
+    )
 
     # -- roster: bare = list -----------------------------------------
     roster_cmd, roster_sub = _group(subparsers, "roster", default_func=roster.roster_list)

@@ -97,7 +97,7 @@ from jmri_cli._common import HISTORY_FILE, HISTORY_MAX_LINES, background_holds, 
 from jmri_cli.banner import banner
 from jmri_core.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_cli.parser import build_parser
-from jmri_cli.throttle import _release_one
+from jmri_cli.throttle import _release_one, throttle_direction, throttle_speed
 from jmri_core.jmri_ws import JmriError
 from jmri_core.jmri_ws import JmriWsClient
 from jmri_core.jmri_ws.ramp import ramp_speed
@@ -126,7 +126,7 @@ def _save_history() -> None:
 
 
 _GROUP_NAMES = ["cache", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
-_SHORTCUT_NAMES = ["acquire", "release", "speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
+_SHORTCUT_NAMES = ["acquire", "release", "speed", "move", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
 
 
 def _subparsers_action(parser) -> argparse._SubParsersAction | None:
@@ -176,7 +176,10 @@ def _make_completer(parser):
     erroring — TAB is pressed mid-edit far more often than a line is
     actually ready.
     """
-    top_level = {*_leaf_names(parser), *_EXIT_WORDS, *_HELP_WORDS}
+    # "move" is a shell-only sentence form (issue #27), not a real argparse
+    # leaf, so _leaf_names(parser) doesn't see it - added explicitly so it
+    # completes at the top level like the other shortcuts do.
+    top_level = {*_leaf_names(parser), "move", *_EXIT_WORDS, *_HELP_WORDS}
 
     def complete(text: str, state: int) -> str | None:
         buffer = readline.get_line_buffer()[: readline.get_endidx()]
@@ -356,6 +359,125 @@ async def _release_held_throttles(client: JmriWsClient) -> None:
         await _release_one(address, client=client)
 
 
+_DURATION_UNITS = {"s": 1.0, "m": 60.0, "h": 3600.0}
+_SENTENCE_KEYWORDS = {"at", "for", "up", "down", "forward", "reverse"}
+
+
+def _parse_duration(token: str) -> float:
+    """Parse a duration token: bare number = seconds, or a `10s`/`5m`/`1h` suffix.
+
+    Matches `throttle speed`'s existing `--hold`/`--rampup`/`--rampdown`
+    meaning (a plain float = seconds) - this only adds the optional unit
+    suffix on top, it doesn't change what a bare number means.
+    """
+    if token and token[-1] in _DURATION_UNITS:
+        return float(token[:-1]) * _DURATION_UNITS[token[-1]]
+    return float(token)
+
+
+def _parse_speed_sentence(tokens: list[str]) -> argparse.Namespace | None:
+    """Parse the shell-only `<loco> [at] <pct> [for D] [up D] [down D] [forward|reverse]`
+    tail (loco and percentage already stripped of any leading `speed`/`move`
+    verb by the caller) into the same `argparse.Namespace` shape `throttle
+    speed`'s own parser leaf produces, so it can be dispatched through the
+    exact same throttle_speed() - this is purely a friendlier front-end for
+    typing, no new business logic (see parser.py's `speed` leaf for the
+    flag-based equivalent: `for`->--hold, `up`->--rampup, `down`->--rampdown).
+    `direction`, if present, is returned as a plain string for the caller to
+    dispatch separately via throttle_direction() - never turned into a sign
+    on speed_percent.
+
+    Returns None if `tokens` doesn't match this shape (missing loco/pct, an
+    unrecognized trailing keyword, or a malformed duration) - the caller
+    then falls back to the existing argparse-based dispatch, which will
+    produce its own, more precise error for a genuinely bad line.
+    """
+    if len(tokens) < 2:
+        return None
+    loco, *rest = tokens
+    if rest and rest[0] == "at":
+        rest = rest[1:]
+    if not rest:
+        return None
+    pct_token, *rest = rest
+    try:
+        speed_percent = float(pct_token)
+    except ValueError:
+        return None
+
+    seconds = rampup = rampdown = None
+    direction: str | None = None
+    i = 0
+    while i < len(rest):
+        keyword = rest[i]
+        if keyword in ("for", "up", "down"):
+            if i + 1 >= len(rest):
+                return None
+            try:
+                duration = _parse_duration(rest[i + 1])
+            except ValueError:
+                return None
+            if keyword == "for":
+                seconds = duration
+            elif keyword == "up":
+                rampup = duration
+            else:
+                rampdown = duration
+            i += 2
+        elif keyword in ("forward", "reverse"):
+            direction = keyword
+            i += 1
+        else:
+            return None
+
+    return argparse.Namespace(
+        loco=loco, speed_percent=speed_percent,
+        rampup=rampup, rampdown=rampdown, seconds=seconds,
+        direction=direction,
+    )
+
+
+def _parse_move_sentence(tokens: list[str]) -> argparse.Namespace | None:
+    """Parse the shell-only `move <loco> [forward|reverse] [at] <pct> [for D]
+    [up D] [down D]` sentence form: loco first, then an optional direction
+    keyword, then the same `[at] <pct> [for D] [up D] [down D]` tail as
+    `_parse_speed_sentence`. Returns the same Namespace shape (with
+    `direction` set from the leading keyword instead of a trailing one), or
+    None if it doesn't match.
+    """
+    if len(tokens) < 2:
+        return None
+    loco, *rest = tokens
+    direction: str | None = None
+    if rest and rest[0] in ("forward", "reverse"):
+        direction = rest[0]
+        rest = rest[1:]
+    parsed = _parse_speed_sentence([loco, *rest])
+    if parsed is None:
+        return None
+    if direction is not None:
+        if parsed.direction is not None and parsed.direction != direction:
+            return None
+        parsed.direction = direction
+    return parsed
+
+
+async def _dispatch_speed_sentence(ns: argparse.Namespace, client: JmriWsClient) -> None:
+    """Run a parsed speed-sentence Namespace through the existing, unmodified
+    throttle_direction()/throttle_speed() - purely sequential dispatch, exactly
+    as if the user had typed `throttle forward <loco>` (or `reverse`) followed
+    by `throttle speed <loco> <pct> ...` as two separate lines. No address/
+    prefix resolution, no acquire-to-read-state, no computed sign: `ns.direction`
+    is just a second command run first, never folded into speed_percent.
+    """
+    if ns.direction is not None:
+        direction_ns = argparse.Namespace(
+            loco=ns.loco, rampup=ns.rampup, rampdown=ns.rampdown, seconds=None,
+        )
+        await throttle_direction(direction_ns, forward=(ns.direction == "forward"), client=client)
+    await throttle_speed(ns, client=client)
+
+
 async def run_shell() -> None:
     """Run the interactive shell until the user exits.
 
@@ -439,6 +561,30 @@ async def run_shell() -> None:
 
             if argv[:2] == ["throttle", "sniff"]:
                 print(i18n.t("cli.shell_sniff_needs_own_terminal"), file=sys.stderr)
+                continue
+
+            # "speed <loco> [at] <pct> [for D] [up D] [down D] [forward|reverse]"
+            # - a friendlier alternative to "speed <loco> <pct> --hold D
+            # --rampup D --rampdown D" for typing at a live prompt (issue
+            # #27). Only engaged when a sentence keyword is actually
+            # present, so a plain "speed 3 40" is completely unaffected and
+            # still goes through the ordinary argparse shortcut below.
+            if argv and argv[0] == "speed" and any(t in _SENTENCE_KEYWORDS for t in argv[1:]):
+                sentence_args = _parse_speed_sentence(argv[1:])
+                if sentence_args is not None:
+                    await _dispatch_speed_sentence(sentence_args, client)
+                    continue
+
+            # "move <loco> [forward|reverse] [at] <pct> [for D] [up D] [down D]"
+            # - the loco-first sibling of the "speed" sentence form above
+            # (issue #27). "move" isn't a real argparse command, so any
+            # match attempt here is the only handling it gets.
+            if argv and argv[0] == "move":
+                sentence_args = _parse_move_sentence(argv[1:])
+                if sentence_args is not None:
+                    await _dispatch_speed_sentence(sentence_args, client)
+                    continue
+                print(i18n.t("cli.shell_move_sentence_invalid"), file=sys.stderr)
                 continue
 
             try:

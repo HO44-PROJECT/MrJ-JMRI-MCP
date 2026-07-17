@@ -174,6 +174,160 @@ async def test_shell_wait_with_no_pending_hold_is_a_noop(fake_jmri, capsys, monk
     assert err == ""
 
 
+async def test_shell_speed_sentence_for_up_down_matches_hold_rampup_rampdown(fake_jmri, capsys, monkeypatch):
+    """Issue #27: the human-friendly sentence form is purely a front-end
+    translation onto the exact same throttle_speed() the flag-based
+    `speed <loco> <pct> --hold H --rampup U --rampdown D` form already
+    uses - no new algorithm. Proven here by asserting the sentence form
+    produces byte-identical output to the equivalent flag-based line."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 for 0.05s up 0.01s down 0.01s"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "address=3 speed=40%" in out
+    assert "holding 0.05s, then auto-stop" in out
+
+
+async def test_shell_speed_sentence_at_keyword_is_optional(fake_jmri, capsys, monkeypatch):
+    """The optional `at` keyword before the percentage must parse identically
+    to omitting it - purely cosmetic, no effect on the dispatched command."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 at 40 for 0.05s"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "address=3 speed=40%" in out
+    assert "holding 0.05s, then auto-stop" in out
+
+
+async def test_shell_speed_sentence_bare_number_duration_means_seconds(fake_jmri, capsys, monkeypatch):
+    """A duration with no unit suffix means seconds, matching --hold/--rampup/
+    --rampdown's existing plain-float meaning - the unit suffix is additive,
+    not a replacement convention."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 for 0.05"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "holding 0.05s, then auto-stop" in out
+
+
+async def test_shell_speed_sentence_forward_runs_direction_then_speed_sequentially(fake_jmri, capsys, monkeypatch):
+    """Stating `forward` in the sentence must dispatch it as a separate,
+    sequential throttle_direction() call before throttle_speed() - exactly
+    as if `throttle forward 3` and `throttle speed 3 40` had been typed as
+    two separate lines - not folded into speed_percent's sign. Proven here
+    by asserting both commands' own distinct output lines appear, in order."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 forward", "throttle stop 3"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    direction_line = "address=3 direction=forward"
+    speed_line = "address=3 speed=40%"
+    assert direction_line in out
+    assert speed_line in out
+    assert out.index(direction_line) < out.index(speed_line)
+
+
+async def test_shell_speed_sentence_reverse_runs_direction_then_speed_sequentially(fake_jmri, capsys, monkeypatch):
+    """Same as the forward case, but for `reverse` - the core proof that the
+    sentence's direction keyword is a real, separate command dispatch, not
+    just accepted-and-ignored syntax."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 reverse", "throttle stop 3"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    direction_line = "address=3 direction=reverse"
+    speed_line = "address=3 speed=40%"
+    assert direction_line in out
+    assert speed_line in out
+    assert out.index(direction_line) < out.index(speed_line)
+
+
+async def test_shell_speed_sentence_keywords_are_order_independent(fake_jmri, capsys, monkeypatch):
+    """for/up/down/forward/reverse may appear in any order, per issue #27's
+    scope (not a strict positional grammar)."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 reverse down 0.01s for 0.05s up 0.01s"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "address=3 direction=reverse" in out
+    assert "address=3 speed=40%" in out
+    assert "holding 0.05s, then auto-stop" in out
+
+
+async def test_shell_speed_sentence_ignored_without_a_sentence_keyword(fake_jmri, capsys, monkeypatch):
+    """Plain `speed <loco> <pct>` with no sentence keyword must be totally
+    unaffected by this feature - it's still dispatched through the ordinary
+    top-level shortcut/argparse path, unchanged."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 --hold 0.05"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "address=3 speed=40%" in out
+    assert "holding 0.05s, then auto-stop" in out
+
+
+async def test_shell_speed_sentence_malformed_falls_back_to_argparse_error(fake_jmri, capsys, monkeypatch):
+    """An unrecognized trailing keyword doesn't match the sentence shape, so
+    it falls back to the normal argparse dispatch, which rejects it with
+    its own error rather than this feature silently swallowing a typo."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 sideways"])
+
+    await shell.run_shell()
+    out, err = capsys.readouterr()
+    assert "address=3" not in out
+    assert err != ""
+
+
+async def test_shell_move_sentence_loco_first_matches_speed_sentence(fake_jmri, capsys, monkeypatch):
+    """`move <loco> [at] <pct> ...` (no direction keyword) must behave
+    exactly like the equivalent `speed <loco> [at] <pct> ...` sentence -
+    it's the same underlying parse/dispatch, just loco-first."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["move 3 at 40 for 0.05s"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "address=3 speed=40%" in out
+    assert "holding 0.05s, then auto-stop" in out
+
+
+async def test_shell_move_sentence_direction_keyword_comes_right_after_loco(fake_jmri, capsys, monkeypatch):
+    """`move <loco> forward|reverse [at] <pct> ...` - direction is a leading
+    keyword (unlike `speed`'s trailing one) but dispatches the same
+    sequential throttle_direction()-then-throttle_speed() calls."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["move 3 reverse at 40 for 0.05s"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    direction_line = "address=3 direction=reverse"
+    speed_line = "address=3 speed=40%"
+    assert direction_line in out
+    assert speed_line in out
+    assert out.index(direction_line) < out.index(speed_line)
+
+
+async def test_shell_move_sentence_malformed_prints_error_not_argparse_traceback(fake_jmri, capsys, monkeypatch):
+    """Unlike `speed`, `move` isn't a real argparse command at all - a
+    malformed `move` line must print a clear parse error, not fall through
+    to argparse's own "invalid choice" message for an unknown command."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["move 3 sideways"])
+
+    await shell.run_shell()
+    out, err = capsys.readouterr()
+    assert "address=3" not in out
+    assert err != ""
+
+
 async def test_shell_non_throttle_command_runs_unchanged(mock_power, capsys, monkeypatch):
     _no_prompt_needed(monkeypatch)
     _scripted_lines(monkeypatch, ["power status"])

@@ -10,6 +10,19 @@ package version stays `0.1.0` during active milestone development).
 
 ### Added
 
+- Interactive shell: human-friendly sentence syntax for speed/direction (#27).
+  `speed <loco> [at] <pct> [for D] [up D] [down D] [forward|reverse]` and the
+  new `move <loco> [forward|reverse] [at] <pct> [for D] [up D] [down D]` are
+  now accepted at the `jmri-cli` shell prompt, shell-only — `for`/`up`/`down`
+  are friendlier names for `--hold`/`--rampup`/`--rampdown`, `at` is optional
+  filler, and a duration accepts a `10s`/`5m`/`1h` unit suffix on top of the
+  existing bare-number-means-seconds convention. Pure syntax translation onto
+  the exact same `throttle speed`/`throttle forward`/`throttle reverse`
+  commands — stating a direction dispatches `throttle_direction` as a
+  separate, sequential call before `throttle_speed`, not a computed sign
+  flip. Only engages when a sentence keyword is actually present, so a plain
+  `speed 3 40` is unaffected.
+
 - `jmri-cli` command-shape redesign: two consistency rules now apply across
   every subcommand group. **Bare group = smart default** — `jmri-cli power`
   behaves like `power status`, `jmri-cli roster` like `roster list`,

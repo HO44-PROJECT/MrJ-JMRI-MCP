@@ -25,6 +25,12 @@ bizarrerie JMRI il contourne : **[docs/architecture.md](docs/architecture.md)**.
 direct, scripting, automatisation, et l'outil de choix pour tester/déboguer contre un
 JMRI réel ou simulé. Voir **[docs/cli.md](docs/cli.md)**.
 
+Le shell interactif (`jmri-cli` sans argument) accepte aussi une syntaxe en phrase plus
+naturelle pour vitesse/direction — `speed Autorail at 30 for 30 up 5 down 6 forward` ou
+`move Autorail forward at 30 for 30` — un simple raccourci de frappe pour `throttle
+speed`/`throttle forward`, pas une nouvelle capacité. Voir « Sentence syntax » dans
+`docs/cli.md`.
+
 ## Contrôle bas niveau des locomotives
 
 Au-delà de `set_speed`/`set_direction`, il y a `set_speed_ramped` (changement de vitesse

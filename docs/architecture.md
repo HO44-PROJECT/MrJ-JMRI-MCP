@@ -932,6 +932,57 @@ awaiting of every pending hold (see exit-confirmation below) — `wait` is
 available mid-session, on demand, for any `;`-chained batch, not just at
 exit.
 
+**Sentence syntax (`speed`/`move`), shell-only.** `run_shell()` recognizes
+two friendlier alternatives to `speed <loco> <pct> [--rampup U] [--hold H]
+[--rampdown D]` before falling through to the ordinary `parser.parse_args()`
+path — a pure syntax translation, not a new algorithm:
+
+```
+speed <loco> [at] <pct> [for D] [up D] [down D] [forward|reverse]
+move  <loco> [forward|reverse] [at] <pct> [for D] [up D] [down D]
+```
+
+Detection is cheap and narrow: a line starting with `speed` is only
+intercepted if at least one sentence keyword (`at`/`for`/`up`/`down`/
+`forward`/`reverse`) is actually present (`_SENTENCE_KEYWORDS`), so a plain
+`speed 3 40` is untouched and still goes through the normal shortcut/argparse
+path below it. A line starting with `move` is *always* intercepted, since
+`move` has no argparse leaf of its own — there is nothing to fall back to,
+so a line that fails to parse prints `cli.shell_move_sentence_invalid`
+directly instead of an argparse error.
+
+`_parse_speed_sentence`/`_parse_move_sentence` (`shell.py`) tokenize the
+line into the exact same `argparse.Namespace` shape `throttle speed`'s own
+parser leaf produces (`loco`, `speed_percent`, `rampup`, `rampdown`,
+`seconds`), plus a plain `direction: str | None` field that is *not* folded
+into `speed_percent`'s sign — `for`→`seconds`, `up`→`rampup`, `down`→
+`rampdown` are pure textual renames of `--hold`/`--rampup`/`--rampdown`,
+and `_parse_duration` adds an optional `10s`/`5m`/`1h` unit suffix on top
+of the existing plain-float-means-seconds convention (a bare number is
+unchanged). `move`'s tokenizer differs only in argument order (loco, then
+an optional leading direction keyword, then the same `[at] <pct> [for D]
+[up D] [down D]` tail `_parse_speed_sentence` already parses — reused via a
+direct call, not duplicated).
+
+`_dispatch_speed_sentence` is deliberately **two independent, sequential
+calls to the existing, unmodified `throttle_direction`/`throttle_speed`**
+when a direction keyword is present — first `throttle_direction(forward=...)`
+with a synthesized `Namespace(loco, rampup, rampdown, seconds=None)`, then
+`throttle_speed` with the (always-positive) parsed speed Namespace. This is
+exactly what typing `throttle forward <loco>` followed by `throttle speed
+<loco> <pct> ...` as two separate lines would do — no address/prefix
+resolution of its own, no acquire-to-read-current-direction step, and no
+computed sign flip. An earlier implementation attempt did exactly that
+(resolved the address, acquired the throttle, read its live direction, and
+flipped `speed_percent`'s sign to match) and was rejected during review:
+the sentence syntax's whole point is a friendlier *front end* for typing,
+not a new decision-making layer, so direction is handled by literally
+reusing `throttle_direction` rather than reimplementing what it already
+does. Because the pre-flip `Namespace` always passes `seconds=None`, it
+never backgrounds its own hold — only the second, `throttle_speed` call's
+`seconds` (from `for`) can do that, matching a hand-typed `throttle forward
+<loco>` immediately followed by `throttle speed <loco> <pct> --hold H`.
+
 Reading the prompt uses `asyncio.to_thread(input, "jmri-cli> ")` rather than
 a blocking call directly on the event loop — the client's background
 reader/keepalive tasks (see `JmriWsClient` design above) need the loop free

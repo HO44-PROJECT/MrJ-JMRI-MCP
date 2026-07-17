@@ -117,6 +117,36 @@ since the shell itself is the indefinite hold (see "Mandatory `--hold`"
 below for why a plain one-shot invocation can't do this, which is exactly
 why these commands require the shell in the first place).
 
+**Sentence syntax**: inside the shell only, two friendlier alternatives to
+`speed <loco> <pct> [--rampup U] [--hold H] [--rampdown D]` are also
+accepted — a pure front-end translation onto the exact same command, not a
+different algorithm:
+
+```
+jmri-cli> speed Autorail at 30 for 30 up 5 down 6 forward
+jmri-cli> move Autorail forward at 30 for 30
+```
+
+`for`/`up`/`down` are just `--hold`/`--rampup`/`--rampdown` under a friendlier
+name, `at` is optional filler before the percentage, and a duration accepts
+a `10s`/`5m`/`1h` unit suffix (a bare number still means seconds, matching
+`--hold`'s own existing meaning). `speed` puts the loco first and the
+direction word (`forward`/`reverse`) last; `move` puts the loco first too,
+but the direction word (if any) comes right after it, before `at`/the
+percentage. Both forms accept the loco as a name, name fragment, or raw
+DCC address, same as every other `throttle` command.
+
+If you state `forward`/`reverse`, that's dispatched as a **separate,
+sequential command** — exactly as if you'd typed `throttle forward
+<loco>` (or `reverse`) on its own line right before the `speed` line, not a
+computed sign flip. This only engages when at least one of these keywords
+is actually present; a plain `speed 3 40` is completely unaffected and
+still goes through the ordinary `speed` shortcut below. A `move` line that
+doesn't parse (unrecognized trailing word, malformed duration) prints a
+parse error, since `move` isn't a real one-shot command with its own `-h`
+to fall back on. `speed -h`/`throttle speed -h` mentions this shell-only
+form in its own help text too.
+
 `throttle sniff` is rejected inside the shell with a message pointing you at
 running it in a second terminal instead — it needs its own connection and
 its own indefinite Ctrl-C loop, which would otherwise block the shell's own
@@ -1149,6 +1179,12 @@ listed in their own `shortcuts:` block under `jmri-cli -h`'s main `commands:`
 list (and the shell's own `help`), separate from the command groups so the
 two aren't confused. `jmri-cli <shortcut> -h` gives the same full help as
 the `throttle` form.
+
+`move` is listed alongside these shortcuts in the shell's own `help`, but
+it's not a real argparse command like the others — it only exists as the
+shell-only sentence form described under "Sentence syntax" above
+(`move <loco> [forward|reverse] [at] <pct> [for D] [up D] [down D]`), and
+has no one-shot `jmri-cli move ...` equivalent.
 
 ## `jmri-cli light` / `light list`
 

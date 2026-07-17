@@ -425,6 +425,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help=i18n.t("help.throttle.speed_percent"))
     _add_ramp_args(speed, rampup=True, seconds=True)
     speed.epilog = (
+        "in the interactive shell only, two friendlier sentence forms are also\n"
+        "accepted (for=--hold, up=--rampup, down=--rampdown; 'at' and units\n"
+        "like 30s/5m/1h are optional):\n"
+        "  jmri-cli> speed 3 at 40 for 30s up 5s down 5s forward\n"
+        "  jmri-cli> move 3 forward at 40 for 30s up 5s down 5s\n"
+        "\n"
         "example:\n"
         "  jmri-cli throttle speed 3 40\n"
         "  jmri-cli throttle speed 3 40 --rampup 5 --hold 30 --rampdown 5"

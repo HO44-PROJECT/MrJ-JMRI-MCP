@@ -25,6 +25,11 @@ works around: **[docs/architecture.md](docs/architecture.md)**.
 scripting, automation, and the tool of choice for testing/troubleshooting against a real
 or mocked JMRI. See **[docs/cli.md](docs/cli.md)**.
 
+The interactive shell (bare `jmri-cli`) also accepts a friendlier sentence syntax for
+speed/direction — `speed Autorail at 30 for 30 up 5 down 6 forward` or `move Autorail
+forward at 30 for 30` — a pure typing shortcut for `throttle speed`/`throttle forward`,
+not a different capability. See "Sentence syntax" in `docs/cli.md`.
+
 ## Low-level throttle control
 
 Beyond `set_speed`/`set_direction`, there's `set_speed_ramped` (gradual speed change with

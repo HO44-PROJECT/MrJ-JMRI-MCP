@@ -74,13 +74,14 @@ import sys
 
 from jmri_core import i18n
 from jmri_cli import shell as _shell
+from jmri_cli._common import is_ws_func
 from jmri_cli.banner import banner
 from jmri_cli.parser import build_parser
 
 __all__ = ["build_parser", "main"]
 
 _GROUP_NAMES = ["block", "cache", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
-_SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
+_SHORTCUT_NAMES = ["speed", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop", "wait"]
 
 
 def _command_list() -> str:
@@ -116,5 +117,20 @@ def main() -> None:
 
     parser = build_parser()
     args = parser.parse_args()
+
+    if is_ws_func(args.func):
+        # A one-shot connection always closes right after this command
+        # returns, and JMRI releases the throttle the instant that
+        # happens — releasing while a function (lights) is still active
+        # also leaves the decoder in an unpredictable state (issue #59,
+        # verified live). So these commands can't just "not persist" one-
+        # shot, they're actively unsafe — refuse instead of running them
+        # and having them silently undo themselves. Read-only/stateless
+        # commands (power, roster, status, find, cache, sniff) are
+        # unaffected, see is_ws_func.
+        command = " ".join(sys.argv[1:])
+        print(i18n.t("cli.requires_shell", command=command), file=sys.stderr)
+        sys.exit(1)
+
     exit_code = asyncio.run(args.func(args))
     sys.exit(exit_code)

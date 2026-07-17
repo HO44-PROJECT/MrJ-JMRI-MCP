@@ -109,6 +109,71 @@ async def test_shell_seconds_bounded_speed_auto_stops_inside_shell(fake_jmri, ca
     assert _state.load_state().get("3", {}).get("speed") == 0.0
 
 
+async def test_shell_semicolon_splits_into_separate_commands(fake_jmri, capsys, monkeypatch):
+    """`;` on one typed line must run each segment through the exact same
+    one-command-at-a-time dispatch as if each had been typed on its own
+    line - not a separate inner loop. Verified here via two independent,
+    unrelated commands on one line (a throttle acquire and a purely local,
+    no-JMRI-contact cache read)."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["throttle acquire 3; cache info"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "acquired" in out
+    assert "throttle state" in out
+
+
+async def test_shell_semicolon_exit_word_drops_remaining_segments(fake_jmri, capsys, monkeypatch):
+    """An exit word among `;`-separated segments exits immediately, same as
+    typing it alone - anything queued after it must never run."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["throttle acquire 3; exit; throttle acquire 7"])
+
+    await shell.run_shell()
+    out, _ = capsys.readouterr()
+    assert "address=3" in out
+    assert "address=7" not in out
+
+
+async def test_shell_wait_blocks_until_hold_finishes_before_release(fake_jmri, capsys, monkeypatch):
+    """Regression test for the real bug the user hit live: `--hold` runs in
+    the background, so a `release` right after it on the same `;`-joined
+    line used to race the hold and fail with JMRI's "Throttles must be
+    requested with an address" once the hold's own speed command landed on
+    an already-released throttle. `wait` must block until the hold
+    actually completes, so `release` only ever runs after."""
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 --hold 0.05; wait 3; release 3"])
+
+    await shell.run_shell()
+    out, err = capsys.readouterr()
+    assert "must be requested with an address" not in err
+    assert "address=3 released" in out
+
+    from jmri_cli import state as _state
+    assert _state.load_state().get("3", {}).get("speed") == 0.0
+
+
+async def test_shell_wait_with_no_address_waits_for_every_pending_hold(fake_jmri, capsys, monkeypatch):
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["speed 3 40 --hold 0.05; wait; release 3"])
+
+    await shell.run_shell()
+    out, err = capsys.readouterr()
+    assert "must be requested with an address" not in err
+    assert "address=3 released" in out
+
+
+async def test_shell_wait_with_no_pending_hold_is_a_noop(fake_jmri, capsys, monkeypatch):
+    _no_prompt_needed(monkeypatch)
+    _scripted_lines(monkeypatch, ["wait"])
+
+    await shell.run_shell()
+    out, err = capsys.readouterr()
+    assert err == ""
+
+
 async def test_shell_non_throttle_command_runs_unchanged(mock_power, capsys, monkeypatch):
     _no_prompt_needed(monkeypatch)
     _scripted_lines(monkeypatch, ["power status"])

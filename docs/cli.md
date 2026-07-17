@@ -4,9 +4,29 @@
 convenience tool for exercising the same JMRI logic the MCP tools use, without
 needing an MCP client (Claude, Kira, ...) in the loop. Useful for quick manual
 checks against a real layout, or for debugging. `power`/`roster`/`status`/
-`light`/`turnout`/`sensor`/`block`/`signal` use `jmri_client/` (one-shot HTTP);
-`throttle` uses `jmri_ws/` (a fresh WebSocket connection for the one command,
-then closed).
+`light`/`turnout`/`sensor`/`block`/`signal`/`cache`/`throttle find`/`findr`/
+`findg`/`sniff` use `jmri_client/` (one-shot HTTP) or touch no JMRI connection
+at all, and work the same whether typed one-shot from a plain terminal or at
+the shell prompt.
+
+Every other `throttle` subcommand (`acquire`/`release`/`speed`/`stop`/
+`estop`/`forward`/`reverse`/`on`/`off`/`engine-start`/`engine-stop`), plus
+`session-start`/`session-end`, **requires the interactive shell** — see
+"Interactive shell" below for why. Running one of these as a plain one-shot
+command is refused outright, before any JMRI contact:
+
+```bash
+$ jmri-cli throttle on 4
+Error: `throttle on 4` needs a persistent connection to leave the locomotive in the state it just set — run `jmri-cli` with no arguments to open the interactive shell, then run `throttle on 4` there.
+```
+
+This isn't just "won't persist" — JMRI releases a throttle the instant its
+WebSocket connection closes, and releasing while a function like lights is
+still active leaves the decoder in an unpredictable state, observed live as
+a flipped direction on the physical locomotive (issue #59). A one-shot
+connection always closes right after the command returns, so these commands
+used to silently undo themselves; they're refused now instead of running
+and then breaking their own result.
 
 See [install.md](install.md) if `jmri-cli` isn't found on your PATH.
 
@@ -19,7 +39,8 @@ export JMRI_URL=http://localhost:12080
 
 Run `jmri-cli` with **no arguments at all** to launch the interactive shell
 (see below) — a single long-lived connection for indefinite locomotive
-control. `jmri-cli -h`/`--help` instead prints the welcome banner and full
+control, and the only way to run any throttle/session command above.
+`jmri-cli -h`/`--help` instead prints the welcome banner and full
 command list and exits immediately, same as always; it does **not** launch
 the shell. Every leaf subcommand's own `-h` shows a copy-pasteable example in
 its epilog — there's no separate `examples` command, the examples live where
@@ -57,21 +78,44 @@ jmri-cli> exit
 ```
 
 The shell opens **one WebSocket connection for the whole session** and reuses
-it for every command you type — this is the fix for one-shot mode's core
-limitation (see "Why `throttle` has a local cache" below): a throttle only
-means anything on the connection that acquired it, and one-shot commands
-close their connection (and thus release the throttle) the instant they
-return. Inside the shell, a nonzero speed genuinely keeps a locomotive moving
-between commands, because the connection stays open until you exit.
+it for every command you type — this is what makes throttle/session commands
+possible at all: a throttle only means anything on the connection that
+acquired it, and JMRI releases it the instant that connection closes. Inside
+the shell, a nonzero speed or an active function (lights) genuinely persists
+between commands, because the connection stays open until you exit — this is
+the only way `jmri-cli` can leave a locomotive moving, lit, or acquired for
+you to keep working with.
 
-Every command works exactly as in one-shot mode, with one difference:
-`--hold` is **optional** inside the shell (see "Mandatory `--hold`"
-below) — omitting it just means "hold this speed until I type another
-command," since the shell itself is the indefinite hold. `throttle stop`
-additionally **requires** a locomotive argument inside the shell (e.g.
-`throttle stop 3`) — the CLI-wide `~/.jmri-cli/throttle_state.json` cache of
-every one-shot-touched address doesn't apply to the shell's own held
-throttles, so there's no "stop everything" target to default to.
+**Multiple commands on one line**: separate them with `;`, e.g.
+`throttle on 4; throttle speed 4 40` runs both in order, same as typing them
+on separate lines. `;` is purely a line-separator — nothing more: each
+segment is queued and dispatched one at a time through the exact same code
+path a normally-typed line uses, with the exact same timing. An exit word
+(`exit`/`quit`/`bye`) as one of the `;`-separated commands stops processing
+the rest of the line and exits the shell immediately, same as typing it
+alone.
+
+Because `;` adds no waiting of its own, a `--hold` and a following command
+chained on the same line run back-to-back with no delay — `speed 4 20
+--hold 5; release 4` does NOT wait for the 5-second hold, since `--hold`
+schedules the ramp/hold/auto-stop as a background task and returns
+immediately (see "`--hold`" below). Use `wait` to block until a pending
+hold actually finishes before chaining a command that should run after it:
+
+```
+jmri-cli> speed 4 20 --hold 5; wait 4; release 4
+```
+
+`wait [loco]` blocks until the named locomotive's pending `--hold` (or,
+with no `loco`, every locomotive's pending hold) finishes; it's a no-op if
+nothing is pending. Same shell-only restriction as the other stateful
+commands below.
+
+`--hold` is **optional** on `speed`/`forward`/`reverse` inside the shell —
+omitting it means "hold this speed/direction until I type another command,"
+since the shell itself is the indefinite hold (see "Mandatory `--hold`"
+below for why a plain one-shot invocation can't do this, which is exactly
+why these commands require the shell in the first place).
 
 `throttle sniff` is rejected inside the shell with a message pointing you at
 running it in a second terminal instead — it needs its own connection and
@@ -83,16 +127,22 @@ list `jmri-cli -h` shows outside the shell. `help` also works mid-line as a
 stand-in for `-h`, e.g. `throttle help` or `throttle speed help` show that
 subcommand's own help text, same as `throttle -h`/`throttle speed -h`.
 
-**Exiting with something still moving**: typing `exit`/`quit`, pressing
-Ctrl-D, or pressing Ctrl-C at the prompt all trigger the same check — if any
-locomotive held by the shell's connection has a nonzero speed, you're asked:
+**Exiting always releases what the shell holds**: typing `exit`/`quit`/`bye`,
+pressing Ctrl-D, or pressing Ctrl-C at the prompt all release every
+locomotive this shell's connection still holds before closing it — every
+active function is turned off first, with the same safety sequence
+(turn off, settle, then release) `throttle release` itself uses, so exiting
+never leaves a locomotive with lights on and no connection to safely turn
+them off (issue #59). If anything is also still moving, you're asked first:
 
 ```
 1 loco(s) in motion (address(es) 3). Stop them all before exiting? [Y/n]
 ```
 
 Enter or `y` ramps every moving locomotive down to 0 over a fixed 3-second
-window, then exits cleanly. `n` exits immediately with a stderr warning that
+window, then releases everything and exits cleanly. `n` skips the ramp-down
+(the release-with-lights-off step still happens either way) and prints a
+stderr warning that
 the locomotive(s) are being left in their current state — JMRI will keep
 them moving until something else (another client, physical intervention)
 stops them, since releasing the throttle does not stop the loco. If nothing
@@ -221,8 +271,11 @@ Systems are sorted alphabetically by name.
 
 ## `jmri-cli session-start` / `session-end`
 
-Composite session bookends. Both take no arguments and work identically
-one-shot or inside the interactive shell.
+Composite session bookends. Both take no arguments. Both sequence
+`throttle engine-start`/`throttle engine-stop` internally, which hold/release
+locomotives — so like every other throttle command, **these require the
+interactive shell** (see "Interactive shell" above); a plain one-shot
+invocation is refused before either touches JMRI.
 
 `session-start`: `power on` (every DCC system restored), then `throttle
 engine-start` (every locomotive in `state.py`'s local touched-address
@@ -565,17 +618,16 @@ a failed default-system lookup is the only case that falls back to `-`.
 
 ### Why `throttle` has a local cache
 
-Every `jmri-cli throttle` invocation opens a fresh WebSocket connection,
-acquires the loco, acts, then closes the connection — and JMRI releases the
-throttle the instant that connection closes (verified live, see
-[CLAUDE.md](../CLAUDE.md)). That means there is no live per-address state
-left to query back from JMRI between two separate `jmri-cli throttle`
-invocations. `~/.jmri-cli/throttle_state.json` is this CLI's own memory of
-what it last saw for each address; it's a convenience cache, not a source of
-truth — another client (a JMRI panel, an MCP session) changing a loco's
-speed between two `jmri-cli` calls won't be reflected here until the next
-`jmri-cli throttle ...` command touches that address again and resyncs from
-JMRI's own reply.
+A throttle only means anything on the JMRI connection that acquired it, and
+JMRI releases it the instant that connection closes (verified live, see
+[CLAUDE.md](../CLAUDE.md)) — including the shell's own connection once you
+exit. That means there is no live per-address state left to query back from
+JMRI between two separate `jmri-cli` invocations, or after a shell session
+ends. `~/.jmri-cli/throttle_state.json` is this CLI's own memory of what it
+last saw for each address; it's a convenience cache, not a source of truth —
+another client (a JMRI panel, an MCP session) changing a loco's speed won't
+be reflected here until the next `jmri-cli throttle ...` command touches
+that address again and resyncs from JMRI's own reply.
 
 See "`jmri-cli cache`" below for the exact file path and how to clear it.
 
@@ -616,19 +668,24 @@ $ jmri-cli throttle findg 'Auto*'
         4  Autorail  -        -            -               DCC++ Raijin
 ```
 
-## `jmri-cli throttle acquire <loco> [--prefix P]`
+## `jmri-cli throttle acquire [loco] [--prefix P]`
 
-Acquire a loco (by name, fragment, or DCC address) on a fresh WebSocket
-connection, print its reported speed/direction, then close the connection
-(which releases the throttle JMRI-side — this is a one-shot check, not a way
-to hold a throttle open from the shell). `--prefix` targets a specific
-command station (e.g. `R` for DCC++ Raijin) when more than one is connected.
+**Requires the interactive shell** (see "Interactive shell" above) — refused
+one-shot, since a one-shot connection would just release the throttle again
+the instant the command returns. Inside the shell, acquires a loco (by name,
+fragment, or DCC address) on the shell's shared connection and prints its
+reported speed/direction; the throttle stays held for every later command
+in the same session, until you `release` it or exit the shell (which
+releases everything automatically — see "Interactive shell" above).
+`--prefix` targets a specific command station (e.g. `R` for DCC++ Raijin)
+when more than one is connected. With no `loco`, acquires every locomotive
+in `state.py`'s local touched-address cache.
 
-```bash
-$ jmri-cli throttle acquire 3
+```
+jmri> throttle acquire 3
 address=3 speed=0.0 forward=True (acquired)
 
-$ jmri-cli throttle acquire 8
+jmri> throttle acquire 8
 address=8 speed=0.0 forward=True (acquired) system=DCC++ Taya
 ```
 
@@ -637,34 +694,34 @@ command station OTHER than JMRI's default one (an explicit `--prefix`, or
 the loco's own `DccSystem` roster attribute) — omitted on the common
 single-station case, same convention as `throttle speed` below.
 
-## `jmri-cli throttle release <loco>`
+## `jmri-cli throttle release [loco]`
 
-Acquire then immediately release a loco on a fresh connection — mirrors what
-closing an MCP client's connection does for a throttle it was holding.
+**Requires the interactive shell.** Releases a loco this shell's connection
+actually holds — with no `loco`, releases every locomotive currently held
+(same safe turn-off-then-settle-delay sequence exiting the shell uses, see
+"Interactive shell" above). Releasing something never acquired on this
+connection is a no-op print, not a JMRI round-trip.
 
-```bash
-$ jmri-cli throttle release 3
+```
+jmri> throttle release 3
 address=3 released
 ```
 
 ## `jmri-cli throttle speed <loco> [speed_percent] [--rampup S] [--rampdown S] [--hold S]`
 
-Get or set a loco's speed. With `speed_percent` given (0-100, or negative —
-see below), acquires the loco (if not already held) on a fresh connection,
-sets its speed, holds it, then auto-stops and closes the connection —
-**this writes to JMRI**. With `speed_percent` omitted, it's a read: acquires
-the loco (which resyncs on JMRI's real current speed) and prints it without
-sending any speed command.
+**Requires the interactive shell.** Get or set a loco's speed. With
+`speed_percent` given (0-100, or negative — see below), acquires the loco
+(if not already held) on the shell's shared connection and sets its speed.
+With `speed_percent` omitted, it's a read: acquires the loco (which resyncs
+on JMRI's real current speed) and prints it without sending any speed
+command.
 
-```bash
-$ jmri-cli throttle speed 3 40 --hold 5
-address=3 speed=0%
+```
+jmri> throttle speed 3 40
+address=3 speed=40% direction=forward
 
-$ jmri-cli throttle speed 3
-address=3 speed=0%
-
-$ jmri-cli throttle speed 3 40 --rampup 5 --hold 30 --rampdown 5
-address=3 speed=0%
+jmri> throttle speed 3
+address=3 speed=40%
 ```
 
 `speed_percent` is always relative to the loco's own configured maximum
@@ -676,65 +733,54 @@ no-op. The printed line also appends `system=<name>` whenever the
 locomotive is driven through a command station other than JMRI's default
 one, same convention as `throttle acquire`.
 
-### Mandatory `--hold` outside the shell
-
-One-shot mode has no way to hold a speed indefinitely (see "Why `throttle`
-has a local cache" below for the root cause), so **`--hold` is required
-whenever the target speed is nonzero** — omitting it is a hard usage error,
-exit code 2, rejected before any JMRI contact:
-
-```
-Error: --hold is required when setting a nonzero speed outside the interactive shell (use the bare `jmri-cli` shell for an indefinite hold).
-```
-
-After the `--hold` hold ends, the locomotive **always auto-stops** —
-ramped via `--rampdown` if given, else instantly — before the process exits.
-That's why the examples above all print `speed=0%`: that's the state *after*
-the auto-stop, not the held speed. This is a safety-first default: a
-one-shot command can never leave a locomotive moving unattended once it
-returns.
-
-For `forward`/`reverse` (below), the same rule applies but can only be
-checked *after* the initial acquire (the current speed has to be read first
-to know whether the rule even applies to a pure direction change).
-
-Use the [interactive shell](#interactive-shell-jmri-cli-with-no-arguments)
-instead whenever you actually want a locomotive to keep moving after the
-command returns.
-
 ### `--rampup`/`--rampdown`
 
 Ramp linearly to the target speed (or down to 0 for `--rampdown`) over the
 given number of seconds instead of jumping instantly. Both flags can be used
 together (ramp up, hold, ramp down) or independently.
 
-### Inside the shell, `--hold` runs in the background
+### `--hold`: run a timed ramp/hold/auto-stop in the background
 
-Everything above describes one-shot mode, which blocks for the whole
-ramp/hold/ramp-down sequence because the process has nothing else to do.
-Inside the [interactive shell](#interactive-shell-jmri-cli-with-no-arguments),
-blocking would freeze the prompt for the hold's entire duration, so
-`speed`/`forward`/`reverse` with `--hold` instead start the sequence in the
-background and return immediately with a "started" line:
+Without `--hold`, `speed`/`forward`/`reverse` set the target and return
+immediately — the shell's connection keeps the loco at that speed
+indefinitely, same as any other value it holds, until you change it again,
+`stop`/`release` it, or exit the shell.
+
+With `--hold S`, the command instead starts a ramp/hold/auto-stop sequence
+**in the background** and returns immediately with a "started" line — a
+blocking wait would freeze the shell prompt for the hold's entire duration:
 
 ```
-jmri-cli> throttle speed 3 40 --hold 30
+jmri> throttle speed 3 40 --hold 30
 address=3 speed=40% direction=forward (holding 30s, then auto-stop)
-jmri-cli>
+jmri>
 ```
 
 The prompt is available again right away; the ramp, hold, and auto-stop
 keep running underneath. No further message is printed when the hold
 actually ends — the "(holding Ns, then auto-stop)" line is the only
-acknowledgement, matching the one-shot examples' own `--hold` semantics
-(always auto-stops at the end) minus the wait.
+acknowledgement.
 
 A new `--hold` on the same loco **supersedes** any hold already running for
 it — the old sequence is cancelled (ramping back to 0 first, same as a
 Ctrl-C mid-hold) and the new one takes over, rather than the two racing
-each other. Exiting the shell (`exit`, Ctrl-D, Ctrl-C) cancels and waits for
-every pending background hold before closing the connection, so a hold is
-never abandoned mid-flight.
+each other. Exiting the shell (or `session-end`) waits for every still-
+pending hold to finish before releasing anything, so a hold is never cut
+short by shutdown.
+
+`throttle release` does **not** wait for or cancel a pending hold on that
+address — it just releases whatever this connection currently holds, right
+away. If you chain a hold and a release on the same line (`throttle speed
+3 40 --hold 5; throttle release 3`), the release runs immediately, before
+the hold's 5 seconds are up, and the hold's own speed command then fails
+once it tries to act on the now-released throttle. Put an explicit `wait`
+between them to run the release only after the hold completes:
+
+```
+jmri> throttle speed 3 40 --hold 5; throttle wait 3; throttle release 3
+```
+
+See "Interactive shell" above for `wait`'s full behavior.
 
 ### Negative `speed_percent` is a direction-toggle shorthand, not emergency stop
 
@@ -979,6 +1025,30 @@ ramp/direction step is skipped (nothing to stop), but the lights-off and
 release steps still run. If no locomotive has been touched yet and
 `[loco]` is omitted, prints a note and exits 0.
 
+## `jmri-cli throttle wait [loco]`
+
+**Requires the interactive shell.** Blocks until a pending `--hold`
+background sequence finishes — for one locomotive if `[loco]` is given, or
+for every locomotive with a hold currently pending if it's omitted. A
+no-op (returns immediately) if nothing is pending for the given target.
+
+This is the only supported way to sequence a `--hold` and a following
+command in a `;`-chained batch: `--hold` schedules its ramp/hold/auto-stop
+as a background task and returns immediately (see "`--hold`" under
+`throttle speed` above), so without an explicit `wait` a following command
+on the same line races it instead of running after it.
+
+```
+jmri> throttle speed 3 40 --hold 5; throttle wait 3; throttle release 3
+address=3 speed=40% direction=forward (holding 5s, then auto-stop)
+address=3 released
+```
+
+`wait` itself prints nothing on success — it silently blocks, then returns,
+so the next command's own output is the next thing printed (here, `release`'s
+line, only after the hold has actually ramped back down to 0 in the
+background).
+
 ## `jmri-cli throttle sniff [-a N ...] [--show-pong]`
 
 Opens a WebSocket connection and prints every JMRI message it receives,
@@ -1025,15 +1095,16 @@ JMRI's own live-push cache inside `jmri_ws.py`, distinct from the
 lives only within one connection's lifetime, the latter persists across CLI
 invocations.)
 
-## Top-level shortcuts: `jmri-cli acquire` / `release` / `speed` / `stop` / `estop` / `forward` / `reverse` / `engine-start` / `engine-stop`
+## Top-level shortcuts: `jmri-cli acquire` / `release` / `speed` / `stop` / `estop` / `forward` / `reverse` / `engine-start` / `engine-stop` / `wait`
 
 The everyday throttle verbs are also available directly at the top level,
 without the `throttle` prefix — `jmri-cli speed 3 40` is exactly
 `jmri-cli throttle speed 3 40`, same parser, same function, same output,
 same rules (mandatory `--hold` outside the shell, ramping, no-op/cache
 behavior, `[loco]`-optional cache fallback where the underlying command has
-one). Each shortcut is a straight mirror of its `throttle <verb>` form, so
-everything documented above for that verb applies unchanged:
+one, shell-only restriction for `release`/`wait`). Each shortcut is a
+straight mirror of its `throttle <verb>` form, so everything documented
+above for that verb applies unchanged:
 
 ```bash
 $ jmri-cli acquire 3
@@ -1059,6 +1130,12 @@ address=3 started (forward, 3 light function(s) on)
 
 $ jmri-cli engine-stop 3
 address=3 stopped (forward, lights off, released)
+```
+
+```
+jmri-cli> speed 3 40 --hold 5; wait 3; release 3
+address=3 speed=40% direction=forward (holding 5s, then auto-stop)
+address=3 released
 ```
 
 These work identically one-shot and inside the interactive shell (the shell

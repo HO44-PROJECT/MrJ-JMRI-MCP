@@ -42,7 +42,7 @@ from tabulate import tabulate
 
 from jmri_core import i18n
 from jmri_cli import state as _state
-from jmri_cli._common import cli_throttle_id, run_hold_in_background
+from jmri_cli._common import cli_throttle_id, run_hold_in_background, wait_for_holds
 from jmri_cli._match import find_glob, find_regex
 from jmri_core.constants.cli import (
     IDLE_POLL_SECONDS,
@@ -729,6 +729,40 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
     _state.update_address(address, speed=speed, **({"forward": forward} if forward is not None else {}))
     direction_suffix = f" direction={_direction_name(forward)}" if forward is not None else ""
     print(f"address={address} speed={(speed or 0) / scale * 100:.0f}%{direction_suffix}{system_suffix}")
+    return 0
+
+
+async def throttle_wait(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+    """Block until pending `--hold` background sequences finish.
+
+    Only meaningful inside the shell (a one-shot invocation can't have any
+    background hold pending — see is_ws_func). With `args.loco` given,
+    waits only for that address's hold, if any is pending; with none,
+    waits for every hold currently pending on this shell's connection.
+
+    This is the only supported way to sequence a `--hold` and a following
+    command in a `;`-chained batch (e.g. `speed 4 20 --hold 5; wait 4;
+    release 4`) — `;` is purely a line-separator (see shell.py), so
+    without an explicit `wait` step a following command runs immediately,
+    racing the hold instead of waiting for it.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
+            DCC address, or None for every currently pending hold).
+        client: Shared connection when called from the interactive shell.
+
+    Returns:
+        0 always (nothing pending is not an error).
+    """
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        addresses = None
+    await wait_for_holds(addresses)
     return 0
 
 

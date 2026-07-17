@@ -830,12 +830,19 @@ single-threaded `asyncio`, one event loop doing cooperative multitasking:
   prompt's `input()` all run concurrently on the one event loop — see
   `asyncio.to_thread(input, ...)` below). The locomotive only stops when a
   later command says so, or the shell exits (see exit-confirmation below).
-  **Caveat**: if `--hold` *is* given inside the shell too (e.g.
-  `speed 3 60 --hold 10`), the shell prompt blocks for those 10 seconds
-  and then auto-stops, exactly like one-shot — `--hold N` always means
-  "hold for N seconds then stop, blocking the caller for that long"
-  regardless of mode. Omit `--hold` in the shell to get the immediate-return,
-  indefinite-hold behavior described above.
+  **`--hold` inside the shell also returns immediately**, unlike one-shot:
+  `speed 3 60 --hold 10` prints an acknowledgement right away and hands the
+  prompt straight back, while the ramp/hold/auto-stop sequence runs as a
+  background `asyncio.Task` under the shell's shared connection (see
+  `_common.run_hold_in_background`/`background_holds`) rather than blocking
+  the caller for those 10 seconds. A second `--hold` on the same address
+  supersedes (cancels) any hold already pending for it. Because `;` on one
+  typed line is purely a line-separator with no waiting of its own (see
+  "Multiple commands on one line" below), a `--hold` and a following
+  command chained on the same line race unless `throttle wait [loco]` is
+  inserted between them to block until the pending hold actually finishes.
+  Any hold still pending when the shell exits is awaited to completion
+  during shutdown rather than left to race the exit sequence.
 
 **Why one-shot mode can never reliably hold a nonzero speed.** Every
 `jmri-cli throttle` invocation opened a fresh `JmriWsClient`, acted, then
@@ -899,6 +906,31 @@ the session alive instead. `throttle sniff` is special-cased and rejected
 before parsing (needs its own connection and its own indefinite Ctrl-C loop,
 which would otherwise block the shell's own `input()` loop) with a message
 redirecting to a second terminal.
+
+**Multiple commands on one line (`;`).** A typed (or piped) line is split
+on `;` into a `pending_lines` queue before any of it is parsed; each
+segment is then dispatched one at a time through the exact same
+parse-then-`args.func(...)` path a normally-typed line uses — not a
+separate inner loop, not special-cased dispatch. `;` is purely a
+line-separator: it adds no waiting of its own between segments, and an
+exit word (`exit`/`quit`/`bye`) among the segments stops processing the
+rest of the line and exits immediately, same as typing it alone. Because
+`--hold` returns immediately even inside the shell (see above), a `--hold`
+and a following command chained on the same line race — e.g. `speed 4 20
+--hold 5; release 4` releases the throttle right away, before the hold's
+5 seconds are up, so the hold's own speed command then fails once it acts
+on the now-released throttle (reproduced live, JMRI error "Throttles must
+be requested with an address"). `throttle_wait(args, *, client=None)` in
+`throttle.py` (backed by `_common.wait_for_holds`, which awaits either one
+address's task from `background_holds` or every task currently pending,
+suppressing `asyncio.CancelledError`) is the fix: it blocks until the
+named locomotive's hold (or every pending hold, with no address given)
+actually finishes, so a batch can sequence `speed 4 20 --hold 5; wait 4;
+release 4` and have the release only ever run after the hold completes.
+This is a distinct mechanism from `run_shell()`'s own shutdown-time
+awaiting of every pending hold (see exit-confirmation below) — `wait` is
+available mid-session, on demand, for any `;`-chained batch, not just at
+exit.
 
 Reading the prompt uses `asyncio.to_thread(input, "jmri-cli> ")` rather than
 a blocking call directly on the event loop — the client's background

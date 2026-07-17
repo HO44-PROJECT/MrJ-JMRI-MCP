@@ -8,12 +8,26 @@ docstring for the full explanation and the `client=` kwarg pattern every
 WS-based throttle_* function supports for exactly this reason).
 
 Reuses build_parser() and the existing command functions rather than
-duplicating argparse or dispatch logic: each typed line is split with
-shlex, parsed with the same parser as one-shot mode, and its `func` is
-called with this shell's shared client if that function accepts a
-`client` keyword (checked via inspect.signature, which understands
-functools.partial natively — no manual unwrapping needed for the
-forward/reverse leaves).
+duplicating argparse or dispatch logic. `;` is just a way to type several
+lines at once: a line containing `;` is split into segments and queued, one
+per remaining loop iteration, so "throttle on 4; release 4" runs exactly as
+if "throttle on 4" and "release 4" had been typed and entered separately —
+same one-command-at-a-time dispatch, same timing, no special-cased inner
+loop. Each command is split with shlex, parsed with the same parser as
+one-shot mode, and its `func` is called with this shell's shared client if
+that function accepts a `client` keyword (checked via inspect.signature,
+which understands functools.partial natively — no manual unwrapping
+needed for the forward/reverse leaves). An exit word (bye/exit/quit) as
+one of the `;`-separated segments exits the shell immediately and drops
+any remaining queued segments, same as typing it alone.
+
+Exiting the shell (bye/exit/quit/Ctrl-D/Ctrl-C, after the stop-moving-
+locos prompt) always releases every throttle this connection still holds
+before closing it — see _release_held_throttles — so lights/functions
+left on are turned off safely first, not just dropped via the implicit
+release JMRI does on disconnect (issue #59, verified live: that implicit
+path skips the turn-off-then-settle-delay sequence and can flip a
+locomotive's direction).
 
 `throttle sniff` is rejected here: it needs its own connection and its own
 indefinite Ctrl-C loop, which would otherwise block this shell's own
@@ -70,7 +84,6 @@ produced "throttle speed3" instead of "throttle speed 3" without this).
 import argparse
 import asyncio
 import contextlib
-import inspect
 import shlex
 import sys
 
@@ -80,10 +93,11 @@ except ImportError:
     readline = None
 
 from jmri_core import i18n
-from jmri_cli._common import HISTORY_FILE, HISTORY_MAX_LINES, background_holds, cli_throttle_id
+from jmri_cli._common import HISTORY_FILE, HISTORY_MAX_LINES, background_holds, cli_throttle_id, is_ws_func
 from jmri_cli.banner import banner
 from jmri_core.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
 from jmri_cli.parser import build_parser
+from jmri_cli.throttle import _release_one
 from jmri_core.jmri_ws import JmriError
 from jmri_core.jmri_ws import JmriWsClient
 from jmri_core.jmri_ws.ramp import ramp_speed
@@ -242,14 +256,6 @@ def _command_list() -> str:
     return "\n".join(lines)
 
 
-def _is_ws_func(func) -> bool:
-    """Whether `func` (possibly a functools.partial) accepts a `client` keyword."""
-    try:
-        return "client" in inspect.signature(func).parameters
-    except (TypeError, ValueError):
-        return False
-
-
 async def _read_line() -> str | None:
     """Read one line from the prompt, or None on EOF (Ctrl-D)."""
     try:
@@ -327,6 +333,29 @@ async def _confirm_exit(client: JmriWsClient) -> bool:
     return True
 
 
+async def _release_held_throttles(client: JmriWsClient) -> None:
+    """Release every address this shell's connection holds, on every exit
+    path (bye/exit/quit/Ctrl-D/Ctrl-C).
+
+    JMRI releases a throttle the instant its connection closes regardless
+    — but doing that implicitly, via client.close() alone, skips the
+    turn-off-every-active-function-then-settle-delay sequence _release_one
+    already does for an explicit `release` (issue #59, verified live:
+    releasing with a function like lights still active leaves the decoder
+    in an unpredictable state, e.g. a flipped direction). Reuses
+    _release_one exactly rather than duplicating that sequence, so exiting
+    the shell is exactly as safe as typing `release` for every held
+    address before leaving.
+    """
+    addresses = sorted({
+        info["address"]
+        for info in client.all_throttle_states().values()
+        if info.get("address") is not None
+    })
+    for address in addresses:
+        await _release_one(address, client=client)
+
+
 async def run_shell() -> None:
     """Run the interactive shell until the user exits.
 
@@ -349,29 +378,47 @@ async def run_shell() -> None:
     print(banner())
     print(i18n.t("cli.shell_welcome"))
 
+    pending_lines: list[str] = []
+
     try:
         while True:
-            try:
-                line = await _read_line()
-            except KeyboardInterrupt:
-                print()
-                if await _confirm_exit(client):
-                    return
-                continue
+            if pending_lines:
+                line = pending_lines.pop(0)
+            else:
+                try:
+                    line = await _read_line()
+                except KeyboardInterrupt:
+                    print()
+                    if await _confirm_exit(client):
+                        return
+                    continue
 
-            if line is None:
-                print()
-                if await _confirm_exit(client):
-                    return
-                continue
+                if line is None:
+                    print()
+                    if await _confirm_exit(client):
+                        return
+                    continue
+
+            # ";" separates multiple commands on one typed line - queue the
+            # rest and process just the first now, so each one runs through
+            # this same loop exactly as if it had been typed on its own
+            # line (same one-command-at-a-time timing/dispatch, no separate
+            # inner loop duplicating this logic).
+            if ";" in line:
+                segments = line.split(";")
+                pending_lines[:0] = segments[1:]
+                line = segments[0]
 
             stripped = line.strip()
             if not stripped:
                 continue
+
             if stripped in _EXIT_WORDS:
                 if await _confirm_exit(client):
                     return
+                pending_lines.clear()
                 continue
+
             if stripped in _HELP_WORDS:
                 print(banner())
                 print(_command_list())
@@ -399,7 +446,7 @@ async def run_shell() -> None:
             except SystemExit:
                 continue
 
-            kwargs = {"client": client} if _is_ws_func(args.func) else {}
+            kwargs = {"client": client} if is_ws_func(args.func) else {}
             try:
                 await args.func(args, **kwargs)
             except JmriError as exc:
@@ -407,4 +454,5 @@ async def run_shell() -> None:
     finally:
         _save_history()
         await _cancel_pending_holds()
+        await _release_held_throttles(client)
         await client.close()

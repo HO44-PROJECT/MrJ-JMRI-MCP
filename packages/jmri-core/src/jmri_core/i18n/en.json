@@ -93,7 +93,8 @@
             "forward": "Shortcut for `throttle forward`",
             "reverse": "Shortcut for `throttle reverse`",
             "engine-start": "Shortcut for `throttle engine-start`",
-            "engine-stop": "Shortcut for `throttle engine-stop`"
+            "engine-stop": "Shortcut for `throttle engine-stop`",
+            "wait": "Shortcut for `throttle wait`"
         },
         "sort": {
             "byid": "Sort by system ID",
@@ -185,7 +186,9 @@
             "engine_stop_loco": "Locomotive name, fragment, or DCC address (omit to stop every locomotive this CLI has touched)",
             "sniff": "Dump every JMRI WebSocket message live, until Ctrl-C",
             "sniff_address": "DCC address to acquire first (repeatable) so its pushes from OTHER clients show up too; omit to just watch this connection",
-            "sniff_show_pong": "Include keepalive pong messages (hidden by default, no info)"
+            "sniff_show_pong": "Include keepalive pong messages (hidden by default, no info)",
+            "wait": "Block until a pending --hold sequence finishes, for one locomotive or every one with a hold pending",
+            "wait_loco": "Locomotive name, fragment, or DCC address (omit to wait for every pending hold)"
         },
         "light": {
             "list": "Show every light's state",
@@ -278,6 +281,7 @@
         "shell_stop_prompt": "{n} loco(s) in motion (address(es) {addrs}). Stop them all before exiting? [Y/n] ",
         "shell_exit_no_stop": "Exiting without stopping — locomotives left in their current state.",
         "shell_sniff_needs_own_terminal": "Error: `throttle sniff` needs its own connection and its own indefinite Ctrl-C loop — run it in a separate terminal instead: `jmri-cli throttle sniff ...`",
+        "requires_shell": "Error: `{command}` needs a persistent connection to leave the locomotive in the state it just set — run `jmri-cli` with no arguments to open the interactive shell, then run `{command}` there.",
         "no_systems_match": "No power systems match {pattern!r}",
         "not_every_system_confirmed": "WARNING: not every system confirmed {state_name} after re-read",
         "jmri_reachable": "JMRI reachable, version {version}",

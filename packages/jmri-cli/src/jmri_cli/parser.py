@@ -543,6 +543,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     function_cmd.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
 
+    wait_cmd = _leaf(
+        throttle_sub, "wait", help=i18n.t("help.throttle.wait"),
+        example="jmri-cli throttle wait 3", func=throttle.throttle_wait,
+    )
+    wait_cmd.add_argument("loco", nargs="?", default=None,
+                           help=i18n.t("help.throttle.wait_loco"))
+
     sniff = _leaf(
         throttle_sub, "sniff", help=i18n.t("help.throttle.sniff"),
         example="jmri-cli throttle sniff -a 3 -a 7", func=throttle.throttle_sniff,
@@ -570,6 +577,7 @@ def build_parser() -> argparse.ArgumentParser:
     _shortcut(subparsers, "reverse", reverse, example="jmri-cli reverse 3")
     _shortcut(subparsers, "engine-start", engine_start_cmd, example="jmri-cli engine-start 3")
     _shortcut(subparsers, "engine-stop", engine_stop_cmd, example="jmri-cli engine-stop")
+    _shortcut(subparsers, "wait", wait_cmd, example="jmri-cli wait 3")
 
     # -- light: bare = list; on/off take an optional fuzzy target -----
     light_cmd, light_sub = _group(subparsers, "light", default_func=light.light_list)

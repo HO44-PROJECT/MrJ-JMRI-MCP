@@ -1,6 +1,8 @@
 """Small helpers shared across jmri-cli's command modules."""
 
 import asyncio
+import contextlib
+import inspect
 from pathlib import Path
 
 from jmri_core.constants.cli import CLI_THROTTLE_ID_PREFIX
@@ -31,6 +33,29 @@ def cli_throttle_id(address: int) -> str:
     return f"{CLI_THROTTLE_ID_PREFIX}{address}"
 
 
+def is_ws_func(func) -> bool:
+    """Whether `func` (a parser leaf's `args.func`, possibly a
+    functools.partial) accepts a `client` keyword — i.e. it holds/mutates
+    JMRI throttle state (acquire, release, speed, functions, engine-start/
+    stop, session-start/end) rather than being a one-shot HTTP/local-cache
+    command (power, roster, status, find, cache).
+
+    A one-shot invocation of one of these can never leave the locomotive
+    in the state it just set: JMRI releases a throttle the instant its
+    WebSocket connection closes, and jmri-cli's one-shot connection always
+    closes right after the command returns (see throttle.py's module
+    docstring and `_client_scope`). Releasing while a function like lights
+    is still active also leaves the decoder in an unpredictable state
+    (issue #59, verified live) — so this is not just "won't persist", it's
+    actively unsafe. `main()` uses this to refuse these commands outside
+    the shell instead of silently running them and undoing themselves.
+    """
+    try:
+        return "client" in inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 background_holds: dict[int, asyncio.Task] = {}
 """Live asyncio.Task handles for shell-mode `--hold` sequences running in the
 background, keyed by DCC address (not a flat set — see run_hold_in_background,
@@ -41,6 +66,24 @@ is never abandoned on a clean exit, mirroring jmri-mcp's own
 tools/_common.py:background_tasks/run_in_background for the analogous
 set_speed_ramped case.
 """
+
+
+async def wait_for_holds(addresses: list[int] | None) -> None:
+    """Block until pending `--hold` background tasks finish.
+
+    With `addresses` given, waits only for those; with None, waits for
+    every hold currently pending. Lets a `;`-chained batch place an
+    explicit "wait for the hold to finish" step between a `--hold` and a
+    following command (e.g. `speed 4 20 --hold 5; wait 4; release 4`)
+    instead of the two racing — see throttle.py's `wait` command.
+    """
+    if addresses is None:
+        tasks = list(background_holds.values())
+    else:
+        tasks = [background_holds[a] for a in addresses if a in background_holds]
+    for task in tasks:
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def run_hold_in_background(address: int, coro) -> None:

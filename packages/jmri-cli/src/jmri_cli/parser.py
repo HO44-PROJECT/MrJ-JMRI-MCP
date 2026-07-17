@@ -232,6 +232,10 @@ def build_parser() -> argparse.ArgumentParser:
         power_sub, "status", help=i18n.t("help.power.status"),
         example="jmri-cli power status", func=power.power_status,
     )
+    _sort_siblings(
+        power_sub, power.SORT_FIELDS, func=power.power_status,
+        example_prefix="jmri-cli power",
+    )
 
     on_ = _leaf(
         power_sub, "on", help=i18n.t("help.power.on"),

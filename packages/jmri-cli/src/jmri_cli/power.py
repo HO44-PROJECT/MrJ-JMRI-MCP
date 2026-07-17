@@ -13,7 +13,8 @@ from tabulate import tabulate
 
 from jmri_core import i18n
 from jmri_cli._match import find_glob, find_regex
-from jmri_core.constants.cli import POWER_STATE_NAMES
+from jmri_cli._sort import mark_sorted_header, sort_rows
+from jmri_core.constants.cli import POWER_STATE_NAMES, SORT_INDICATOR
 from jmri_core.jmri_client import (
     JmriError,
     get_systems,
@@ -29,21 +30,39 @@ def _state_name(system: dict) -> str:
     return POWER_STATE_NAMES.get(system.get("state"), "UNKNOWN")
 
 
-def _print_systems_table(systems: list[dict]) -> None:
-    """Print every system's state as a `tabulate()` table, sorted alphabetically by name."""
-    rows = [
-        [s.get("name", "?"), _state_name(s), "yes" if s.get("default") else ""]
-        for s in sorted(systems, key=lambda s: str(s.get("name", "")).casefold())
-    ]
-    headers = [i18n.t("headers.system"), i18n.t("headers.state"), i18n.t("headers.default")]
+# `power by*` subcommand name -> (index into _row()'s tuple, casefold?).
+SORT_FIELDS: dict[str, tuple[int, bool]] = {
+    "byid": (0, False),
+    "byname": (1, True),
+    "bystate": (2, True),
+}
+
+
+def _headers() -> list[str]:
+    return [i18n.t("headers.system_id"), i18n.t("headers.system"),
+            i18n.t("headers.state"), i18n.t("headers.default")]
+
+
+def _row(system: dict) -> list:
+    return [system.get("prefix", "?"), system.get("name", "?"),
+            _state_name(system), "yes" if system.get("default") else ""]
+
+
+def _print_systems_table(systems: list[dict], sort_by: str = "byname") -> None:
+    """Print every system's SystemID/state as a `tabulate()` table, sorted per sort_by."""
+    rows = sort_rows([_row(s) for s in systems], SORT_FIELDS, sort_by)
+    headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
 
 
 async def power_status(args: argparse.Namespace) -> int:
-    """Print the power state of every system, sorted alphabetically.
+    """Print the power state of every system, sorted alphabetically by default.
 
     Args:
-        args: Parsed CLI arguments; no fields used.
+        args: Parsed CLI arguments; `args.sort_by` (one of SORT_FIELDS, e.g.
+            "byid"/"bystate") picks the sort order - set by parser.py to a
+            fixed value per `by*` sibling leaf, defaults to "byname" for
+            bare `power`/`power status`.
 
     Returns:
         0 on success, 1 if JMRI is unreachable.
@@ -53,7 +72,8 @@ async def power_status(args: argparse.Namespace) -> int:
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
-    _print_systems_table(systems)
+    sort_by = getattr(args, "sort_by", None) or "byname"
+    _print_systems_table(systems, sort_by)
     return 0
 
 

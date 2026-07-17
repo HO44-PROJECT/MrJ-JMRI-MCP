@@ -9,12 +9,14 @@ subcommands and cli/shell.py's exit-confirmation use — one implementation,
 shared by the CLI and the LLM-facing MCP surface.
 """
 
+import asyncio
 import logging
 
 from jmri_core import i18n, jmri_client
 from jmri_core.constants.client_tuning import (
     EXHIBITION_SPEED_PERCENT,
     RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS,
+    RELEASE_FUNCTION_SETTLE_DELAY_SECONDS,
     STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED,
 )
 from jmri_core.constants.lighting import is_light_label
@@ -102,10 +104,25 @@ def register(mcp) -> None:
         required for correctness — JMRI releases it automatically when the
         MCP server's connection to JMRI closes, so a missed release_throttle
         does not leave the loco "stuck" for other clients across restarts.
+
+        Turns off any still-active function (e.g. lights) first automatically
+        — releasing with one on leaves the decoder in an unpredictable state
+        (can flip direction). No action needed from you for this.
         """
         client = get_ws_client()
+        tid = throttle_id(address)
         try:
-            await client.release_throttle(throttle_id(address))
+            state = client.throttle_state(tid) or {}
+            active = [n for n, on in sorted(state.get("functions", {}).items()) if on]
+            for n in active:
+                await client.set_function(tid, n, False)
+            if active:
+                # JMRI's ack only confirms the WS message was received, not
+                # that the DCC command has reached the decoder yet —
+                # releasing right after the ack raced the real command
+                # (issue #59, verified live).
+                await asyncio.sleep(RELEASE_FUNCTION_SETTLE_DELAY_SECONDS)
+            await client.release_throttle(tid)
         except JmriError as exc:
             logger.warning("release_throttle(%r) failed: %s", address, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
@@ -724,6 +741,26 @@ def register(mcp) -> None:
                 stopped = False
 
         lights_result = await set_loco_lights(address, False)
+
+        # Verified live against real JMRI: releasing a throttle while ANY
+        # function is still active (not just labeled lights, above) leaves
+        # the decoder in an unpredictable state, observed as a flipped
+        # direction on the physical loco. Turn off whatever the cache still
+        # shows as on, regardless of label, right before release.
+        state = client.throttle_state(tid) or {}
+        active = [n for n, on in sorted(state.get("functions", {}).items()) if on]
+        for n in active:
+            try:
+                await client.set_function(tid, n, False)
+            except JmriError as exc:
+                logger.warning("park_locomotive(%r) function F%d cleanup failed: %s", address, n, exc)
+
+        if active:
+            # JMRI's ack only confirms the WS message was received, not
+            # that the DCC command has reached the decoder yet — releasing
+            # right after the ack raced the real command (issue #59,
+            # verified live).
+            await asyncio.sleep(RELEASE_FUNCTION_SETTLE_DELAY_SECONDS)
 
         released = True
         release_error = None

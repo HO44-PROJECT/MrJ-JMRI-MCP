@@ -52,7 +52,10 @@ from jmri_core.constants.cli import (
     MIN_SPEED_PERCENT,
     SNIFF_THROTTLE_ID_PREFIX,
 )
-from jmri_core.constants.client_tuning import STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED
+from jmri_core.constants.client_tuning import (
+    RELEASE_FUNCTION_SETTLE_DELAY_SECONDS,
+    STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED,
+)
 from jmri_core.constants.lighting import is_light_label
 from jmri_core.constants.protocol import FIELD_FORWARD
 from jmri_core.jmri_client import (
@@ -393,82 +396,189 @@ async def throttle_findg(args: argparse.Namespace) -> int:
     return await _throttle_find_pattern(args, regex=False)
 
 
-async def throttle_acquire(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
-    """Acquire a loco by name/fragment/address.
-
-    Args:
-        args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
-            DCC address) and `args.prefix` (optional command station prefix).
-        client: Shared connection when called from the interactive shell;
-            None (default) opens and closes a fresh one-shot connection.
-
-    Returns:
-        0 on success, 1 if JMRI is unreachable or the acquire is rejected.
-
-    Prints " system=<name>" whenever the acquisition targeted a command
-    station OTHER than JMRI's default one (an explicit `args.prefix`, or
-    the roster's own DccSystem attribute — see _resolve_prefix), so it's
-    obvious at a glance which station a multi-station layout actually used;
-    omitted on the common single-station case.
+async def _acquire_one(address: int, prefix: str | None, *, client: JmriWsClient) -> bool:
+    """Acquire one address. Returns True on success. Prints the same
+    "system=<name>" suffix rule as the old single-loco throttle_acquire —
+    see there for why.
     """
     try:
-        address = await _resolve_address(args.loco)
+        resolved_prefix = await _resolve_prefix(address, prefix)
+        data = await client.acquire_throttle(cli_throttle_id(address), address, resolved_prefix)
+        system_suffix = await _system_suffix(resolved_prefix)
     except JmriError as exc:
-        print(i18n.error(exc), file=sys.stderr)
-        return 1
-
-    try:
-        prefix = await _resolve_prefix(address, args.prefix)
-        async with _client_scope(client) as c:
-            data = await c.acquire_throttle(cli_throttle_id(address), address, prefix)
-        system_suffix = await _system_suffix(prefix)
-    except JmriError as exc:
-        print(i18n.error(exc), file=sys.stderr)
-        return 1
+        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        return False
 
     _state.update_address(address, speed=data.get("speed"), forward=data.get("forward"))
     print(f"address={address} speed={data.get('speed')} "
           f"forward={data.get('forward')} (acquired){system_suffix}")
-    return 0
+    return True
 
 
-async def throttle_release(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
-    """Acquire then immediately release a loco by name/fragment/address.
+async def throttle_acquire(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+    """Acquire a loco by name/fragment/address, or every touched loco if none is given.
 
-    A throttle is only meaningfully released on the connection that holds
-    it — a fresh CLI connection never holds another session's throttle, so
-    this acquires (JMRI just re-confirms if already held elsewhere) then
-    releases on this same connection, mirroring what closing that other
-    connection would do. Inside the shell, this releases it on the shell's
-    own shared connection instead, which is the one actually holding it.
+    Same "loco optional, defaults to every known locomotive" pattern as
+    `engine-start`/`engine-stop`: with no `loco`, this falls back to
+    state.py's local touched-address cache, whether called one-shot or
+    from the shell.
 
     Args:
         args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
-            DCC address).
+            DCC address, or None for every locomotive in state.py's local
+            touched-address cache) and `args.prefix` (optional command
+            station prefix, only meaningful with an explicit `loco`).
         client: Shared connection when called from the interactive shell;
             None (default) opens and closes a fresh one-shot connection.
 
     Returns:
-        0 on success, 1 if JMRI is unreachable or the acquire/release is
+        0 if every targeted loco was acquired (or none were touched, with
+        no `args.loco` given), 1 if JMRI is unreachable or any acquire was
         rejected.
-    """
-    try:
-        address = await _resolve_address(args.loco)
-    except JmriError as exc:
-        print(i18n.error(exc), file=sys.stderr)
-        return 1
 
+    Prints " system=<name>" per locomotive whenever its acquisition
+    targeted a command station OTHER than JMRI's default one (an explicit
+    `args.prefix`, or the roster's own DccSystem attribute — see
+    _resolve_prefix), so it's obvious at a glance which station a
+    multi-station layout actually used; omitted on the common
+    single-station case.
+    """
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        addresses = [int(a) for a in _state.load_state()]
+        if not addresses:
+            print(i18n.t("cli.throttle_no_locos_touched"))
+            return 0
+
+    ok = True
     try:
-        prefix = await _resolve_prefix(address)
         async with _client_scope(client) as c:
-            await c.acquire_throttle(cli_throttle_id(address), address, prefix)
-            await c.release_throttle(cli_throttle_id(address))
+            for address in addresses:
+                if not await _acquire_one(address, args.prefix, client=c):
+                    ok = False
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
+    return 0 if ok else 1
+
+
+async def _release_one(address: int, *, client: JmriWsClient) -> bool:
+    """Release one address this connection holds. Returns True on success
+    (including the no-op "not held" case, which is not a failure).
+
+    Immutable rule, verified directly against real JMRI (issue #59): releasing
+    a throttle while ANY function (typically lights) is still active leaves
+    the decoder in an unpredictable state, observed live as a flipped
+    direction on the physical loco. So every labeled function for this loco
+    is turned off first (via the same call throttle_off itself uses, which
+    reports each one printed — "address=4 F0=off" etc. — so this is visible,
+    not silent), and only then is any function the cache still shows as
+    active (unlabeled ones, or if the labeled sweep above missed something)
+    swept a second time, before release is ever sent. Then a short settle
+    delay, since JMRI's ack only confirms the WS message was received, not
+    that the DCC command has reached the decoder yet — releasing right
+    after the ack raced the real command (issue #59, verified live).
+    """
+    throttle_id = cli_throttle_id(address)
+    try:
+        state = client.throttle_state(throttle_id)
+        if state is None:
+            print(f"address={address} not held by this connection, nothing to release")
+            return True
+
+        # Same call throttle_off itself uses (not a direct client.set_function
+        # + cache-read shortcut): that path is proven to reliably reach real
+        # JMRI and reports what it did, unlike relying on this cache alone,
+        # which was found live to go stale after a genuinely successful
+        # function-set (issue #59). bulk=True so a loco with no labeled
+        # functions at all doesn't turn "nothing to turn off" into a release
+        # failure.
+        await _set_functions_one(address, None, state=False, lights_only=False, client=client, bulk=True)
+
+        remaining = client.throttle_state(throttle_id) or {}
+        active_functions = sorted(n for n, on in remaining.get("functions", {}).items() if on)
+        for n in active_functions:
+            await client.set_function(throttle_id, n, False)
+
+        await asyncio.sleep(RELEASE_FUNCTION_SETTLE_DELAY_SECONDS)
+        await client.release_throttle(throttle_id)
+    except JmriError as exc:
+        print(i18n.error(exc), file=sys.stderr)
+        return False
 
     print(f"address={address} released")
-    return 0
+    return True
+
+
+async def throttle_release(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+    """Release a loco's throttle by name/fragment/address, or every loco this
+    connection holds if none is given, if this connection holds it.
+
+    A throttle is only meaningfully released on the connection that holds
+    it. A one-shot CLI invocation (client=None) opens a brand new
+    connection that has never acquired anything, so there is nothing to
+    release there — acquiring first just to release again would create a
+    JMRI-side throttle object reset to its software defaults (forward=True
+    among others, NOT the decoder's real current state — see CLAUDE.md's
+    verified facts) and immediately drop it, silently flipping a moving
+    real locomotive's direction for no reason (issue #59, reproduced live
+    against 3 real locos). So a one-shot `throttle release` is a no-op
+    print, not a wire round-trip, for every address involved. Inside the
+    shell (client=<shared>), releases for real whatever the shell's own
+    connection actually holds.
+
+    Same "loco optional, defaults to every known locomotive" pattern as
+    `engine-start`/`engine-stop`/`acquire` — but sourced from what this
+    connection actually holds (`client.all_throttle_states()`), not
+    state.py's local touched-address cache, since releasing something
+    never acquired on this connection is meaningless.
+
+    Args:
+        args: Parsed CLI arguments; uses `args.loco` (name, fragment, or
+            DCC address, or None for every locomotive this connection holds).
+        client: Shared connection when called from the interactive shell;
+            None (default) means a one-shot invocation, which never holds
+            any throttle to begin with.
+
+    Returns:
+        0 if every targeted loco was released (or nothing was held, with
+        no `args.loco` given), 1 if JMRI is unreachable, `args.loco`
+        doesn't resolve, or any release was rejected.
+    """
+    if args.loco:
+        try:
+            addresses = [await _resolve_address(args.loco)]
+        except JmriError as exc:
+            print(i18n.error(exc), file=sys.stderr)
+            return 1
+    else:
+        if client is None:
+            print(i18n.t("cli.throttle_no_locos_touched"))
+            return 0
+        addresses = sorted({
+            info["address"]
+            for info in client.all_throttle_states().values()
+            if info.get("address") is not None
+        })
+        if not addresses:
+            print(i18n.t("cli.throttle_no_locos_touched"))
+            return 0
+
+    if client is None:
+        for address in addresses:
+            print(f"address={address} not held by this connection, nothing to release")
+        return 0
+
+    ok = True
+    for address in addresses:
+        if not await _release_one(address, client=client):
+            ok = False
+    return 0 if ok else 1
 
 
 async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
@@ -986,6 +1096,22 @@ async def _throttle_set_functions(
                     address, args.function, state=state, lights_only=lights_only, client=c, bulk=bulk
                 ):
                     ok = False
+            if client is None:
+                # One-shot mode: this connection closes right after the
+                # `with` block exits, and JMRI releases every throttle it
+                # holds the instant that happens (see module docstring).
+                # Releasing while a function is still active leaves the
+                # decoder in an unpredictable state (issue #59, verified
+                # live) exactly like an explicit `release` does — same
+                # settle delay applies here before the implicit release,
+                # not just before an explicit one.
+                any_active = any(
+                    on
+                    for info in c.all_throttle_states().values()
+                    for on in info.get("functions", {}).values()
+                )
+                if any_active:
+                    await asyncio.sleep(RELEASE_FUNCTION_SETTLE_DELAY_SECONDS)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -1053,8 +1179,19 @@ async def _engine_start_one(address: int, prefix: str | None, *, client: JmriWsC
     try:
         resolved_prefix = await _resolve_prefix(address, prefix)
         data = await client.acquire_throttle(throttle_id, address, resolved_prefix)
-        if not data.get("forward", True):
-            await client.set_direction(throttle_id, True)
+        # Always send the direction explicitly rather than trusting the
+        # acquire reply's "forward" field, which JMRI's documented acquire
+        # ack shape (see CLAUDE.md) does NOT guarantee to include - on a
+        # connection's first-ever acquire of this throttle, the real
+        # current direction often arrives in a separate follow-up push
+        # after the ack, not the ack itself. set_direction() already has
+        # its own cache-based no-op-skip (only skips when the cache
+        # genuinely already agrees), so this is a real send whenever
+        # direction is unconfirmed or wrong, and a true no-op otherwise -
+        # never a silently-skipped flip (issue #59's actual root cause:
+        # `if not data.get("forward", True)` treated "field missing" as
+        # "already forward" and skipped the fix on a reversed loco).
+        await client.set_direction(throttle_id, True)
         function_numbers = await _resolve_function_numbers(address, None, lights_only=True)
         for n in function_numbers:
             await client.set_function(throttle_id, n, True)
@@ -1118,6 +1255,25 @@ async def throttle_engine_start(args: argparse.Namespace, *, client: JmriWsClien
             for address in addresses:
                 if not await _engine_start_one(address, args.prefix, client=c):
                     ok = False
+            if client is None:
+                # One-shot mode: this connection closes right after the
+                # `with` block exits, and JMRI releases every throttle it
+                # holds the instant that happens (see module docstring).
+                # engine-start was never going to keep the throttle held
+                # outside the shell either way (the lights/direction it
+                # set are decoder state that persists after release, that
+                # is the whole point) — but releasing right after turning
+                # lights on is exactly the same unsafe-flip bug as
+                # throttle_on's one-shot path (issue #59, verified live),
+                # so the same settle delay applies before this connection
+                # closes.
+                any_active = any(
+                    on
+                    for info in c.all_throttle_states().values()
+                    for on in info.get("functions", {}).values()
+                )
+                if any_active:
+                    await asyncio.sleep(RELEASE_FUNCTION_SETTLE_DELAY_SECONDS)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -1170,6 +1326,26 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
             ok = False
             lights_ok = False
 
+    # Immutable rule, verified directly against real JMRI (issue #59):
+    # releasing a throttle while ANY function is still active (not just
+    # labeled lights, above) leaves the decoder in an unpredictable state,
+    # observed live as a flipped direction on the physical loco. So every
+    # function this connection's cache still shows as on is turned off too,
+    # regardless of label, right before release.
+    state = c.throttle_state(throttle_id) or {}
+    remaining_active = sorted(n for n, on in state.get("functions", {}).items() if on)
+    for n in remaining_active:
+        try:
+            await c.set_function(throttle_id, n, False)
+        except JmriError as exc:
+            print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+            ok = False
+            lights_ok = False
+
+    # JMRI's ack only confirms the WS message was received, not that the
+    # DCC command has reached the decoder yet — releasing right after the
+    # ack raced the real command (issue #59, verified live).
+    await asyncio.sleep(RELEASE_FUNCTION_SETTLE_DELAY_SECONDS)
     try:
         await c.release_throttle(throttle_id)
     except JmriError as exc:

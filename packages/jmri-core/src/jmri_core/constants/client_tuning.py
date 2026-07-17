@@ -40,6 +40,18 @@ RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS = 4.0
 # park_locomotive can stay a simple blocking call.
 STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED = 3.0
 
+# How long to wait after the last function-off command before releasing a
+# throttle. JMRI's WebSocket reply/ack only confirms the JSON message was
+# received -- it says nothing about whether the DCC command has actually
+# reached the decoder over the rails yet (JMRI has no such readback, see
+# CLAUDE.md's verified facts). Verified live (issue #59): releasing
+# immediately after an F-off ack that already printed/returned still raced
+# the real decoder command and left lights on / direction flipped, even
+# though every function-off call had already completed successfully from
+# this client's point of view. A fixed settle delay here is the fix, not a
+# faster/differently-ordered request.
+RELEASE_FUNCTION_SETTLE_DELAY_SECONDS = 0.5
+
 # Exhibition mode's fixed speed: any requested speed_percent is replaced by
 # this constant rather than honored, so a member of the public asking for
 # "full speed" can't get one. Moderate on purpose -- fast enough to be

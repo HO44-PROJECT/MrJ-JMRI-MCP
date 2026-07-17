@@ -265,6 +265,31 @@ async def test_release_throttle_reports_success(fake_jmri):
     assert out == {"released": True, "address": 7}
 
 
+async def test_release_throttle_turns_off_active_functions_first(fake_jmri):
+    """Regression test verified live against real JMRI: releasing a throttle
+    while ANY function is still active leaves the decoder in an
+    unpredictable state, observed as a flipped direction on the physical
+    loco. release_throttle must turn off every active function first."""
+    mcp = make_server()
+    await call(mcp, "acquire_throttle", address=7)
+    await call(mcp, "set_function", address=7, function=0, state=True)
+    await call(mcp, "set_function", address=7, function=2, state=True)
+
+    out = await call(mcp, "release_throttle", address=7)
+    assert out == {"released": True, "address": 7}
+
+    from jmri_core.jmri_ws import JmriWsClient
+
+    checker = JmriWsClient()
+    try:
+        data = await checker.acquire_throttle("checker7", 7)
+        assert data.get("speed") in (0.0, None)
+        state = checker.throttle_state("checker7") or {}
+        assert not any(state.get("functions", {}).values())
+    finally:
+        await checker.close()
+
+
 async def test_acquire_throttle_reports_error_honestly(monkeypatch):
     monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
     mcp = make_server()
@@ -1455,6 +1480,36 @@ async def test_park_locomotive_ramps_down_faces_forward_lights_off_and_releases(
     assert "addr4" not in get_ws_client().all_throttle_states()
 
 
+async def test_park_locomotive_turns_off_unlabeled_active_function_before_releasing(
+    fake_jmri, roster_fixture
+):
+    """Regression test verified live against real JMRI: releasing a throttle
+    while ANY function is still active leaves the decoder in an
+    unpredictable state, observed as a flipped direction on the physical
+    loco - not just labeled lights (which set_loco_lights already turns
+    off). F3 has no light label on address 4 in the fixture, so this proves
+    park_locomotive's own cleanup catches it too, before release."""
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        await call(mcp, "set_function", address=4, function=3, state=True)
+        out = await call(mcp, "park_locomotive", address=4)
+    finally:
+        router.stop()
+    assert out["released"] is True
+
+    from jmri_core.jmri_ws import JmriWsClient
+
+    checker = JmriWsClient()
+    try:
+        await checker.acquire_throttle("checker4", 4)
+        state = checker.throttle_state("checker4") or {}
+        assert not any(state.get("functions", {}).values())
+    finally:
+        await checker.close()
+
+
 async def test_park_locomotive_flips_reverse_to_forward_at_rest(fake_jmri, roster_fixture):
     router = _mock_roster_for(None, roster_fixture)
     try:
@@ -1778,6 +1833,36 @@ async def test_release_all_locomotives_does_not_change_speed_or_lights(fake_jmri
     finally:
         router.stop()
     assert speed_before == 0.5
+
+
+async def test_release_all_locomotives_turns_off_active_functions_first(fake_jmri, roster_fixture):
+    """Regression test verified live against real JMRI: releasing a throttle
+    while ANY function is still active leaves the decoder in an
+    unpredictable state, observed as a flipped direction on the physical
+    loco. release_all_locomotives must turn off every active function per
+    address before releasing it, even though its contract is otherwise
+    "don't change speed/direction"."""
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        await call(mcp, "acquire_throttle", address=4)
+        await call(mcp, "set_function", address=4, function=0, state=True)
+
+        out = await call(mcp, "release_all_locomotives")
+        assert out == {"released": [{"address": 4, "released": True}]}
+    finally:
+        router.stop()
+
+    from jmri_core.jmri_ws import JmriWsClient
+
+    checker = JmriWsClient()
+    try:
+        data = await checker.acquire_throttle("checker4", 4)
+        assert data.get("speed") in (0.0, None)
+        state = checker.throttle_state("checker4") or {}
+        assert not any(state.get("functions", {}).values())
+    finally:
+        await checker.close()
 
 
 async def test_release_all_locomotives_with_nothing_acquired(fake_jmri):

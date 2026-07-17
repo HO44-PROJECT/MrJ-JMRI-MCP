@@ -12,6 +12,7 @@ functions, so cross-module reuse happens at the jmri_client/jmri_ws layer,
 the same way light.py and turnout.py never import each other.
 """
 
+import asyncio
 import logging
 
 from jmri_core import i18n
@@ -30,6 +31,7 @@ from jmri_core.jmri_client import (
 from jmri_core.jmri_client import get_roster as _get_roster
 from jmri_core.jmri_client import power_off_all as _power_off_all
 from jmri_core.jmri_client import power_on_all as _power_on_all
+from jmri_core.constants.client_tuning import RELEASE_FUNCTION_SETTLE_DELAY_SECONDS
 from jmri_core.constants.lighting import is_light_label
 from jmri_core.jmri_ws import JmriError as JmriWsError
 from jmri_core.jmri_ws import get_ws_client
@@ -117,10 +119,10 @@ def register(mcp) -> None:
         """Release this session's throttle on EVERY currently-acquired locomotive, without changing their state.
 
         Call for "release all locomotives"/"libère toutes les locos" —
-        ending a session or handing off without stopping or altering
-        anything. Speed, direction, and lights stay exactly as they are;
-        only the throttle (this session's exclusive control) is released,
-        freeing each locomotive for other JMRI clients to drive.
+        ending a session or handing off without stopping anything. Speed and
+        direction stay untouched; only the throttle is released. Exception:
+        any still-active function (e.g. lights) is turned off first
+        automatically — releasing with one on can flip direction.
 
         NOT park_all_locomotives (also stops, faces forward, lights off
         before releasing) and NOT emergency_stop_all (stops motion but
@@ -146,7 +148,18 @@ def register(mcp) -> None:
         released: list[dict] = []
         for address in addresses:
             try:
-                await client.release_throttle(throttle_id(address))
+                tid = throttle_id(address)
+                state = client.throttle_state(tid) or {}
+                active = [n for n, on in sorted(state.get("functions", {}).items()) if on]
+                for n in active:
+                    await client.set_function(tid, n, False)
+                if active:
+                    # JMRI's ack only confirms the WS message was received,
+                    # not that the DCC command has reached the decoder yet
+                    # — releasing right after the ack raced the real
+                    # command (issue #59, verified live).
+                    await asyncio.sleep(RELEASE_FUNCTION_SETTLE_DELAY_SECONDS)
+                await client.release_throttle(tid)
                 released.append({"address": address, "released": True})
             except JmriWsError as exc:
                 logger.warning("release_all_locomotives address=%r failed: %s", address, exc)

@@ -1893,6 +1893,69 @@ async def test_throttle_engine_start_inside_shell_with_no_loco_uses_touched_cach
         await client.close()
 
 
+async def test_throttle_engine_start_forces_forward_when_loco_was_reversed(fake_jmri, monkeypatch, capsys):
+    """Regression test for issue #59: a loco already driven into reverse by
+    another connection (e.g. JMRI PanelPro) before engine-start ever touches
+    it must still end up facing forward - engine-start must not trust the
+    acquire reply's own "forward" field (which real JMRI doesn't guarantee to
+    reflect true state on a first acquire) and silently skip the fix."""
+    _patch_autorail_roster(monkeypatch)
+    from jmri_core.jmri_ws import JmriWsClient
+
+    driver = JmriWsClient()
+    try:
+        await driver.acquire_throttle("driver4", 4)
+        await driver.set_direction("driver4", False)  # reversed, like PanelPro would do
+
+        code, out, _ = await run(capsys, "throttle", "engine-start", "4")
+        assert code == 0
+        assert "address=4 started (forward" in out
+
+        state = driver.throttle_state("driver4") or {}
+        assert state.get("forward") is True
+    finally:
+        await driver.close()
+
+
+async def test_throttle_engine_start_forces_forward_when_acquire_ack_omits_forward(
+    fake_jmri, monkeypatch, capsys
+):
+    """Tighter regression test for issue #59's actual root cause: real JMRI's
+    documented acquire-ack shape does not guarantee a "forward" field at all
+    (see CLAUDE.md) - the buggy code (`if not data.get("forward", True)`)
+    only failed in exactly this case, not when the field was present and
+    False. Patches JmriWsClient.acquire_throttle to strip "forward" from the
+    reply, so this test actually discriminates old buggy code from the fix
+    (unlike the sibling test above, which passes either way since the fixture
+    always echoes a real forward value)."""
+    _patch_autorail_roster(monkeypatch)
+    from jmri_core.jmri_ws import JmriWsClient
+
+    driver = JmriWsClient()
+    try:
+        await driver.acquire_throttle("driver4", 4)
+        await driver.set_direction("driver4", False)  # reversed, like PanelPro would do
+
+        original_acquire = JmriWsClient.acquire_throttle
+
+        async def acquire_without_forward(self, throttle_id, address, prefix=None):
+            data = await original_acquire(self, throttle_id, address, prefix)
+            data.pop("forward", None)
+            self._throttles[throttle_id].pop("forward", None)
+            return data
+
+        monkeypatch.setattr(JmriWsClient, "acquire_throttle", acquire_without_forward)
+
+        code, out, _ = await run(capsys, "throttle", "engine-start", "4")
+        assert code == 0
+        assert "address=4 started (forward" in out
+
+        state = driver.throttle_state("driver4") or {}
+        assert state.get("forward") is True
+    finally:
+        await driver.close()
+
+
 async def test_throttle_engine_stop_ramps_faces_forward_lights_off_and_releases(fake_jmri, monkeypatch, capsys):
     _patch_autorail_roster(monkeypatch)
 
@@ -1905,6 +1968,55 @@ async def test_throttle_engine_stop_ramps_faces_forward_lights_off_and_releases(
     assert "forward" in out
     assert "lights off" in out
     assert "released" in out
+
+
+async def test_throttle_engine_stop_forces_forward_when_direction_unconfirmed(fake_jmri, monkeypatch, capsys):
+    """Regression test for issue #59: engine-stop must force forward even when
+    this connection's own cached "forward" value was never confirmed at the
+    moment execute_speed_change runs (e.g. acquired earlier in the shell
+    session, but no push/reply has told this connection's cache the real
+    direction yet). The bug was ramp.py's execute_speed_change defaulting an
+    unset cache value to True ("assume already forward"), which made
+    needs_flip silently False and skipped set_direction entirely, leaving the
+    Autorail/Diesel DB reversed after a real engine-stop (live-reproduced by
+    the user). The loco is actually reversed server-side (via a second,
+    independent connection, mirroring JMRI PanelPro) - only THIS connection's
+    cache is missing the confirmation."""
+    _patch_autorail_roster(monkeypatch)
+    from jmri_cli._common import cli_throttle_id
+    from jmri_cli.throttle import throttle_engine_stop
+    from jmri_core.jmri_ws import JmriWsClient
+
+    driver = JmriWsClient()
+    client = JmriWsClient()
+    try:
+        await driver.acquire_throttle("driver4", 4)
+        await driver.set_direction("driver4", False)  # physically reversed
+
+        throttle_id = cli_throttle_id(4)
+        await client.acquire_throttle(throttle_id, 4)
+        # Simulate "acquired earlier, direction never confirmed by this
+        # connection's cache" - the real race window acquire_throttle()
+        # leaves open between its own FIELD_SPEED-only cache seed and the
+        # eventual reply/push that would populate FIELD_FORWARD. The
+        # acquire above genuinely registers the throttle server-side (so
+        # engine-stop's speed/direction/function commands aren't rejected);
+        # we then strip the confirmed value from this connection's own
+        # cache only, leaving the server-side state (reversed, set by
+        # `driver` above) untouched.
+        client._throttles[throttle_id].pop("forward", None)
+
+        code = await throttle_engine_stop(build_parser().parse_args(["throttle", "engine-stop", "4"]), client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=4 stopped" in out
+        assert "forward" in out
+
+        state = driver.throttle_state("driver4") or {}
+        assert state.get("forward") is True
+    finally:
+        await client.close()
+        await driver.close()
 
 
 async def test_throttle_engine_stop_never_acquired_still_turns_off_lights_and_releases(
@@ -2091,11 +2203,102 @@ async def test_acquire_shortcut_matches_throttle_acquire(fake_jmri, capsys):
 
 
 async def test_release_shortcut_matches_throttle_release(fake_jmri, capsys):
+    """`jmri-cli release` (one-shot, client=None) never holds anything on
+    its own connection - see issue #59: a one-shot invocation must not
+    acquire-then-release, since that resets JMRI's throttle state to
+    software defaults (flipping direction) instead of doing nothing."""
     code, out, _ = await run(capsys, "acquire", "3")
     assert code == 0
     code, out, _ = await run(capsys, "release", "3")
     assert code == 0
-    assert "address=3 released" in out
+    assert "address=3 not held by this connection, nothing to release" in out
+
+
+async def test_throttle_release_in_shell_actually_releases_when_held(fake_jmri, capsys):
+    """Inside the shell (shared connection), releasing an address this
+    connection genuinely acquired must still work for real - issue #59's
+    fix only skips the acquire+release round-trip for one-shot calls that
+    never held anything, not for a connection that actually does."""
+    from jmri_cli._common import cli_throttle_id
+    from jmri_cli.throttle import throttle_release
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        throttle_id = cli_throttle_id(3)
+        await client.acquire_throttle(throttle_id, 3)
+        args = build_parser().parse_args(["throttle", "release", "3"])
+        code = await throttle_release(args, client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=3 released" in out
+        assert client.throttle_state(throttle_id) is None
+    finally:
+        await client.close()
+
+
+async def test_throttle_release_turns_off_active_functions_first(fake_jmri, capsys):
+    """Core regression test for the real issue #59 root cause, verified
+    directly against real JMRI by the user: releasing a throttle while ANY
+    function (typically lights) is still on leaves the decoder in an
+    unpredictable state, observed live as a flipped direction on the
+    physical locomotive. throttle_release must turn off every function this
+    connection's cache knows is active before ever sending release."""
+    from jmri_cli._common import cli_throttle_id
+    from jmri_cli.throttle import throttle_release
+    from jmri_core.jmri_ws import JmriWsClient
+
+    client = JmriWsClient()
+    try:
+        throttle_id = cli_throttle_id(3)
+        await client.acquire_throttle(throttle_id, 3)
+        await client.set_function(throttle_id, 0, True)
+        await client.set_function(throttle_id, 2, True)
+
+        args = build_parser().parse_args(["throttle", "release", "3"])
+        code = await throttle_release(args, client=client)
+        assert code == 0
+        out, _ = capsys.readouterr()
+        assert "address=3 released" in out
+        assert client.throttle_state(throttle_id) is None
+    finally:
+        await client.close()
+
+    # Verify from a fresh connection that the functions were genuinely
+    # turned off server-side before release, not just dropped from cache.
+    checker = JmriWsClient()
+    try:
+        data = await checker.acquire_throttle("checker3", 3)
+        assert data.get("speed") in (0.0, None)
+        state = checker.throttle_state("checker3") or {}
+        assert not any(state.get("functions", {}).values())
+    finally:
+        await checker.close()
+
+
+async def test_throttle_release_one_shot_does_not_touch_loco_state(fake_jmri, capsys):
+    """Core regression test for issue #59: a one-shot `throttle release`
+    on an address already moving (acquired+driven by ANOTHER connection,
+    e.g. JMRI PanelPro) must not flip its direction or otherwise touch its
+    state - the bug was `throttle_release` unconditionally acquiring
+    (resetting JMRI's throttle to software defaults) before releasing."""
+    from jmri_core.jmri_ws import JmriWsClient
+
+    driver = JmriWsClient()
+    try:
+        await driver.acquire_throttle("driver3", 3)
+        await driver.set_direction("driver3", False)  # reverse
+        await driver.set_speed("driver3", 0.4)
+
+        code, out, _ = await run(capsys, "release", "3")
+        assert code == 0
+        assert "not held by this connection, nothing to release" in out
+
+        state = driver.throttle_state("driver3") or {}
+        assert state.get("forward") is False
+        assert state.get("speed") == 0.4
+    finally:
+        await driver.close()
 
 
 async def test_speed_shortcut_matches_throttle_speed(fake_jmri, capsys):

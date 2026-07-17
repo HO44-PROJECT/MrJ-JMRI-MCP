@@ -404,7 +404,8 @@ def build_parser() -> argparse.ArgumentParser:
         throttle_sub, "acquire", help=i18n.t("help.throttle.acquire"),
         example="jmri-cli throttle acquire 3", func=throttle.throttle_acquire,
     )
-    acquire.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    acquire.add_argument("loco", nargs="?", default=None,
+                          help=i18n.t("help.throttle.acquire_loco"))
     acquire.add_argument("--prefix", default=None,
                           help=i18n.t("help.throttle.acquire_prefix"))
 
@@ -412,7 +413,8 @@ def build_parser() -> argparse.ArgumentParser:
         throttle_sub, "release", help=i18n.t("help.throttle.release"),
         example="jmri-cli throttle release 3", func=throttle.throttle_release,
     )
-    release.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    release.add_argument("loco", nargs="?", default=None,
+                          help=i18n.t("help.throttle.release_loco"))
 
     speed = _leaf(
         throttle_sub, "speed", help=i18n.t("help.throttle.speed"),

@@ -86,7 +86,14 @@ async def execute_speed_change(
     """
     info = client.throttle_state(throttle_id) or {}
     current_fraction = info.get(FIELD_SPEED) or 0.0
-    current_forward = info.get(FIELD_FORWARD, True)
+    # No default: an unset FIELD_FORWARD means "not yet confirmed by JMRI"
+    # (e.g. right after this connection's first acquire of this throttle,
+    # before JMRI's real-state push has arrived - see module docstring and
+    # CLAUDE.md's documented acquire-ack shape, which doesn't guarantee
+    # "forward"). Defaulting to True here previously caused needs_flip to
+    # be silently False whenever direction was actually unknown, skipping
+    # a real direction fix on an already-reversed locomotive (issue #59).
+    current_forward = info.get(FIELD_FORWARD)
 
     needs_flip = target_forward is not None and target_forward != current_forward
 

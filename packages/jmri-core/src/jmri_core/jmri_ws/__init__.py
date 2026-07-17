@@ -30,7 +30,12 @@ facts are handled by dispatch updating a per-throttle state cache
 message seen, solicited or not; `set_speed()`/`set_direction()`/
 `set_function()` read that cache immediately before acting and skip
 sending if it already matches, rather than guessing from a stale value set
-once at acquire time.
+once at acquire time. `set_function()` additionally writes its own
+requested value into the cache once its request returns without raising,
+rather than relying solely on dispatch to pick it back up off JMRI's
+reply/push — verified live that a function-set reply does not reliably
+echo the F<n> field back the way speed/forward replies do (see
+set_function's own docstring).
 """
 
 import asyncio
@@ -291,19 +296,35 @@ class JmriWsClient:
     async def set_function(self, throttle_id: str, function: int, state: bool) -> dict[str, Any]:
         """Set a decoder function (F0-F28) on an already-acquired throttle.
 
-        Same no-op/cache logic as set_speed/set_direction, applied per
-        function key: the per-throttle cache keeps a "functions" dict
-        (`{0: False, 1: True, ...}`) fed from every throttle message seen
-        for this id, solicited or not, so a repeat call — or a function
-        last toggled by another client — resolves from live state instead
-        of blindly resending.
+        Same no-op-skip logic as set_speed/set_direction: the per-throttle
+        cache keeps a "functions" dict (`{0: False, 1: True, ...}`), and a
+        repeat call — or a function last toggled by another client —
+        resolves from live state instead of blindly resending.
+
+        Unlike set_speed/set_direction, the cache write on the SENDING side
+        is NOT left to _update_throttle_cache picking the field back up off
+        JMRI's reply/push: verified live against real JMRI that a
+        function-set reply does not reliably echo the F<n> field back the
+        same way speed/forward do, which left the cache believing no
+        function was active right after a genuinely-successful set — and
+        issue #59's release-with-active-functions guard (throttle_release,
+        release_throttle, park_locomotive, release_all_locomotives) reads
+        exactly this cache to decide what to turn off before releasing, so
+        a stale-empty cache silently skipped that safety step. A request
+        that returns without raising means JMRI accepted it, so the cache
+        is written from the value we asked for right here, not from
+        whatever (if anything) comes back on the wire.
         """
         info = self._throttles.get(throttle_id)
         if info is not None and info.get("functions", {}).get(function) == state:
             return {FIELD_THROTTLE: throttle_id, f"F{function}": state}
-        return await self.request(
+        result = await self.request(
             MSG_TYPE_THROTTLE, {FIELD_THROTTLE: throttle_id, f"F{function}": state}
         )
+        info = self._throttles.get(throttle_id)
+        if info is not None:
+            info.setdefault("functions", {})[function] = state
+        return result
 
     def throttle_state(self, throttle_id: str) -> dict[str, Any] | None:
         """Read-only snapshot of the live-synced cache for one throttle id.

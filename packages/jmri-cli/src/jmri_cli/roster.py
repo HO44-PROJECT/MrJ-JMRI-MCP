@@ -14,8 +14,10 @@ from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR
 from jmri_core.jmri_client import (
     JmriError,
+    default_system_prefix,
     get_roster,
     get_roster_function_labels,
+    get_systems,
     resolve_roster_entry,
 )
 
@@ -32,7 +34,48 @@ def _headers() -> list[str]:
         i18n.t("headers.owner"),
         i18n.t("headers.modified"),
         i18n.t("headers.groups"),
+        i18n.t("headers.dcc_system"),
+        i18n.t("headers.max_speed_percent"),
     ]
+
+
+async def _system_names_by_prefix() -> dict[str, str]:
+    """{prefix: full system name}, e.g. {"T": "taya (accessories)"} — for
+    enriching a bare dcc_system prefix into something the user actually
+    recognizes. Empty (not raised) if the systems lookup itself fails, so a
+    roster listing never breaks just because this extra context couldn't be
+    fetched."""
+    try:
+        systems = await get_systems()
+    except JmriError:
+        return {}
+    return {str(s.get("prefix", "")): s.get("name") for s in systems}
+
+
+async def _default_system_prefix(names_by_prefix: dict[str, str]) -> str | None:
+    """The prefix of JMRI's own default command station, or None on lookup
+    failure. A locomotive with no DccSystem attribute set is normally
+    driven through this one, so it must never be shown as "-" — that reads
+    as "no system", when in fact it's just using the default."""
+    try:
+        return await default_system_prefix()
+    except JmriError:
+        return None
+
+
+def _dcc_system_display(
+    dcc_system: str | None, names_by_prefix: dict[str, str], default_prefix: str | None
+) -> str:
+    """"T" -> "taya (accessories)" when the system name is known, else the
+    bare prefix. An unset dcc_system (no DccSystem roster attribute) falls
+    back to JMRI's own default system's prefix/name — a locomotive with no
+    attribute set is still actually driven through *some* system, namely
+    the default one, so this must never silently show "-"; only a failed
+    default-system lookup itself falls back to "-"."""
+    resolved = dcc_system or default_prefix
+    if not resolved:
+        return "-"
+    return names_by_prefix.get(resolved) or resolved
 
 
 # `roster by*` subcommand name -> (index into _row()'s tuple, casefold?).
@@ -48,10 +91,11 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "byowner": (6, True),
     "bydate": (7, True),
     "bygroup": (8, True),
+    "bydccsystem": (9, True),
 }
 
 
-def _row(e: dict) -> list:
+def _row(e: dict, names_by_prefix: dict[str, str], default_prefix: str | None) -> list:
     """Flatten one roster entry (get_roster()'s compact shape) into a table row matching _headers()'s column order."""
     return [
         e["address"],
@@ -63,6 +107,8 @@ def _row(e: dict) -> list:
         e["owner"] or "-",
         e["date_modified"] or "-",
         ", ".join(e["groups"]) or "-",
+        _dcc_system_display(e.get("dcc_system"), names_by_prefix, default_prefix),
+        e.get("max_speed_percent", 100),
     ]
 
 
@@ -86,6 +132,8 @@ async def roster_list(args: argparse.Namespace) -> int:
     """
     try:
         roster = await get_roster()
+        names_by_prefix = await _system_names_by_prefix()
+        default_prefix = await _default_system_prefix(names_by_prefix)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -94,7 +142,7 @@ async def roster_list(args: argparse.Namespace) -> int:
         print(i18n.t("cli.roster_empty"))
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
-    rows = sort_rows([_row(e) for e in roster], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(e, names_by_prefix, default_prefix) for e in roster], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -110,6 +158,8 @@ async def _roster_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
     sort_by, pattern = split_find_tokens(args.pattern_tokens, SORT_FIELDS)
     try:
         roster = await get_roster()
+        names_by_prefix = await _system_names_by_prefix()
+        default_prefix = await _default_system_prefix(names_by_prefix)
         matcher = find_regex if regex else find_glob
         matches = matcher(pattern, roster, _label)
     except JmriError as exc:
@@ -120,7 +170,7 @@ async def _roster_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(i18n.t("cli.no_roster_entries_match", pattern=pattern))
         return 0
     sort_by = sort_by or "byname"
-    rows = sort_rows([_row(e) for e in matches], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(e, names_by_prefix, default_prefix) for e in matches], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -167,6 +217,8 @@ async def roster_find(args: argparse.Namespace) -> int:
     try:
         roster = await get_roster()
         entry = resolve_roster_entry(args.name, roster)
+        names_by_prefix = await _system_names_by_prefix()
+        default_prefix = await _default_system_prefix(names_by_prefix)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -178,10 +230,13 @@ async def roster_find(args: argparse.Namespace) -> int:
     owner = entry["owner"] or "-"
     modified = entry["date_modified"] or "-"
     groups = ", ".join(entry["groups"]) or "-"
+    dcc_system = _dcc_system_display(entry.get("dcc_system"), names_by_prefix, default_prefix)
+    max_speed_percent = entry.get("max_speed_percent", 100)
     print(
         f"address={entry['address']} name={entry['name']} road={road} "
         f"road_number={road_number} manufacturer={manufacturer} model={model} "
-        f"owner={owner} modified={modified} groups={groups}"
+        f"owner={owner} modified={modified} groups={groups} dcc_system={dcc_system} "
+        f"max_speed_percent={max_speed_percent}%"
     )
     return 0
 

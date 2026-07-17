@@ -19,6 +19,27 @@ async def test_power_status_all_systems(mock_power, capsys):
     assert "DCC++ Raijin" in out and "yes" in out
 
 
+async def test_power_status_shows_system_id_column(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "status")
+    assert code == 0
+    lines = [line for line in out.splitlines() if line.strip().startswith(("O", "Z", "R"))]
+    firsts = {line.split()[0] for line in lines}
+    assert firsts == {"O", "Z", "R"}
+
+
+async def test_power_byid_sorts_by_system_prefix(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "byid")
+    assert code == 0
+    lines = [line for line in out.splitlines() if line.strip().startswith(("O", "Z", "R"))]
+    assert [line.split()[0] for line in lines] == ["O", "R", "Z"]
+
+
+async def test_power_bystate_sorts_by_state(mock_power, capsys):
+    code, out, _ = await run(capsys, "power", "bystate")
+    assert code == 0
+    assert "OFF" in out
+
+
 async def test_power_bare_defaults_to_status(mock_power, capsys):
     code, out, _ = await run(capsys, "power")
     assert code == 0
@@ -231,7 +252,7 @@ async def test_power_findg_no_match(mock_power, capsys):
     assert "No power systems match" in out
 
 
-async def test_roster_lists_every_entry(mock_roster, capsys):
+async def test_roster_lists_every_entry(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster")
     assert code == 0
     assert "141R" in out and "Mikado 141 R" in out and "8273" in out
@@ -239,14 +260,79 @@ async def test_roster_lists_every_entry(mock_roster, capsys):
     assert "Boite à Sel" in out and "-" in out  # empty road/model shown as "-"
 
 
-async def test_roster_bydcc_sorts_by_address(mock_roster, capsys):
+async def test_roster_lists_max_speed_percent_column(mock_roster, mock_power, capsys):
+    code, out, _ = await run(capsys, "roster")
+    assert code == 0
+    assert "100" in out  # every fixture entry defaults to maxSpeedPct=100
+
+
+async def test_roster_shows_scaled_max_speed_percent_when_set(fake_jmri, roster_fixture, power_fixture, capsys):
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+
+    roster_fixture[1]["data"]["maxSpeedPct"] = 20
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "roster")
+    finally:
+        router.stop()
+
+    assert code == 0
+    assert "Autorail" in out
+    autorail_line = next(l for l in out.splitlines() if "Autorail" in l)
+    assert "20" in autorail_line
+
+
+async def test_roster_shows_dcc_system_full_name(fake_jmri, roster_fixture, power_fixture, capsys):
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+
+    roster_fixture[1]["data"]["attributes"] = [{"name": "DccSystem", "value": "O"}]
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "roster")
+    finally:
+        router.stop()
+
+    assert code == 0
+    autorail_line = next(l for l in out.splitlines() if "Autorail" in l)
+    assert "DCC++ Ohara" in autorail_line
+
+
+async def test_roster_shows_default_system_when_no_dcc_system_set(mock_roster, mock_power, capsys):
+    """No DccSystem roster attribute must show JMRI's default system, not
+    "-" -- the locomotive is still actually driven through the default
+    station, so showing blank/null there would be misleading."""
+    code, out, _ = await run(capsys, "roster")
+    assert code == 0
+    autorail_line = next(l for l in out.splitlines() if "Autorail" in l)
+    assert "DCC++ Raijin" in autorail_line
+
+
+async def test_roster_find_shows_default_system_when_no_dcc_system_set(mock_roster, mock_power, capsys):
+    code, out, _ = await run(capsys, "roster", "find", "autorail")
+    assert code == 0
+    assert "DCC++ Raijin" in out
+
+
+async def test_roster_bydcc_sorts_by_address(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster", "bydcc")
     assert code == 0
     lines = [l for l in out.splitlines() if l.split() and l.split()[0].isdigit()]
     assert [l.split()[0] for l in lines] == ["2", "4", "8"]
 
 
-async def test_roster_findr_byname_sorts_filtered_results(mock_roster, capsys):
+async def test_roster_findr_byname_sorts_filtered_results(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster", "findr", "byname", ".")
     assert code == 0
     assert "141R" in out and "Autorail" in out and "Boite" in out
@@ -259,7 +345,7 @@ async def test_roster_reports_error_on_unreachable(monkeypatch, capsys):
     assert "Error" in err
 
 
-async def test_roster_find_resolves_fuzzy_name(mock_roster, capsys):
+async def test_roster_find_resolves_fuzzy_name(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster", "find", "autorail")
     assert code == 0
     assert "address=4" in out and "name=Autorail" in out
@@ -271,33 +357,33 @@ async def test_roster_find_unknown_name(mock_roster, capsys):
     assert "Unknown locomotive 'tgv'" in err
 
 
-async def test_roster_findr_matches_regex(mock_roster, capsys):
+async def test_roster_findr_matches_regex(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster", "findr", "^auto")
     assert code == 0
     assert "Autorail" in out
     assert "Boite" not in out
 
 
-async def test_roster_findr_no_match(mock_roster, capsys):
+async def test_roster_findr_no_match(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster", "findr", "zzz")
     assert code == 0
     assert "No roster entries match" in out
 
 
-async def test_roster_findr_invalid_regex(mock_roster, capsys):
+async def test_roster_findr_invalid_regex(mock_roster, mock_power, capsys):
     code, _, err = await run(capsys, "roster", "findr", "[")
     assert code == 1
     assert "Invalid regex" in err
 
 
-async def test_roster_findg_matches_glob(mock_roster, capsys):
+async def test_roster_findg_matches_glob(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster", "findg", "auto*")
     assert code == 0
     assert "Autorail" in out
     assert "Boite" not in out
 
 
-async def test_roster_findg_no_match(mock_roster, capsys):
+async def test_roster_findg_no_match(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "roster", "findg", "zzz*")
     assert code == 0
     assert "No roster entries match" in out
@@ -918,6 +1004,190 @@ async def test_throttle_speed_without_seconds_is_rejected(fake_jmri, capsys):
     code, out, err = await run(capsys, "throttle", "speed", "3", "40")
     assert code == 2
     assert "--hold is required" in err
+
+
+async def test_throttle_speed_uses_roster_dcc_system_prefix(fake_jmri, roster_fixture, power_fixture, capsys, monkeypatch):
+    """Regression test for issue #60's reported bug: `jmri-cli throttle
+    speed <cars> 20` must acquire through the locomotive's own DccSystem
+    roster attribute (e.g. Taya, prefix "T"), not JMRI's default command
+    station -- otherwise the speed command is accepted by JMRI but
+    inaudible to the decoder on the other DCC bus, so it never moves."""
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+    from jmri_core.jmri_ws import JmriWsClient
+
+    roster_fixture[0]["data"]["address"] = "5"
+    roster_fixture[0]["data"]["attributes"] = [{"name": "DccSystem", "value": "T"}]
+
+    calls = []
+    original = JmriWsClient.acquire_throttle
+
+    async def spy(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(JmriWsClient, "acquire_throttle", spy)
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "throttle", "speed", "5", "20", "--hold", "1")
+    finally:
+        router.stop()
+
+    assert code == 0
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    prefix = kwargs.get("prefix", args[-1] if len(args) >= 2 else None)
+    assert prefix == "T"
+
+
+async def test_throttle_speed_falls_back_to_default_when_no_dcc_system(fake_jmri, roster_fixture, power_fixture, capsys, monkeypatch):
+    """The common case (no DccSystem attribute set) must keep acquiring
+    against JMRI's default command station, exactly as before this fix."""
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+    from jmri_core.jmri_ws import JmriWsClient
+
+    calls = []
+    original = JmriWsClient.acquire_throttle
+
+    async def spy(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(JmriWsClient, "acquire_throttle", spy)
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "throttle", "speed", "4", "20", "--hold", "1")
+    finally:
+        router.stop()
+
+    assert code == 0
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    prefix = kwargs.get("prefix", args[-1] if len(args) >= 2 else None)
+    assert prefix is None
+
+
+async def test_throttle_speed_scales_by_roster_max_speed_percent(fake_jmri, roster_fixture, power_fixture, capsys, monkeypatch):
+    """PanelPro parity: with the loco's "Throttle Speed Limit" set to 20%,
+    `throttle speed 4 100` must send 20% real decoder speed over the wire
+    (like PanelPro's own slider does client-side) at the peak of the hold
+    -- the printed final line is always 0% since a bounded one-shot hold
+    auto-stops before returning (see test_throttle_speed_negative_is_reverse_shorthand)."""
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+    from jmri_core.jmri_ws import JmriWsClient
+
+    roster_fixture[1]["data"]["address"] = "4"
+    roster_fixture[1]["data"]["maxSpeedPct"] = 20
+
+    sent_speeds = []
+    original_set_speed = JmriWsClient.set_speed
+
+    async def spy_set_speed(self, throttle_id, speed):
+        sent_speeds.append(speed)
+        return await original_set_speed(self, throttle_id, speed)
+
+    monkeypatch.setattr(JmriWsClient, "set_speed", spy_set_speed)
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "throttle", "speed", "4", "100", "--hold", "1")
+    finally:
+        router.stop()
+
+    assert code == 0
+    assert 0.2 in sent_speeds  # held at 20% of the raw decoder ceiling, not 100%
+
+
+async def test_throttle_speed_no_scaling_when_max_speed_percent_default(fake_jmri, roster_fixture, power_fixture, capsys, monkeypatch):
+    """The common case (no PanelPro speed limit set, maxSpeedPct=100) must
+    keep sending the raw requested fraction unscaled, exactly as before
+    this feature."""
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+    from jmri_core.jmri_ws import JmriWsClient
+
+    sent_speeds = []
+    original_set_speed = JmriWsClient.set_speed
+
+    async def spy_set_speed(self, throttle_id, speed):
+        sent_speeds.append(speed)
+        return await original_set_speed(self, throttle_id, speed)
+
+    monkeypatch.setattr(JmriWsClient, "set_speed", spy_set_speed)
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "throttle", "speed", "4", "40", "--hold", "1")
+    finally:
+        router.stop()
+
+    assert code == 0
+    assert 0.4 in sent_speeds
+
+
+async def test_throttle_speed_shows_system_suffix_for_non_default_prefix(fake_jmri, roster_fixture, power_fixture, capsys):
+    """The printed speed line must append " system=<name>" when the loco's
+    resolved DccSystem prefix differs from JMRI's default command station
+    -- so a multi-station layout can tell which physical bus a command
+    actually reached."""
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+
+    roster_fixture[0]["data"]["address"] = "5"
+    roster_fixture[0]["data"]["attributes"] = [{"name": "DccSystem", "value": "O"}]
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "throttle", "speed", "5", "40", "--hold", "1")
+    finally:
+        router.stop()
+
+    assert code == 0
+    assert "system=DCC++ Ohara" in out
+
+
+async def test_throttle_speed_omits_system_suffix_for_default_prefix(fake_jmri, roster_fixture, power_fixture, capsys):
+    """The common single-station case must never show a "system=" suffix,
+    to avoid cluttering every speed message."""
+    import respx
+    from httpx import Response
+    from jmri_core.config import get_jmri_url
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        code, out, _ = await run(capsys, "throttle", "speed", "4", "40", "--hold", "1")
+    finally:
+        router.stop()
+
+    assert code == 0
+    assert "system=" not in out
 
 
 async def test_throttle_stop_no_loco_stops_every_cached_address(fake_jmri, capsys):
@@ -1712,7 +1982,7 @@ async def test_throttle_engine_stop_inside_shell_with_no_loco_and_empty_cache(fa
         await client.close()
 
 
-async def test_throttle_find_resolves_fuzzy_name(mock_roster, capsys):
+async def test_throttle_find_resolves_fuzzy_name(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "throttle", "find", "autorail")
     assert code == 0
     assert "address=4" in out and "name=Autorail" in out and "speed=-" in out
@@ -1724,37 +1994,37 @@ async def test_throttle_find_unknown_name(mock_roster, capsys):
     assert "Unknown locomotive 'tgv'" in err
 
 
-async def test_throttle_findr_matches_regex(mock_roster, capsys):
+async def test_throttle_findr_matches_regex(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "throttle", "findr", "^auto")
     assert code == 0
     assert "4" in out and "Autorail" in out
 
 
-async def test_throttle_findr_no_match(mock_roster, capsys):
+async def test_throttle_findr_no_match(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "throttle", "findr", "zzz")
     assert code == 0
     assert "No roster entries match" in out
 
 
-async def test_throttle_findr_invalid_regex(mock_roster, capsys):
+async def test_throttle_findr_invalid_regex(mock_roster, mock_power, capsys):
     code, _, err = await run(capsys, "throttle", "findr", "[")
     assert code == 1
     assert "Invalid regex" in err
 
 
-async def test_throttle_findg_matches_glob(mock_roster, capsys):
+async def test_throttle_findg_matches_glob(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "throttle", "findg", "auto*")
     assert code == 0
     assert "4" in out and "Autorail" in out
 
 
-async def test_throttle_findg_no_match(mock_roster, capsys):
+async def test_throttle_findg_no_match(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "throttle", "findg", "zzz*")
     assert code == 0
     assert "No roster entries match" in out
 
 
-async def test_throttle_list_shows_roster_name_for_matched_address(mock_roster, capsys):
+async def test_throttle_list_shows_roster_name_for_matched_address(mock_roster, mock_power, capsys):
     from jmri_cli import state as _state
 
     _state.update_address(4, speed=0.4, forward=True)
@@ -1763,7 +2033,7 @@ async def test_throttle_list_shows_roster_name_for_matched_address(mock_roster, 
     assert "Autorail" in out
 
 
-async def test_throttle_list_shows_dash_for_address_with_no_roster_entry(mock_roster, capsys):
+async def test_throttle_list_shows_dash_for_address_with_no_roster_entry(mock_roster, mock_power, capsys):
     from jmri_cli import state as _state
 
     _state.update_address(99, speed=0.4, forward=True)
@@ -1772,6 +2042,18 @@ async def test_throttle_list_shows_dash_for_address_with_no_roster_entry(mock_ro
     lines = [line for line in out.splitlines() if line.strip().startswith("99")]
     assert len(lines) == 1
     assert "-" in lines[0]
+
+
+async def test_throttle_list_shows_default_system_when_no_dcc_system_set(mock_roster, mock_power, capsys):
+    """A roster entry with no DccSystem attribute is still actually driven
+    through JMRI's default command station -- must show its name, not "-"."""
+    from jmri_cli import state as _state
+
+    _state.update_address(4, speed=0.4, forward=True)
+    code, out, _ = await run(capsys, "throttle")
+    assert code == 0
+    autorail_line = next(l for l in out.splitlines() if l.strip().startswith("4"))
+    assert "DCC++ Raijin" in autorail_line
 
 
 async def test_throttle_list_falls_back_to_dash_when_jmri_unreachable(fake_jmri, capsys):
@@ -1788,10 +2070,16 @@ async def test_throttle_list_falls_back_to_dash_when_jmri_unreachable(fake_jmri,
     assert "Warning" in err
 
 
-async def test_throttle_find_shows_dash_name_when_resolved_by_raw_address_with_no_roster_entry(mock_roster, capsys):
+async def test_throttle_find_shows_dash_name_when_resolved_by_raw_address_with_no_roster_entry(mock_roster, mock_power, capsys):
     code, out, _ = await run(capsys, "throttle", "find", "99")
     assert code == 0
     assert "address=99" in out and "name=-" in out
+
+
+async def test_throttle_find_shows_default_system_when_no_dcc_system_set(mock_roster, mock_power, capsys):
+    code, out, _ = await run(capsys, "throttle", "find", "autorail")
+    assert code == 0
+    assert "DCC++ Raijin" in out
 
 
 async def test_acquire_shortcut_matches_throttle_acquire(fake_jmri, capsys):

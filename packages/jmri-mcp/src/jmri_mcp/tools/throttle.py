@@ -27,6 +27,9 @@ from jmri_mcp.tools._common import (
     compact_throttle,
     direction_name,
     ensure_acquired,
+    resolve_prefix,
+    resolve_speed_scale,
+    resolve_system_field,
     run_in_background,
     throttle_id,
 )
@@ -50,35 +53,42 @@ def register(mcp) -> None:
             address: The locomotive's DCC address.
             prefix: Optional command station prefix (e.g. "O", "Z", "R") to
                 target when more than one DCC system is connected. Omit to
-                use JMRI's default command station.
+                auto-detect from the roster's DccSystem attribute (see
+                list_roster's "dcc_system" field), else JMRI's default
+                station. Pass explicitly only to override auto-detection.
 
         You usually do NOT need to call this explicitly before set_speed/
-        stop/emergency_stop — those acquire the throttle automatically on
-        first use for a smoother voice UX ("speed up the 3" just works).
-        Call acquire_throttle directly when you specifically want to know a
-        loco's current speed/direction before deciding what to do (the
-        acquire reply reports both), or to target a non-default command
-        station via `prefix`.
+        stop/emergency_stop — those auto-acquire on first use (same
+        DccSystem auto-detection) for a smoother voice UX. Call this
+        directly when you want a loco's current speed/direction before
+        deciding what to do (the reply reports both), or to override the
+        detected station via an explicit `prefix`.
 
-        Safe to call again on an address already acquired by this session —
-        JMRI just re-confirms it, it does not error or reset the loco.
-        Release with release_throttle when done, though it's not required:
-        JMRI releases every throttle this session holds automatically if
-        the MCP server disconnects.
+        Safe to call again on an address already acquired this session —
+        JMRI just re-confirms it, no error or loco reset. Release with
+        release_throttle when done, though not required: JMRI releases
+        every throttle this session holds if the MCP server disconnects.
 
         In exhibition mode with an address allowlist configured, an
-        address outside that list is refused here (and by every other
-        throttle tool, which all route through this same check on first
-        acquire) — see enter_exhibition_mode.
+        address outside it is refused here (and by every other throttle
+        tool, routed through this same check) — see enter_exhibition_mode.
+
+        Returns "system": full name of the command station actually used,
+        only when non-default — mention it to the user when present.
         """
         client = get_ws_client()
         try:
             check_exhibition_address_allowed(address)
-            data = await client.acquire_throttle(throttle_id(address), address, prefix)
+            resolved_prefix = await resolve_prefix(address, prefix)
+            data = await client.acquire_throttle(throttle_id(address), address, resolved_prefix)
+            system = await resolve_system_field(resolved_prefix)
         except JmriError as exc:
             logger.warning("acquire_throttle(%r, %r) failed: %s", address, prefix, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {"acquired": True, **compact_throttle(data)}
+        result = {"acquired": True, **compact_throttle(data)}
+        if system:
+            result["system"] = system
+        return result
 
     @mcp.tool()
     async def release_throttle(address: int) -> dict:
@@ -106,43 +116,28 @@ def register(mcp) -> None:
         """Set a locomotive's speed as a percentage of its maximum (0-100%).
 
         Args:
-            address: DCC address. Auto-acquires the throttle if needed —
-                no need to call acquire_throttle first for "speed up the 3".
+            address: DCC address. Auto-acquires the throttle if needed.
             speed_percent: 0-100, clamped not rejected.
-            direction: Optional "forward"/"reverse" (case-insensitive).
-                Pass this when a request names BOTH speed and direction
-                together ("avance à 40%", "go forward at 40%") so they're
-                set atomically in one call — don't call set_direction
-                separately first or after, a loco moving the wrong way
-                needs both changed at once. Omit for a pure speed change
-                that must not touch the current direction. Flips
-                instantly if needed (no ramp); for a smoother flip-and-
-                ramp use set_speed_ramped instead.
+            direction: Optional "forward"/"reverse" (case-insensitive) — set
+                together with speed_percent atomically ("avance à 40%")
+                instead of a separate set_direction call. Omit to leave
+                direction untouched. Flips instantly; for a ramped flip use
+                set_speed_ramped instead.
 
-        Returns the actual speed JMRI reports back as a percentage — may
-        differ slightly (DCC uses discrete speed steps, rounded). Also
-        includes "direction" when the direction argument was passed,
-        omitted otherwise.
+        Returns actual speed as % of THIS loco's own configured maximum
+        (roster "Throttle Speed Limit"), matching PanelPro's slider, not
+        the raw decoder ceiling. Includes "direction" only when passed,
+        "system" (command-station name) only when non-default.
 
-        Use stop for a controlled halt (0%) or emergency_stop for a panic
-        stop — not set_speed(speed_percent=0), a different command to JMRI.
+        Use stop (0%) or emergency_stop (panic) rather than speed_percent=0.
+        For a DURATION use set_speed_ramped(hold_seconds=...) — this tool
+        is immediate only.
 
-        For a DURATION ("for 10 seconds", "pendant 10 secondes"), don't
-        follow this with a separately-timed stop — use
-        set_speed_ramped(hold_seconds=...) instead, which waits and
-        auto-stops server-side in one call. This tool is only for an
-        immediate, duration-less change.
+        No-op (no error, no write) if requested speed already matches
+        current — JMRI sends no confirmation for a redundant command.
 
-        Speed can change from elsewhere (another panel/session) at any
-        time. If the requested speed already matches current, JMRI sends
-        no confirmation and this returns immediately without writing
-        anything — expected, not a failure; the reported speed_percent is
-        still accurate, read from a cache kept live by JMRI's broadcasts.
-
-        In exhibition mode, the requested speed_percent/direction are
-        IGNORED and replaced with a fixed, moderate, forward-only speed —
-        the loco still moves, just not at the value asked for. See
-        enter_exhibition_mode.
+        Exhibition mode overrides speed_percent/direction with a fixed
+        moderate forward speed — see enter_exhibition_mode.
         """
         client = get_ws_client()
         if is_exhibition_mode():
@@ -156,26 +151,32 @@ def register(mcp) -> None:
                 if normalized not in ("forward", "reverse"):
                     raise JmriError("invalid_direction", direction=direction)
             await ensure_acquired(client, address)
+            scale = await resolve_speed_scale(address)
+            scaled_speed = speed * scale
             if normalized is not None:
                 data = await execute_speed_change(
                     client,
                     throttle_id(address),
                     target_forward=(normalized == "forward"),
-                    target_fraction=speed,
+                    target_fraction=scaled_speed,
                     rampup=0.0,
                     rampdown=0.0,
                     hold_seconds=None,
                 )
             else:
-                data = await client.set_speed(throttle_id(address), speed)
+                data = await client.set_speed(throttle_id(address), scaled_speed)
         except JmriError as exc:
             logger.warning(
                 "set_speed(%r, %r, %r) failed: %s", address, speed_percent, direction, exc
             )
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        result = {"address": address, "speed_percent": data.get("speed", speed) * 100}
+        result = {"address": address, "speed_percent": data.get("speed", scaled_speed) / scale * 100}
         if normalized is not None:
             result["direction"] = direction_name(data.get("forward", normalized == "forward"))
+        state = client.throttle_state(throttle_id(address)) or {}
+        system = await resolve_system_field(state.get("prefix"))
+        if system:
+            result["system"] = system
         return result
 
     @mcp.tool()
@@ -187,67 +188,51 @@ def register(mcp) -> None:
         rampdown_seconds: float = 0.0,
         hold_seconds: float | None = None,
     ) -> dict:
-        """Change a locomotive's speed gradually instead of instantly — a smooth ramp up and/or down.
+        """Change a locomotive's speed gradually — a smooth ramp up and/or down.
 
         Args:
             address: DCC address. Auto-acquires the throttle if needed.
-            speed_percent: Target speed, 0-100%. Legacy shorthand kept for
-                backward compatibility: a NEGATIVE value TOGGLES direction
-                relative to whatever the loco is currently facing (forward
-                -> reverse, or reverse -> forward) and ramps to |value|% —
-                it is not an absolute "always reverse", so calling it twice
-                in a row flips back and forth. Prefer the explicit
-                direction param below for new calls, it's clearer intent
-                and not relative to current state. Ignored as a sign once
-                direction is given (only its magnitude, clamped 0-100, is
-                used then). Unrelated to emergency_stop's real decoder
-                e-stop, never sent here.
-            direction: Optional "forward"/"reverse" (case-insensitive) —
-                set together with speed_percent in one atomic ramped call,
-                e.g. "avance progressivement à 40%" (loco currently in
-                reverse) -> set_speed_ramped(speed_percent=40,
-                direction="forward", rampup_seconds=3). Takes precedence
-                over speed_percent's negative-sign shorthand if both are
-                somehow given.
-            rampup_seconds: Seconds to climb to the target if it's higher
-                (or on a direction flip while moving). 0 = instant, like
-                plain set_speed.
-            rampdown_seconds: Seconds to descend when the target is lower,
-                on a direction-flip stop-first, and for the auto-stop at
-                the end of hold_seconds. 0 = instant.
-            hold_seconds: Hold the target this many seconds, then
-                AUTOMATICALLY RAMP TO A STOP (via rampdown_seconds) before
-                returning — for "run forward at 30% for 10 seconds". Omit
-                (None) to reach the target and keep going, like set_speed
-                but ramped. Pass the user's number straight through
-                ("pendant 10 secondes" -> hold_seconds=10); the server does
-                the waiting, not you — never refuse this as untrackable.
+            speed_percent: Target speed, 0-100%. Legacy shorthand: NEGATIVE
+                toggles direction relative to current facing, ramps to
+                |value|%. Prefer explicit direction for new calls — ignored
+                as a sign once direction is given (only its clamped 0-100
+                magnitude used then).
+            direction: Optional "forward"/"reverse" (case-insensitive), set
+                atomically with speed_percent, e.g. "avance progressivement
+                à 40%" (loco in reverse) -> speed_percent=40,
+                direction="forward", rampup_seconds=3. Wins over the
+                negative-sign shorthand if both given.
+            rampup_seconds: Seconds to climb to the target if higher (or on
+                a direction flip while moving). 0 = instant.
+            rampdown_seconds: Seconds to descend when lower, on a
+                direction-flip stop-first, and for hold_seconds' auto-stop.
+                0 = instant.
+            hold_seconds: Hold the target this long, then auto-ramp to a
+                stop before returning — "run forward at 30% for 10s" ->
+                hold_seconds=10. Omit to reach the target and keep going.
 
-        Use instead of plain set_speed for "en douceur"/"progressivement"/
-        "ramp up/down" requests or an explicit duration before stopping.
-        Use emergency_stop for any panic/safety stop — this tool never
-        sends the real e-stop sentinel even at rampdown_seconds=0.
+        Use instead of plain set_speed for "en douceur"/"progressivement"
+        or a duration before stopping. Use emergency_stop for a panic stop
+        — never sent here, even at rampdown_seconds=0.
 
-        Timing: a SHORT total duration blocks until finished and returns
-        final speed/direction like set_speed. A LONGER one returns
-        immediately with "status": "started" once the ramp is kicked off,
-        and keeps running server-side after you respond — the loco WILL
-        stop itself automatically, no follow-up call needed. This exists
-        so a long silent wait doesn't trip the voice/chat client's own
-        turn timeout. "started" is success, not a failure or a dropped
-        call — tell the user the action has begun, not that it finished.
+        A SHORT total duration blocks and returns final speed/direction. A
+        LONGER one returns immediately with "status": "started" and keeps
+        running server-side — the loco stops itself automatically, no
+        follow-up call needed. "started" is success, not "finished".
 
         A direction flip while moving ramps to 0 first, flips, then ramps
-        back up — never flips while still rolling.
+        back up.
 
-        Returns final speed/direction (set_speed/set_direction shape), or
-        for the background path: {"address", "status": "started",
-        "speed_percent", "direction", "seconds_total"}.
+        speed_percent is relative to THIS loco's configured maximum
+        (roster "Throttle Speed Limit") like set_speed.
 
-        In exhibition mode, the requested speed_percent/direction are
-        IGNORED and replaced with a fixed, moderate, forward-only speed,
-        ramped over the requested rampup_seconds like normal — see
-        enter_exhibition_mode.
+        Returns final speed/direction, or for the background path:
+        {"address", "status": "started", "speed_percent", "direction",
+        "seconds_total"}. Either shape includes "system" (full
+        command-station name) only when non-default.
+
+        In exhibition mode, speed_percent/direction are IGNORED and
+        replaced with a fixed, moderate, forward-only speed.
         """
         client = get_ws_client()
         if is_exhibition_mode():
@@ -265,6 +250,9 @@ def register(mcp) -> None:
             if normalized is not None and normalized not in ("forward", "reverse"):
                 raise JmriError("invalid_direction", direction=direction)
             await ensure_acquired(client, address)
+            scale = await resolve_speed_scale(address)
+            state = client.throttle_state(throttle_id(address)) or {}
+            system = await resolve_system_field(state.get("prefix"))
         except JmriError as exc:
             logger.warning(
                 "set_speed_ramped(%r, %r, direction=%r, rampup=%r, rampdown=%r, hold=%r) failed: %s",
@@ -279,6 +267,8 @@ def register(mcp) -> None:
             else:
                 target_forward = None
 
+        scaled_target_fraction = target_fraction * scale
+
         if total_seconds > RAMPED_SPEED_BACKGROUND_THRESHOLD_SECONDS:
             async def _run_ramp() -> None:
                 try:
@@ -286,7 +276,7 @@ def register(mcp) -> None:
                         client,
                         throttle_id(address),
                         target_forward=target_forward,
-                        target_fraction=target_fraction,
+                        target_fraction=scaled_target_fraction,
                         rampup=rampup_seconds,
                         rampdown=rampdown_seconds,
                         hold_seconds=hold_seconds,
@@ -298,20 +288,23 @@ def register(mcp) -> None:
                     )
 
             run_in_background(_run_ramp())
-            return {
+            result = {
                 "address": address,
                 "status": "started",
                 "speed_percent": target_fraction * 100,
                 "direction": direction_name(target_forward),
                 "seconds_total": total_seconds,
             }
+            if system:
+                result["system"] = system
+            return result
 
         try:
             data = await execute_speed_change(
                 client,
                 throttle_id(address),
                 target_forward=target_forward,
-                target_fraction=target_fraction,
+                target_fraction=scaled_target_fraction,
                 rampup=rampup_seconds,
                 rampdown=rampdown_seconds,
                 hold_seconds=hold_seconds,
@@ -322,11 +315,14 @@ def register(mcp) -> None:
                 address, speed_percent, direction, rampup_seconds, rampdown_seconds, hold_seconds, exc,
             )
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {
+        result = {
             "address": address,
-            "speed_percent": (data.get("speed") or 0.0) * 100,
+            "speed_percent": (data.get("speed") or 0.0) / scale * 100,
             "direction": direction_name(data.get("forward")),
         }
+        if system:
+            result["system"] = system
+        return result
 
     @mcp.tool()
     async def stop(address: int) -> dict:
@@ -622,7 +618,8 @@ def register(mcp) -> None:
         Args:
             address: The locomotive's DCC address.
             prefix: Optional command station prefix (e.g. "O", "Z", "R"),
-                passed straight through to acquire_throttle.
+                passed straight through to acquire_throttle — including its
+                DccSystem roster auto-detection when omitted.
 
         Use for "prépare la loco"/"prepare the 3"/"get the autorail ready"
         — counterpart to park_locomotive, beginning a session rather than
@@ -649,7 +646,8 @@ def register(mcp) -> None:
         """
         client = get_ws_client()
         try:
-            data = await client.acquire_throttle(throttle_id(address), address, prefix)
+            resolved_prefix = await resolve_prefix(address, prefix)
+            data = await client.acquire_throttle(throttle_id(address), address, resolved_prefix)
         except JmriError as exc:
             logger.warning("prepare_locomotive(%r, %r) acquire step failed: %s", address, prefix, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}

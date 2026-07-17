@@ -6,6 +6,7 @@ from httpx import ConnectError, Response
 
 from jmri_core.jmri_client import (
     JmriError,
+    default_system_prefix,
     get_blocks,
     get_lights,
     get_roster,
@@ -14,11 +15,14 @@ from jmri_core.jmri_client import (
     get_systems,
     get_turnouts,
     resolve_block,
+    resolve_dcc_prefix,
     resolve_light,
+    resolve_max_speed_percent,
     resolve_roster_entry,
     resolve_sensor,
     resolve_signal,
     resolve_system,
+    resolve_system_name,
     resolve_turnout,
 )
 from jmri_core.testing.plugin import MOCK_JMRI_URL, expect_error
@@ -454,19 +458,19 @@ async def test_get_roster_compacts_fixture_entries(mock_roster, roster_fixture):
             "name": "141R", "address": 2, "road": "Mikado 141 R",
             "road_number": "141 R 1246, dépôt de Miramas", "manufacturer": "Jouef",
             "model": "8273", "owner": "SNCF", "date_modified": "2024-01-20T13:18:40.774+00:00",
-            "groups": ["test"],
+            "groups": ["test"], "dcc_system": None, "max_speed_percent": 100,
         },
         {
             "name": "Autorail", "address": 4, "road": "Railcar",
             "road_number": "", "manufacturer": "", "model": "4185A",
             "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-            "groups": [],
+            "groups": [], "dcc_system": None, "max_speed_percent": 100,
         },
         {
             "name": "Boite à Sel", "address": 8, "road": "",
             "road_number": "", "manufacturer": "", "model": "",
             "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-            "groups": [],
+            "groups": [], "dcc_system": None, "max_speed_percent": 100,
         },
     ]
 
@@ -489,7 +493,8 @@ async def test_get_roster_skips_entries_with_unusable_address():
     assert roster == [{
         "name": "141R", "address": 2, "road": "Mikado",
         "road_number": "", "manufacturer": "", "model": "8273",
-        "owner": "", "date_modified": "", "groups": [],
+        "owner": "", "date_modified": "", "groups": [], "dcc_system": None,
+        "max_speed_percent": 100,
     }]
 
 
@@ -501,7 +506,8 @@ async def test_get_roster_accepts_bare_data():
     assert roster == [{
         "name": "141R", "address": 2, "road": "Mikado",
         "road_number": "", "manufacturer": "", "model": "8273",
-        "owner": "", "date_modified": "", "groups": [],
+        "owner": "", "date_modified": "", "groups": [], "dcc_system": None,
+        "max_speed_percent": 100,
     }]
 
 
@@ -510,6 +516,150 @@ async def test_get_roster_raises_on_non_list_non_dict_payload():
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json="oops"))
         with pytest.raises(JmriError, match="Unexpected /json/roster payload"):
             await get_roster()
+
+
+async def test_get_roster_reads_dcc_system_attribute():
+    entries = [{"type": "rosterEntry", "data": {
+        "name": "Cars", "address": "5", "attributes": [
+            {"name": "DccSystem", "value": "T"},
+            {"name": "LastOperated", "value": "2026-07-16T06:30:14.205+00:00"},
+        ],
+    }}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        roster = await get_roster()
+    assert roster[0]["dcc_system"] == "T"
+
+
+async def test_get_roster_dcc_system_none_when_attribute_absent():
+    entries = [{"type": "rosterEntry", "data": {
+        "name": "Cars", "address": "5", "attributes": [
+            {"name": "LastOperated", "value": "2026-07-16T06:30:14.205+00:00"},
+        ],
+    }}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        roster = await get_roster()
+    assert roster[0]["dcc_system"] is None
+
+
+async def test_get_roster_dcc_system_none_when_no_attributes_field():
+    entries = [{"type": "rosterEntry", "data": {"name": "Cars", "address": "5"}}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        roster = await get_roster()
+    assert roster[0]["dcc_system"] is None
+
+
+# --- resolve_dcc_prefix: issue #60's actual fix mechanism ---
+
+
+async def test_resolve_dcc_prefix_returns_dcc_system_when_set():
+    entries = [{"type": "rosterEntry", "data": {
+        "name": "Cars", "address": "5", "attributes": [
+            {"name": "DccSystem", "value": "T"},
+        ],
+    }}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        prefix = await resolve_dcc_prefix(5)
+    assert prefix == "T"
+
+
+async def test_resolve_dcc_prefix_none_when_attribute_unset():
+    entries = [{"type": "rosterEntry", "data": {"name": "Autorail", "address": "4"}}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        prefix = await resolve_dcc_prefix(4)
+    assert prefix is None
+
+
+async def test_resolve_dcc_prefix_none_when_address_not_in_roster():
+    entries = [{"type": "rosterEntry", "data": {"name": "Autorail", "address": "4"}}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        prefix = await resolve_dcc_prefix(99)
+    assert prefix is None
+
+
+async def test_resolve_dcc_prefix_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await resolve_dcc_prefix(5)
+
+
+# --- resolve_max_speed_percent: PanelPro's client-side speed-scaling parity ---
+
+
+async def test_resolve_max_speed_percent_returns_configured_limit():
+    entries = [{"type": "rosterEntry", "data": {
+        "name": "Cars", "address": "5", "maxSpeedPct": 20,
+    }}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        limit = await resolve_max_speed_percent(5)
+    assert limit == 20
+
+
+async def test_resolve_max_speed_percent_defaults_to_100_when_unset():
+    entries = [{"type": "rosterEntry", "data": {"name": "Autorail", "address": "4"}}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        limit = await resolve_max_speed_percent(4)
+    assert limit == 100
+
+
+async def test_resolve_max_speed_percent_defaults_to_100_when_address_not_in_roster():
+    entries = [{"type": "rosterEntry", "data": {"name": "Autorail", "address": "4"}}]
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
+        limit = await resolve_max_speed_percent(99)
+    assert limit == 100
+
+
+async def test_resolve_max_speed_percent_raises_on_connection_failure():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/roster").mock(side_effect=ConnectError("refused"))
+        with pytest.raises(JmriError, match="GET .*failed"):
+            await resolve_max_speed_percent(5)
+
+
+# --- resolve_system_name / default_system_prefix: prefix -> full name display ---
+
+
+async def test_resolve_system_name_matches_known_prefix(mock_power):
+    name = await resolve_system_name("O")
+    assert name == "DCC++ Ohara"
+
+
+async def test_resolve_system_name_falls_back_to_prefix_when_unknown(mock_power):
+    name = await resolve_system_name("T")
+    assert name == "T"
+
+
+async def test_resolve_system_name_none_prefix_returns_default_systems_name(mock_power):
+    name = await resolve_system_name(None)
+    assert name == "DCC++ Raijin"
+
+
+async def test_resolve_system_name_falls_back_to_prefix_on_jmri_error():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=ConnectError("refused"))
+        name = await resolve_system_name("T")
+    assert name == "T"
+
+
+async def test_default_system_prefix_returns_default_systems_prefix(mock_power):
+    prefix = await default_system_prefix()
+    assert prefix == "R"
+
+
+async def test_default_system_prefix_none_on_jmri_error():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=ConnectError("refused"))
+        prefix = await default_system_prefix()
+    assert prefix is None
 
 
 # --- get_roster_function_labels ---

@@ -335,6 +335,61 @@ for different reasons:
   name/address/road/model — the legacy prototype's roster bug was reading
   the envelope level instead of `entry["data"]`, which always came up
   empty; `_unwrap()` (shared with `get_systems()`) is what fixes that here.
+  It also surfaces `dcc_system`: the connection prefix (e.g. `"T"`) a
+  locomotive is normally driven through, read from a `DccSystem` JMRI
+  RosterEntry Attribute (`entry["attributes"]`, a list of `{"name",
+  "value"}` pairs set via PanelPro's Roster Entry → Edit → Attributes tab,
+  distinct from `rosterGroups`) — `None` when unset, the normal case on a
+  single-command-station layout. `get_roster()` also surfaces
+  `max_speed_percent`: the roster's `maxSpeedPct` field (PanelPro's Roster
+  Entry editor calls this "Throttle Speed Limit"), defaulting to 100 (no
+  restriction) when unset. `resolve_dcc_prefix()`/`resolve_max_speed_percent()`
+  look these two fields up for a single address without fetching/compacting
+  the whole roster. `resolve_system_name(prefix)` and `default_system_prefix()`
+  round out the display side: given a prefix, look up the matching system's
+  full name from `get_systems()` (falling back to the prefix itself if it's
+  unknown or JMRI is unreachable — never raises), and report which prefix is
+  JMRI's own default system.
+- **Speed scaling (PanelPro parity).** JMRI's WebSocket `speed` field is a
+  raw 0.0-1.0 decoder fraction; it does not apply a roster's `maxSpeedPct`
+  limit on its own. PanelPro's own throttle window scales its slider by that
+  limit client-side before sending to JMRI, so this project replicates that
+  scaling itself: a requested `speed_percent` is always relative to a loco's
+  *own* configured maximum (100% means 100% of `max_speed_percent`, not the
+  raw decoder ceiling), converted to a decoder fraction via
+  `resolve_speed_scale(address)` (jmri-mcp `tools/_common.py`, 0.0-1.0
+  multiplier from `resolve_max_speed_percent`, defaults to 1.0 — fail-open —
+  on lookup failure) immediately before the value reaches
+  `client.set_speed()`/`execute_speed_change()`, and unscaled back the same
+  way when reporting the actual speed. `jmri-cli`'s `throttle speed` applies
+  the identical scale computed inline from `resolve_max_speed_percent()`.
+  Most locos have no limit set, in which case this is a no-op.
+- **System-name display: two different conventions for two different
+  audiences.** Every place a command station matters to the user shows the
+  resolved system's full name (e.g. `"DCC++ Ohara"`), never the bare prefix
+  alone — but *when* it's shown differs by context:
+  - **Roster listings** (`list_roster`/`find_locomotive`, `roster
+    list`/`find`/`findr`/`findg`, `throttle list`/`find`/`findr`/`findg`)
+    always show a system, because a locomotive is always actually driven
+    through *some* system. `dcc_system_name` (MCP) and the `DCC system`
+    column/`dcc_system=` field (CLI) fall back to JMRI's own default
+    system's prefix/name when the entry has no explicit `DccSystem`
+    attribute set, rather than showing `null`/`-` — that would misleadingly
+    read as "no system" instead of "the default one". Only a failed
+    default-system lookup itself falls back to `-`/`null`.
+    `find_locomotive` gets this for free from `resolve_system_name(prefix)`
+    (its `prefix=None` case already resolves to the default system's name);
+    `list_roster` and the `jmri-cli` roster/throttle listing code derive
+    `default_prefix` from `get_systems()`'s `default: True` entry and apply
+    `dcc_system or default_prefix` before the name lookup.
+  - **Throttle action messages** (`acquire_throttle`, `set_speed`,
+    `set_speed_ramped`, and `jmri-cli`'s equivalents) stay silent about the
+    system on the common case, to avoid clutter — they only mention it when
+    the prefix in use differs from JMRI's default system
+    (`resolve_system_field(prefix)` in `tools/_common.py`, returning `None`
+    when the prefix equals the default); `jmri-cli` mirrors this with
+    `_system_suffix(prefix)` in `throttle.py`, appending `" system=<name>"`
+    to printed lines only in the non-default case.
 - **`jmri_ws/`** — a persistent WebSocket (`ws://<jmri>:12080/json/`).
   This exists for one reason: **a JMRI throttle is bound to the connection
   that acquired it**. HTTP can't hold a throttle open between requests, so

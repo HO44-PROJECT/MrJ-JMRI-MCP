@@ -251,18 +251,20 @@ DCC++ Raijin        OFF
 
 ## `jmri-cli power` / `power status`
 
-Show the power state of every system, sorted alphabetically, as a table with
-a `Default` column marking which one JMRI treats as its default. No side
-effects. Bare `jmri-cli power` is identical to `jmri-cli power status`.
+Show the power state of every system, sorted alphabetically by name, as a
+table with a `SystemID` column (the connection prefix, e.g. `O`/`Z`/`T`/`R`
+— the same value to pass as `acquire`'s `--prefix`) and a `Default` column
+marking which one JMRI treats as its default. No side effects. Bare
+`jmri-cli power` is identical to `jmri-cli power status`.
 
 ```bash
 $ jmri-cli power
-System              State    Default
-------------------  -------  ---------
-ohara (turnouts)    OFF
-raijin (tracks)     OFF      yes
-taya (accessories)  OFF
-zou (test)          OFF
+SystemID  System              State    Default
+--------  ------------------  -------  ---------
+O         ohara (turnouts)    OFF
+R         raijin (tracks)     OFF      yes
+T         taya (accessories)  OFF
+Z         zou (test)          OFF
 ```
 
 The name shown is JMRI's connection name verbatim — if the user has added
@@ -270,6 +272,26 @@ a parenthetical in JMRI's own connection setup (e.g. `"zou (test)"`,
 `"raijin (tracks)"`), it prints as part of the name unchanged, since
 that's the only place JMRI records a connection's purpose (see issue #24
 and `docs/architecture.md`).
+
+### Sorting: `jmri-cli power by<column>`
+
+Same `by<column>` sibling-subcommand pattern as `roster` below.
+
+| Subcommand      | Sorts by                |
+| --------------- | ------------------------ |
+| `power byid`    | SystemID (connection prefix) |
+| `power byname`  | System name (default)    |
+| `power bystate` | State                    |
+
+```bash
+$ jmri-cli power byid
+SystemID ▼  System              State    Default
+----------  ------------------  -------  ---------
+O           ohara (turnouts)    OFF
+R           raijin (tracks)     OFF      yes
+T           taya (accessories)  OFF
+Z           zou (test)          OFF
+```
 
 ## `jmri-cli power get [system]`
 
@@ -365,20 +387,35 @@ into UNKNOWN instead of no-opping, which is awkward to recover from.
 
 ## `jmri-cli roster` / `roster list`
 
-List every locomotive in JMRI's roster: DCC address, name, road, model, as a
-sorted table. No side effects. Empty road/model print as `-` (the user
-never filled them in in JMRI — not an error). Bare `jmri-cli roster` is
-identical to `jmri-cli roster list`, sorted by name by default.
+List every locomotive in JMRI's roster: DCC address, name, road, model, DCC
+system, and max speed, as a sorted table. No side effects. Empty road/model
+print as `-` (the user never filled them in in JMRI — not an error). Bare
+`jmri-cli roster` is identical to `jmri-cli roster list`, sorted by name by
+default.
 
 ```bash
 $ jmri-cli roster
-  Address  Name ▼       Road                            Model
----------  -----------  ------------------------------  -------
-        2  141R         Mikado 141 R                    8273
-        3  Corentine    Locotender 030T                 63338
-        4  Autorail     Railcar                         4185A
-        8  Boite à Sel  -                                -
+  Address  Name ▼       Road                            Model    DCC system    Max speed %
+---------  -----------  ------------------------------  -------  ------------  -----------
+        2  141R         Mikado 141 R                    8273     DCC++ Raijin  100
+        3  Corentine    Locotender 030T                 63338    DCC++ Raijin  100
+        4  Autorail     Railcar                         4185A    DCC++ Raijin  100
+        8  Boite à Sel  -                                -       DCC++ Taya    20
 ```
+
+`DCC system` is the full name of the command station this locomotive is
+normally driven through, resolved from a `DccSystem` Roster Entry Attribute
+set in PanelPro (Roster Entry → Edit → Attributes tab) if present. Most
+locos don't have this attribute set (a single-command-station layout
+doesn't need it) — those still show a system, JMRI's own default one
+(`DCC++ Raijin` above), since the locomotive is actually driven through it
+either way; only a failed default-system lookup falls back to `-`. An
+unrecognized prefix just shows the bare prefix instead of a name.
+
+`Max speed %` is the roster's `maxSpeedPct` field (PanelPro's Roster Entry
+editor calls this "Throttle Speed Limit"), defaulting to 100 (no
+restriction) when unset. `throttle speed` scales requested percentages by
+this limit — see `jmri-cli throttle speed` below.
 
 ### Sorting: `jmri-cli roster by<column>`
 
@@ -398,15 +435,16 @@ options. The sorted column is marked with a `▼` in the header.
 | `roster byowner`     | Owner             |
 | `roster bydate`      | Last-modified date|
 | `roster bygroup`     | Roster group      |
+| `roster bydccsystem`  | DCC system       |
 
 ```bash
 $ jmri-cli roster bydcc
-  Address ▼  Name         Road                            Model
------------  -----------  ------------------------------  -------
-          2  141R         Mikado 141 R                    8273
-          3  Corentine    Locotender 030T                 63338
-          4  Autorail     Railcar                         4185A
-          8  Boite à Sel  -                                -
+  Address ▼  Name         Road                            Model    DCC system    Max speed
+-----------  -----------  ------------------------------  -------  ------------  -----------
+          2  141R         Mikado 141 R                    8273     DCC++ Raijin  100
+          3  Corentine    Locotender 030T                 63338    DCC++ Raijin  100
+          4  Autorail     Railcar                         4185A    DCC++ Raijin  100
+          8  Boite à Sel  -                                -       DCC++ Taya    20
 ```
 
 ## `jmri-cli roster find <name-or-address>`
@@ -420,10 +458,10 @@ before feeding it to `throttle`.
 
 ```bash
 $ jmri-cli roster find autorail
-address=4 name=Autorail road=Railcar road_number=ET 90 02 manufacturer=Roco model=4185A owner=DB modified=2023-12-30T17:06:47.954+00:00 groups=-
+address=4 name=Autorail road=Railcar road_number=ET 90 02 manufacturer=Roco model=4185A owner=DB modified=2023-12-30T17:06:47.954+00:00 groups=- dcc_system=DCC++ Raijin max_speed_percent=100%
 
 $ jmri-cli roster find 4
-address=4 name=Autorail road=Railcar road_number=ET 90 02 manufacturer=Roco model=4185A owner=DB modified=2023-12-30T17:06:47.954+00:00 groups=-
+address=4 name=Autorail road=Railcar road_number=ET 90 02 manufacturer=Roco model=4185A owner=DB modified=2023-12-30T17:06:47.954+00:00 groups=- dcc_system=DCC++ Raijin max_speed_percent=100%
 
 $ jmri-cli roster find tgv
 Error: Unknown locomotive 'tgv'. Available: 141R, Autorail, Boite à Sel
@@ -514,10 +552,16 @@ No locomotives touched yet by this CLI. Run e.g. `jmri-cli throttle speed <loco>
 $ jmri-cli throttle speed 3 40 --hold 5
 address=3 speed=0%
 $ jmri-cli throttle
-  Address  Name    Speed    Direction    Functions on
----------  ------  -------  -----------  --------------
-        3  Diesel  0%       forward      -
+  Address  Name    Speed    Direction    Functions on    DCC system
+---------  ------  -------  -----------  --------------  ------------
+        3  Diesel  0%       forward      -               DCC++ Raijin
 ```
+
+Like `roster list`'s, the **DCC system** column shows the full name of the
+command station this locomotive's `DccSystem` roster attribute names. Most
+locos don't have this attribute set — those still show a system, JMRI's own
+default one (`DCC++ Raijin` above), since that's what actually drives them;
+a failed default-system lookup is the only case that falls back to `-`.
 
 ### Why `throttle` has a local cache
 
@@ -547,7 +591,7 @@ client's control (see "Why `throttle` has a local cache" above).
 
 ```bash
 $ jmri-cli throttle find autorail
-address=4 name=Autorail speed=- direction=- functions_on=-
+address=4 name=Autorail speed=- direction=- functions_on=- dcc_system=DCC++ Raijin
 ```
 
 ## `jmri-cli throttle findr <regex>` / `throttle findg <glob>`
@@ -562,14 +606,14 @@ case-insensitive) vs. glob (`fnmatch`, case-insensitive) split as
 
 ```bash
 $ jmri-cli throttle findr '^auto'
-  Address  Name      Speed    Direction    Functions on
----------  --------  -------  -----------  --------------
-        4  Autorail  -        -            -
+  Address  Name      Speed    Direction    Functions on    DCC system
+---------  --------  -------  -----------  --------------  ------------
+        4  Autorail  -        -            -               DCC++ Raijin
 
 $ jmri-cli throttle findg 'Auto*'
-  Address  Name      Speed    Direction    Functions on
----------  --------  -------  -----------  --------------
-        4  Autorail  -        -            -
+  Address  Name      Speed    Direction    Functions on    DCC system
+---------  --------  -------  -----------  --------------  ------------
+        4  Autorail  -        -            -               DCC++ Raijin
 ```
 
 ## `jmri-cli throttle acquire <loco> [--prefix P]`
@@ -583,7 +627,15 @@ command station (e.g. `R` for DCC++ Raijin) when more than one is connected.
 ```bash
 $ jmri-cli throttle acquire 3
 address=3 speed=0.0 forward=True (acquired)
+
+$ jmri-cli throttle acquire 8
+address=8 speed=0.0 forward=True (acquired) system=DCC++ Taya
 ```
+
+The trailing `system=<name>` appears only when the acquisition targeted a
+command station OTHER than JMRI's default one (an explicit `--prefix`, or
+the loco's own `DccSystem` roster attribute) — omitted on the common
+single-station case, same convention as `throttle speed` below.
 
 ## `jmri-cli throttle release <loco>`
 
@@ -614,6 +666,15 @@ address=3 speed=0%
 $ jmri-cli throttle speed 3 40 --rampup 5 --hold 30 --rampdown 5
 address=3 speed=0%
 ```
+
+`speed_percent` is always relative to the loco's own configured maximum
+(its roster's `max_speed_percent`/"Throttle Speed Limit", see `roster
+list` above), matching PanelPro's own throttle slider convention: `speed 8
+100` on a loco limited to 20% moves it at 20% of the raw decoder ceiling,
+not 100% of it — most locos have no limit set, in which case this is a
+no-op. The printed line also appends `system=<name>` whenever the
+locomotive is driven through a command station other than JMRI's default
+one, same convention as `throttle acquire`.
 
 ### Mandatory `--hold` outside the shell
 

@@ -17,6 +17,12 @@ from jmri_core.constants.cli import (
     TURNOUT_STATE_NAMES,
 )
 from jmri_core.constants.protocol import FIELD_ADDRESS, FIELD_FORWARD, FIELD_SPEED
+from jmri_core.jmri_client import (
+    default_system_prefix,
+    resolve_dcc_prefix,
+    resolve_max_speed_percent,
+    resolve_system_name,
+)
 from jmri_core.jmri_ws import JmriError
 
 
@@ -280,6 +286,75 @@ def check_exhibition_address_allowed(address: int) -> None:
         )
 
 
+async def resolve_prefix(address: int, prefix: str | None) -> str | None:
+    """Return `prefix` unchanged if given, else auto-detect from the roster's DccSystem.
+
+    Shared by acquire_throttle, prepare_locomotive, and ensure_acquired so
+    all three agree on the same auto-detection (issue #60): an explicit
+    caller-given prefix always wins; otherwise resolve_dcc_prefix(address)
+    is consulted, falling back to None (JMRI's default command station) if
+    the address has no roster entry, no DccSystem attribute set, or the
+    roster lookup itself fails (JMRI unreachable, etc.) — never raises,
+    since a failed auto-detection must not block the acquire itself.
+    """
+    if prefix is not None:
+        return prefix
+    try:
+        return await resolve_dcc_prefix(address)
+    except JmriError:
+        return None
+
+
+async def resolve_speed_scale(address: int) -> float:
+    """Return the fraction (0.0-1.0) to multiply a requested speed by before sending to JMRI.
+
+    Reads `address`'s roster max_speed_percent (PanelPro's "Throttle Speed
+    Limit", see jmri_client.roster.resolve_max_speed_percent) and converts
+    it to a 0.0-1.0 scale factor, defaulting to 1.0 (no scaling) if the
+    roster lookup fails (JMRI unreachable, no entry) — never raises, same
+    fail-open policy as resolve_prefix, since a failed lookup must not
+    block a speed command.
+
+    Why this exists: JMRI's WebSocket "speed" field is always a RAW decoder
+    fraction (verified live) — unlike PanelPro's own throttle window, which
+    silently scales its slider by this same per-loco limit before sending.
+    Without this, a locomotive limited to 20% in its roster entry would get
+    the full unscaled speed from set_speed/set_speed_ramped, moving 5x
+    faster than PanelPro's throttle would for the same requested percent.
+    Callers multiply their own 0.0-1.0 target fraction by this scale before
+    calling client.set_speed()/execute_speed_change(), and divide a
+    JMRI-reported real fraction by it before reporting speed_percent back
+    to the caller, so 100% requested always means "the loco's own configured
+    max", matching PanelPro's convention, not the raw decoder ceiling.
+    """
+    try:
+        max_speed_percent = await resolve_max_speed_percent(address)
+    except JmriError:
+        return 1.0
+    return max(1, min(100, max_speed_percent)) / 100.0
+
+
+async def resolve_system_field(prefix: str | None) -> str | None:
+    """Return the full system name for `prefix` if it differs from JMRI's
+    default command station, else None — the shared "only report the
+    system when it's non-default" rule for throttle tool return dicts
+    (acquire_throttle, set_speed, set_speed_ramped, set_direction, ...).
+
+    Never raises: a failed default-system lookup returns None (silently
+    omitting the field) rather than failing the throttle command it's
+    decorating. A caller adds this to its return dict conditionally:
+    `if system: result["system"] = system`.
+    """
+    try:
+        default_prefix = await default_system_prefix()
+    except JmriError:
+        return None
+    if prefix is None or prefix == default_prefix:
+        return None
+    name = await resolve_system_name(prefix)
+    return name or prefix
+
+
 async def ensure_acquired(client, address: int) -> None:
     """Acquire the throttle for `address` if this connection doesn't hold it yet.
 
@@ -299,7 +374,21 @@ async def ensure_acquired(client, address: int) -> None:
     inherits the restriction without checking it individually — an
     already-acquired address is never re-checked, matching how a real
     acquire_throttle call behaves too (see that tool's own docstring).
+
+    Issue #60: before acquiring, looks up this address's roster entry for
+    a `dcc_system` (a "DccSystem" Roster Entry Attribute set in PanelPro)
+    and, if set, passes it as the acquire's `prefix` so the throttle binds
+    to the RIGHT command station. Without this, every auto-acquired
+    throttle silently goes to JMRI's default station — harmless on a
+    single-station layout, but on a multi-station one a locomotive wired
+    to a secondary station (e.g. Taya) would accept speed commands
+    ("succeed") that are inaudible to its actual decoder, since JMRI has
+    no way to reject a command sent to the wrong station. A roster lookup
+    failure here (JMRI unreachable, etc.) must not block the acquire
+    itself — falls back to no prefix (JMRI's default station) rather than
+    raising, same as an address with no roster entry at all.
     """
     if throttle_id(address) not in client._throttles:
         check_exhibition_address_allowed(address)
-        await client.acquire_throttle(throttle_id(address), address)
+        prefix = await resolve_prefix(address, None)
+        await client.acquire_throttle(throttle_id(address), address, prefix)

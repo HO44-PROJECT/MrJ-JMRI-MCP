@@ -174,6 +174,54 @@ async def power_on_all() -> list[dict[str, Any]]:
     return await _set_power_all(turn_on=True)
 
 
+async def resolve_system_name(prefix: str | None) -> str | None:
+    """Look up a power system's full JMRI-configured name from its bare prefix.
+
+    Args:
+        prefix: A connection prefix (e.g. "T"), or None (JMRI's default
+            command station — resolved to whichever system get_systems()
+            marks "default": True).
+
+    Returns:
+        The matching system's full name (e.g. "taya (accessories)"), or
+        `prefix` itself unchanged if no system with that prefix is found
+        (never raises — a display helper must never block the caller it's
+        decorating a message for). None only if `prefix` is None and no
+        default system exists (empty get_systems(), or lookup failure).
+
+    Used to make `dcc_system`/acquisition/speed messages more informative
+    than a bare one-letter prefix like "T" — see get_systems()'s own
+    docstring for why a system's full name is where its purpose is
+    recorded (e.g. "(accessories)"/"(tracks)"), not the prefix alone.
+    """
+    try:
+        systems = await get_systems()
+    except JmriError:
+        return prefix
+    if prefix is None:
+        default = next((s for s in systems if s.get("default")), None)
+        return default.get("name") if default else None
+    match = next((s for s in systems if str(s.get("prefix", "")) == prefix), None)
+    return match.get("name") if match is not None else prefix
+
+
+async def default_system_prefix() -> str | None:
+    """Return the prefix of JMRI's default command station, or None if undetermined.
+
+    Used to decide whether a throttle command's resolved prefix should be
+    called out in a message ("only when it differs from the default
+    system", per this project's own display convention) — a prefix equal
+    to this is the common case and stays silent; anything else is unusual
+    enough to mention.
+    """
+    try:
+        systems = await get_systems()
+    except JmriError:
+        return None
+    default = next((s for s in systems if s.get("default")), None)
+    return str(default.get("prefix")) if default is not None else None
+
+
 def resolve_system(
     query: str | None, systems: list[dict[str, Any]]
 ) -> dict[str, Any]:

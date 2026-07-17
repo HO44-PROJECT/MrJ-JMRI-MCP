@@ -59,6 +59,28 @@ async def get_roster() -> list[dict[str, Any]]:
     "rosterGroups" (a list of group name strings; verified live against
     the user's JMRI 5.4.0 — most entries have an empty list, one had
     ["test"]), not "group" as its PanelPro UI name might suggest.
+
+    Also returns dcc_system: the power system prefix (e.g. "T") this
+    locomotive is normally driven through, read from a JMRI RosterEntry
+    Attribute named "DccSystem" (PanelPro: Roster Entry -> Edit ->
+    Attributes tab) - verified live against the user's JMRI 5.4.0, which
+    exposes custom attributes as entry["attributes"], a list of
+    {"name", "value"} pairs, distinct from "rosterGroups". None if the user
+    hasn't set this attribute for the entry (the normal case for most
+    locos, not an error) - issue #60, for users running more than one
+    command station where a given loco is only ever acquired through one
+    of them.
+
+    Also returns max_speed_percent: JMRI's raw "maxSpeedPct" field (an int,
+    e.g. 20), the per-locomotive speed limit set in PanelPro's Roster Entry
+    editor ("Throttle Speed Limit"). Defaults to 100 (no restriction) when
+    absent. This is a CLIENT-SIDE-only limit in JMRI: PanelPro's own
+    throttle applies it by scaling the slider before sending to the
+    decoder, but a WebSocket "speed" command sent directly (as this project
+    does) is NOT scaled by JMRI itself - verified live, a raw 1.0 sent over
+    the wire always means full decoder speed regardless of maxSpeedPct.
+    Callers driving a throttle (set_speed and friends) must apply this
+    scaling themselves - see resolve_max_speed_percent.
     """
     payload = await _get_json(endpoints.ROSTER)
     if isinstance(payload, dict):
@@ -74,6 +96,11 @@ async def get_roster() -> list[dict[str, Any]]:
             logger.warning("Roster entry %r has unusable address %r, skipping",
                            e.get("name"), e.get("address"))
             continue
+        dcc_system = None
+        for attr in e.get("attributes") or []:
+            if attr.get("name") == "DccSystem":
+                dcc_system = attr.get("value") or None
+                break
         compact.append({
             "name": e.get("name", ""),
             "address": address,
@@ -84,6 +111,8 @@ async def get_roster() -> list[dict[str, Any]]:
             "owner": e.get("owner", ""),
             "date_modified": e.get("dateModified", ""),
             "groups": e.get("rosterGroups", []),
+            "dcc_system": dcc_system,
+            "max_speed_percent": e.get("maxSpeedPct", 100),
         })
     return compact
 
@@ -131,3 +160,53 @@ def resolve_roster_entry(
         raise JmriError("ambiguous_entity", kind="locomotive", query=query, matches=matches)
 
     raise JmriError("unknown_entity", kind="locomotive", query=query, available=names)
+
+
+async def resolve_dcc_prefix(address: int) -> str | None:
+    """Look up the command station prefix a DCC address should be acquired through.
+
+    Reads the roster entry with this `address` and returns its `dcc_system`
+    (see get_roster()) — the connection prefix (e.g. "T") set via a
+    "DccSystem" Roster Entry Attribute in PanelPro. Returns None when the
+    address has no matching roster entry, or the entry has no DccSystem
+    attribute set — both are normal (a raw address with no roster entry,
+    or a single-command-station layout that doesn't need this), not an
+    error; callers should fall back to JMRI's default command station.
+
+    This is issue #60's fix: without it, acquiring a throttle always goes
+    to JMRI's default command station regardless of which one a given
+    locomotive is actually wired to, so a loco on a secondary station
+    (e.g. Taya) silently never moves even though the acquire/speed calls
+    "succeed" — JMRI has no way to reject a speed command sent to the
+    wrong station, it's just inaudible to that decoder.
+    """
+    roster = await get_roster()
+    entry = next((e for e in roster if e.get("address") == address), None)
+    if entry is None:
+        return None
+    return entry.get("dcc_system")
+
+
+async def resolve_max_speed_percent(address: int) -> int:
+    """Look up the per-locomotive speed limit ("Throttle Speed Limit" in PanelPro).
+
+    Reads the roster entry with this `address` and returns its
+    max_speed_percent (see get_roster()) — an int 1-100, JMRI's raw
+    "maxSpeedPct" field. Returns 100 (no restriction) when the address has
+    no matching roster entry — a raw address with no roster entry has no
+    limit to apply, not an error.
+
+    Verified live against the user's JMRI 5.4.0: a locomotive with its
+    PanelPro Roster Entry "Throttle Speed Limit" set to 20% moves at 20%
+    real decoder speed when PanelPro's own throttle slider is at 100%,
+    because PanelPro scales the value it sends. JMRI's WebSocket "speed"
+    command does NOT apply this scaling itself — sending speed:1.0 directly
+    always means full decoder speed. Callers driving a throttle (set_speed
+    and friends) must multiply their own 0.0-1.0 fraction by
+    max_speed_percent/100 before sending, to match PanelPro's behavior.
+    """
+    roster = await get_roster()
+    entry = next((e for e in roster if e.get("address") == address), None)
+    if entry is None:
+        return 100
+    return entry.get("max_speed_percent", 100)

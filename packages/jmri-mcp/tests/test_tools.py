@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 from jmri_mcp import tools
@@ -114,7 +115,7 @@ async def test_system_status_unreachable_reports_honestly():
     assert "systems" not in out
 
 
-async def test_list_roster_registered_and_compact(mock_roster):
+async def test_list_roster_registered_and_compact(mock_roster, mock_power):
     mcp = make_server()
     tool_names = {t.name for t in await mcp.list_tools()}
     assert "list_roster" in tool_names
@@ -126,19 +127,22 @@ async def test_list_roster_registered_and_compact(mock_roster):
                 "name": "141R", "address": 2, "road": "Mikado 141 R",
                 "road_number": "141 R 1246, dépôt de Miramas", "manufacturer": "Jouef",
                 "model": "8273", "owner": "SNCF", "date_modified": "2024-01-20T13:18:40.774+00:00",
-                "groups": ["test"],
+                "groups": ["test"], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+                "max_speed_percent": 100,
             },
             {
                 "name": "Autorail", "address": 4, "road": "Railcar",
                 "road_number": "", "manufacturer": "", "model": "4185A",
                 "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-                "groups": [],
+                "groups": [], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+                "max_speed_percent": 100,
             },
             {
                 "name": "Boite à Sel", "address": 8, "road": "",
                 "road_number": "", "manufacturer": "", "model": "",
                 "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-                "groups": [],
+                "groups": [], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+                "max_speed_percent": 100,
             },
         ]
     }
@@ -151,7 +155,7 @@ async def test_list_roster_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-async def test_find_locomotive_resolves_fuzzy_name(mock_roster):
+async def test_find_locomotive_resolves_fuzzy_name(mock_roster, mock_power):
     mcp = make_server()
     tool_names = {t.name for t in await mcp.list_tools()}
     assert "find_locomotive" in tool_names
@@ -161,14 +165,39 @@ async def test_find_locomotive_resolves_fuzzy_name(mock_roster):
         "name": "Autorail", "address": 4, "road": "Railcar",
         "road_number": "", "manufacturer": "", "model": "4185A",
         "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-        "groups": [],
+        "groups": [], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+        "max_speed_percent": 100,
     }
 
 
-async def test_find_locomotive_accent_insensitive(mock_roster):
+async def test_find_locomotive_accent_insensitive(mock_roster, mock_power):
     mcp = make_server()
     out = await call(mcp, "find_locomotive", name="boite a sel")
     assert out["name"] == "Boite à Sel"
+
+
+async def test_find_locomotive_reports_explicit_dcc_system_not_default(roster_fixture, power_fixture):
+    """A locomotive WITH a DccSystem attribute set must still show its own
+    system, not silently fall back to the default one."""
+    import respx
+    from httpx import Response
+
+    from jmri_core.config import get_jmri_url
+
+    roster_fixture[1]["data"]["attributes"] = [{"name": "DccSystem", "value": "O"}]
+
+    router = respx.mock(assert_all_called=False)
+    router.start()
+    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
+    try:
+        mcp = make_server()
+        out = await call(mcp, "find_locomotive", name="autorail")
+    finally:
+        router.stop()
+
+    assert out["dcc_system"] == "O"
+    assert out["dcc_system_name"] == "DCC++ Ohara"
 
 
 async def test_find_locomotive_unknown_name_returns_error(mock_roster):
@@ -249,10 +278,96 @@ async def test_set_speed_auto_acquires_and_converts_percent(fake_jmri):
     assert out == {"address": 3, "speed_percent": 40.0}
 
 
+async def test_set_speed_auto_acquires_using_roster_dcc_system_prefix(fake_jmri, roster_fixture):
+    """Regression test for issue #60's reported bug: "speed cars 20" must
+    acquire the throttle through the locomotive's own DccSystem roster
+    attribute (e.g. Taya, prefix "T"), not JMRI's default command station
+    -- otherwise the speed command is accepted by JMRI but inaudible to
+    the decoder on the other DCC bus, so the locomotive never moves."""
+    from jmri_core.jmri_ws import get_ws_client
+    from jmri_mcp.tools._common import throttle_id
+
+    roster_fixture[0]["data"]["address"] = "5"
+    roster_fixture[0]["data"].setdefault("attributes", [])
+    roster_fixture[0]["data"]["attributes"] = [{"name": "DccSystem", "value": "T"}]
+
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        out = await call(mcp, "set_speed", address=5, speed_percent=20)
+    finally:
+        router.stop()
+
+    assert out == {"address": 5, "speed_percent": 20.0, "system": "T"}
+    client = get_ws_client()
+    assert client._throttles[throttle_id(5)]["prefix"] == "T"
+
+
+async def test_set_speed_auto_acquire_falls_back_to_default_when_no_dcc_system(fake_jmri, roster_fixture):
+    """The common case (no DccSystem attribute set) must keep going to
+    JMRI's default command station, exactly as before this fix."""
+    from jmri_core.jmri_ws import get_ws_client
+    from jmri_mcp.tools._common import throttle_id
+
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        out = await call(mcp, "set_speed", address=4, speed_percent=20)
+    finally:
+        router.stop()
+
+    assert out == {"address": 4, "speed_percent": 20.0}
+    client = get_ws_client()
+    assert client._throttles[throttle_id(4)]["prefix"] is None
+
+
 async def test_set_speed_clamps_out_of_range_percent(fake_jmri):
     mcp = make_server()
     out = await call(mcp, "set_speed", address=3, speed_percent=150)
     assert out == {"address": 3, "speed_percent": 100.0}
+
+
+async def test_set_speed_scales_by_roster_max_speed_percent(fake_jmri, roster_fixture):
+    """PanelPro parity (verbatim user report): with the loco's "Throttle
+    Speed Limit" set to 20%, requesting 100% must land at 20% real decoder
+    speed, exactly like PanelPro's own throttle slider does client-side --
+    while the tool's own reported speed_percent stays 100% (relative to
+    the loco's own configured max, not the raw decoder ceiling)."""
+    from jmri_core.jmri_ws import get_ws_client
+    from jmri_mcp.tools._common import throttle_id
+
+    roster_fixture[1]["data"]["address"] = "4"
+    roster_fixture[1]["data"]["maxSpeedPct"] = 20
+
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        out = await call(mcp, "set_speed", address=4, speed_percent=100)
+    finally:
+        router.stop()
+
+    assert out == {"address": 4, "speed_percent": 100.0}
+    client = get_ws_client()
+    assert client._throttles[throttle_id(4)]["speed"] == pytest.approx(0.2)
+
+
+async def test_set_speed_no_scaling_when_max_speed_percent_default(fake_jmri, roster_fixture):
+    """The common case (no PanelPro speed limit set, maxSpeedPct=100) must
+    keep sending the raw requested fraction unscaled, exactly as before
+    this feature."""
+    from jmri_core.jmri_ws import get_ws_client
+    from jmri_mcp.tools._common import throttle_id
+
+    router = _mock_roster_for(None, roster_fixture)
+    try:
+        mcp = make_server()
+        out = await call(mcp, "set_speed", address=4, speed_percent=40)
+    finally:
+        router.stop()
+
+    assert out == {"address": 4, "speed_percent": 40.0}
+    client = get_ws_client()
+    assert client._throttles[throttle_id(4)]["speed"] == pytest.approx(0.4)
 
 
 async def test_stop_sets_speed_zero(fake_jmri):
@@ -1187,18 +1302,30 @@ async def test_exhibition_mode_still_allows_power_off_all(monkeypatch):
     assert all(s["confirmed"] for s in out["systems"])
 
 
-def _mock_roster_for(monkeypatch, roster_fixture):
+def _mock_roster_for(monkeypatch, roster_fixture, power_fixture=None):
     """respx can't target fake_jmri's fixture port statically like MOCK_JMRI_URL,
     since fake_jmri assigns a random local WS port and repoints JMRI_URL at it;
-    build the router against whatever JMRI_URL is current at call time instead."""
+    build the router against whatever JMRI_URL is current at call time instead.
+
+    Also mocks GET /json/power (defaulting to the standard power_fixture
+    contents) since acquire_throttle/set_speed/etc. now resolve the
+    "system" display field via get_systems(), which is an HTTP call
+    fake_jmri's WebSocket-only fixture never answers.
+    """
+    import json as _json
     import respx
     from httpx import Response
 
     from jmri_core.config import get_jmri_url
+    from jmri_core.testing.plugin import FIXTURES
+
+    if power_fixture is None:
+        power_fixture = _json.loads((FIXTURES / "power_response.json").read_text())
 
     router = respx.mock(assert_all_called=False)
     router.start()
     router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     return router
 
 
@@ -1659,7 +1786,7 @@ async def test_release_all_locomotives_with_nothing_acquired(fake_jmri):
     assert out == {"released": []}
 
 
-async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fixture):
+async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fixture, power_fixture):
     import respx
     from httpx import Response
 
@@ -1683,6 +1810,7 @@ async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fix
     router = respx.mock(assert_all_called=False)
     router.start()
     router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
     router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light("IL1"))
     router.post(f"{get_jmri_url()}/json/light/IL2").mock(side_effect=post_light("IL2"))
@@ -1752,7 +1880,7 @@ async def test_secure_layout_nothing_acquired_still_turns_off_layout_lights(fake
     assert out["layout_lights"]["succeeded"][0]["state"] == "OFF"
 
 
-async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roster_fixture):
+async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roster_fixture, power_fixture):
     import respx
     from httpx import Response
 
@@ -1772,6 +1900,7 @@ async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roste
     router = respx.mock(assert_all_called=False)
     router.start()
     router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
     router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light)
     try:
@@ -1787,7 +1916,7 @@ async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roste
     assert out["layout_lights"]["succeeded"][0]["confirmed"] is True
 
 
-async def test_day_mode_turns_off_locomotive_and_layout_lights(fake_jmri, roster_fixture):
+async def test_day_mode_turns_off_locomotive_and_layout_lights(fake_jmri, roster_fixture, power_fixture):
     import respx
     from httpx import Response
 
@@ -1807,6 +1936,7 @@ async def test_day_mode_turns_off_locomotive_and_layout_lights(fake_jmri, roster
     router = respx.mock(assert_all_called=False)
     router.start()
     router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
     router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light)
     try:

@@ -1,4 +1,42 @@
+import json
+
 from jmri_mcp.server import _SERVER_INSTRUCTIONS, mcp
+
+# The remote xiaozhi cloud server closes the WebSocket with 1009 (message too
+# big) at or above 65536 bytes (64 KiB) of serialized `tools/list` JSON-RPC
+# response — empirically bisected live 2026-07-15: 64443 bytes passed, 65572
+# failed. This is the remote server's limit, not jmri-xiaozhi-bridge's own
+# (its WebSocket max_size is 1 MiB and raising it further has zero effect).
+# We assert well under the known-safe 64443 point, not just under 65536, so a
+# docstring edit that creeps up to e.g. 65000 still fails loudly here instead
+# of shipping right at the edge — see docs/architecture.md and
+# .claude/CLAUDE.md's hard rules for the full incident history (2026-07-17
+# outage: a real jmri-xiaozhi-bridge/Kira breakage from this limit being
+# exceeded without anyone re-checking after several docstring edits).
+_XIAOZHI_HARD_CEILING_BYTES = 65536
+_SAFE_MARGIN_BYTES = 1000
+_MAX_TOOLS_LIST_BYTES = _XIAOZHI_HARD_CEILING_BYTES - _SAFE_MARGIN_BYTES
+
+
+async def _tools_list_payload_size() -> int:
+    """Bytes of the full `tools/list` JSON-RPC response, serialized the same
+    way FastMCP actually puts it on the wire (this is what xiaozhi's cloud
+    server counts against its 1009 close threshold)."""
+    tools = await mcp.list_tools()
+    tool_dicts = [t.model_dump(mode="json", exclude_none=True) for t in tools]
+    payload = {"jsonrpc": "2.0", "id": 1, "result": {"tools": tool_dicts}}
+    return len(json.dumps(payload).encode("utf-8"))
+
+
+async def test_tools_list_payload_stays_safely_under_xiaozhi_size_ceiling():
+    size = await _tools_list_payload_size()
+    assert size < _MAX_TOOLS_LIST_BYTES, (
+        f"tools/list payload is {size} bytes, over the {_MAX_TOOLS_LIST_BYTES}-byte "
+        f"safe budget ({_SAFE_MARGIN_BYTES} bytes under the real 65536-byte xiaozhi "
+        "ceiling). The xiaozhi cloud server closes the WebSocket with 1009 (message "
+        "too big) at or above 65536 bytes — trim docstring prose (not decision-"
+        "relevant content) on the largest tools until this passes again."
+    )
 
 
 def test_server_exposes_instructions_field():

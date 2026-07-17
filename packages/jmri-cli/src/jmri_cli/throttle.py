@@ -55,7 +55,17 @@ from jmri_core.constants.cli import (
 from jmri_core.constants.client_tuning import STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED
 from jmri_core.constants.lighting import is_light_label
 from jmri_core.constants.protocol import FIELD_FORWARD
-from jmri_core.jmri_client import JmriError, get_roster, get_roster_function_labels, resolve_roster_entry
+from jmri_core.jmri_client import (
+    JmriError,
+    default_system_prefix,
+    get_roster,
+    get_roster_function_labels,
+    get_systems,
+    resolve_dcc_prefix,
+    resolve_max_speed_percent,
+    resolve_roster_entry,
+    resolve_system_name,
+)
 from jmri_core.jmri_ws import JmriWsClient
 from jmri_core.jmri_ws.ramp import execute_speed_change as _execute_speed_change
 
@@ -80,9 +90,48 @@ async def _resolve_address(loco: str) -> int:
         raise
 
 
+async def _resolve_prefix(address: int, explicit_prefix: str | None = None) -> str | None:
+    """Return `explicit_prefix` unchanged if given, else auto-detect from the roster's DccSystem.
+
+    Issue #60: without this, every acquire_throttle call in this module
+    would silently target JMRI's default command station regardless of
+    which one the locomotive is actually wired to — on a multi-station
+    layout, a loco on a secondary station (e.g. Taya) would accept speed
+    commands that "succeed" but are inaudible to its real decoder, since
+    JMRI has no way to reject a command sent to the wrong station. Falls
+    back to None (JMRI's default) if the address has no roster entry, no
+    DccSystem attribute set, or the roster lookup itself fails — never
+    raises, so a failed auto-detection never blocks the acquire.
+    """
+    if explicit_prefix is not None:
+        return explicit_prefix
+    try:
+        return await resolve_dcc_prefix(address)
+    except JmriError:
+        return None
+
+
 def _direction_name(forward: bool) -> str:
     """Readable "forward"/"reverse" for JMRI's raw boolean direction field."""
     return "forward" if forward else "reverse"
+
+
+async def _system_suffix(prefix: str | None) -> str:
+    """" system=<name>" when `prefix` differs from JMRI's default command
+    station, else "" — the shared "only mention it when it's unusual" rule
+    for acquire/speed/etc. messages (a single-station layout, the common
+    case, should never see this noise). Never raises: a failed default-
+    system lookup silently omits the suffix rather than failing the
+    command it's decorating.
+    """
+    try:
+        default_prefix = await default_system_prefix()
+    except JmriError:
+        return ""
+    if prefix is None or prefix == default_prefix:
+        return ""
+    name = await resolve_system_name(prefix)
+    return f" system={name or prefix}"
 
 
 def _throttle_headers() -> list[str]:
@@ -93,6 +142,7 @@ def _throttle_headers() -> list[str]:
         i18n.t("headers.speed"),
         i18n.t("headers.direction"),
         i18n.t("headers.functions_on"),
+        i18n.t("headers.dcc_system"),
     ]
 
 
@@ -147,21 +197,32 @@ def _background_hold(address: int, change) -> None:
     run_hold_in_background(address, _run())
 
 
-async def _roster_names_by_address() -> dict[int, str]:
-    """Build an {address: name} lookup from the live roster, for display only.
+async def _roster_display_by_address() -> dict[int, dict[str, str]]:
+    """Build an {address: {"name", "dcc_system"}} lookup from the live
+    roster, for display only. "dcc_system" is already resolved to the
+    system's full name (see _dcc_system_display-equivalent below) so
+    throttle_list/find can print it directly.
 
     Returns an empty dict (never raises) if JMRI is unreachable — callers
-    fall back to "-" for the Name column rather than failing outright,
-    since throttle_list/find read a local, offline-safe cache and a
-    display-only roster lookup shouldn't take away that guarantee.
+    fall back to "-" for both columns rather than failing outright, since
+    throttle_list/find read a local, offline-safe cache and a display-only
+    roster lookup shouldn't take away that guarantee.
     """
     try:
         roster = await get_roster()
+        systems = await get_systems()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         print(i18n.t("cli.throttle_roster_names_unavailable"), file=sys.stderr)
         return {}
-    return {entry["address"]: entry["name"] for entry in roster}
+    names_by_prefix = {str(s.get("prefix", "")): s.get("name") for s in systems}
+    default_prefix = next((s.get("prefix") for s in systems if s.get("default")), None)
+    result = {}
+    for entry in roster:
+        dcc_system = entry.get("dcc_system") or default_prefix
+        dcc_system_display = (names_by_prefix.get(dcc_system) or dcc_system) if dcc_system else "-"
+        result[entry["address"]] = {"name": entry["name"], "dcc_system": dcc_system_display}
+    return result
 
 
 async def throttle_list(args: argparse.Namespace) -> int:
@@ -188,15 +249,23 @@ async def throttle_list(args: argparse.Namespace) -> int:
         print(i18n.t("cli.throttle_no_locos_touched"))
         return 0
 
-    names = await _roster_names_by_address()
+    display = await _roster_display_by_address()
     rows = []
     for address, info in sorted(cache.items(), key=lambda kv: int(kv[0])):
-        rows.append(_cache_row(int(address), name=names.get(int(address), "-"), info=info))
+        entry = display.get(int(address), {})
+        rows.append(
+            _cache_row(
+                int(address),
+                name=entry.get("name", "-"),
+                dcc_system=entry.get("dcc_system", "-"),
+                info=info,
+            )
+        )
     print(tabulate(rows, headers=_throttle_headers()))
     return 0
 
 
-def _cache_row(address: int, *, name: str = "-", info: dict | None = None) -> list:
+def _cache_row(address: int, *, name: str = "-", dcc_system: str = "-", info: dict | None = None) -> list:
     """Build one throttle_list-style row for `address` from state.py's local cache.
 
     Args:
@@ -205,6 +274,8 @@ def _cache_row(address: int, *, name: str = "-", info: dict | None = None) -> li
             that already have a roster entry in scope (throttle_find,
             _throttle_find_pattern) pass it directly instead of triggering
             a second roster fetch here.
+        dcc_system: The loco's DCC command station's full system name, or
+            "-" if unknown/not set.
         info: Pre-fetched cache entry for `address`, or None to look it up
             (throttle_list already has the full cache loaded and passes
             each entry in directly rather than reloading it per address).
@@ -218,7 +289,7 @@ def _cache_row(address: int, *, name: str = "-", info: dict | None = None) -> li
     functions = info.get("functions", {})
     on_functions = sorted(int(n) for n, v in functions.items() if v)
     functions_display = ", ".join(f"F{n}" for n in on_functions) or "-"
-    return [address, name, speed_display, direction_display, functions_display]
+    return [address, name, speed_display, direction_display, functions_display, dcc_system]
 
 
 async def throttle_find(args: argparse.Namespace) -> int:
@@ -247,9 +318,15 @@ async def throttle_find(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    names = await _roster_names_by_address()
-    _, name, speed, direction, functions = _cache_row(address, name=names.get(address, "-"))
-    print(f"address={address} name={name} speed={speed} direction={direction} functions_on={functions}")
+    display = await _roster_display_by_address()
+    entry = display.get(address, {})
+    _, name, speed, direction, functions, dcc_system = _cache_row(
+        address, name=entry.get("name", "-"), dcc_system=entry.get("dcc_system", "-")
+    )
+    print(
+        f"address={address} name={name} speed={speed} direction={direction} "
+        f"functions_on={functions} dcc_system={dcc_system}"
+    )
     return 0
 
 
@@ -268,6 +345,7 @@ async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> in
     """
     try:
         roster = await get_roster()
+        systems = await get_systems()
         matcher = find_regex if regex else find_glob
         matches = matcher(args.pattern, roster, _roster_label)
     except JmriError as exc:
@@ -277,10 +355,13 @@ async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> in
     if not matches:
         print(i18n.t("cli.no_roster_entries_match", pattern=args.pattern))
         return 0
-    rows = [
-        _cache_row(e["address"], name=_roster_label(e) or "-")
-        for e in sorted(matches, key=lambda e: _roster_label(e).casefold())
-    ]
+    names_by_prefix = {str(s.get("prefix", "")): s.get("name") for s in systems}
+    default_prefix = next((s.get("prefix") for s in systems if s.get("default")), None)
+    rows = []
+    for e in sorted(matches, key=lambda e: _roster_label(e).casefold()):
+        dcc_system = e.get("dcc_system") or default_prefix
+        dcc_system_display = (names_by_prefix.get(dcc_system) or dcc_system) if dcc_system else "-"
+        rows.append(_cache_row(e["address"], name=_roster_label(e) or "-", dcc_system=dcc_system_display))
     print(tabulate(rows, headers=_throttle_headers()))
     return 0
 
@@ -323,6 +404,12 @@ async def throttle_acquire(args: argparse.Namespace, *, client: JmriWsClient | N
 
     Returns:
         0 on success, 1 if JMRI is unreachable or the acquire is rejected.
+
+    Prints " system=<name>" whenever the acquisition targeted a command
+    station OTHER than JMRI's default one (an explicit `args.prefix`, or
+    the roster's own DccSystem attribute — see _resolve_prefix), so it's
+    obvious at a glance which station a multi-station layout actually used;
+    omitted on the common single-station case.
     """
     try:
         address = await _resolve_address(args.loco)
@@ -331,15 +418,17 @@ async def throttle_acquire(args: argparse.Namespace, *, client: JmriWsClient | N
         return 1
 
     try:
+        prefix = await _resolve_prefix(address, args.prefix)
         async with _client_scope(client) as c:
-            data = await c.acquire_throttle(cli_throttle_id(address), address, args.prefix)
+            data = await c.acquire_throttle(cli_throttle_id(address), address, prefix)
+        system_suffix = await _system_suffix(prefix)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
     _state.update_address(address, speed=data.get("speed"), forward=data.get("forward"))
     print(f"address={address} speed={data.get('speed')} "
-          f"forward={data.get('forward')} (acquired)")
+          f"forward={data.get('forward')} (acquired){system_suffix}")
     return 0
 
 
@@ -370,8 +459,9 @@ async def throttle_release(args: argparse.Namespace, *, client: JmriWsClient | N
         return 1
 
     try:
+        prefix = await _resolve_prefix(address)
         async with _client_scope(client) as c:
-            await c.acquire_throttle(cli_throttle_id(address), address)
+            await c.acquire_throttle(cli_throttle_id(address), address, prefix)
             await c.release_throttle(cli_throttle_id(address))
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
@@ -398,6 +488,24 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
     entirely client-side (reading the acquired throttle's own current
     direction) and is unrelated to JMRI's own -1.0 emergency-stop
     sentinel, which only `throttle_estop` ever sends.
+
+    `args.speed_percent` is always relative to THIS loco's own configured
+    max, matching PanelPro's throttle slider convention: if the roster's
+    "Throttle Speed Limit" (max_speed_percent, PanelPro's Roster Entry
+    editor) is 20%, then `speed 40` moves it at 40% of that 20%, i.e. 8% of
+    the raw decoder ceiling — never the raw ceiling itself. This mirrors
+    PanelPro's own throttle window, which silently scales its slider by the
+    same limit before sending to the decoder; JMRI's WebSocket "speed"
+    field does NOT apply this scaling on its own, so it's done here,
+    client-side, before ever reaching `client.set_speed()`. Most locos have
+    no limit set (max_speed_percent defaults to 100), in which case this is
+    a no-op. The printed speed is always un-scaled back to this same
+    loco-relative percent, never the raw wire value.
+
+    The printed line also appends " system=<name>" whenever the throttle
+    was acquired on a command station OTHER than JMRI's default one (see
+    _resolve_prefix/issue #60) — omitted entirely on the common
+    single-station case to avoid cluttering every speed message.
 
     In one-shot mode (client=None), setting a nonzero speed WITHOUT
     `args.seconds` is a hard, upfront error — see module docstring for why
@@ -457,8 +565,15 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
 
     throttle_id = cli_throttle_id(address)
     try:
+        prefix = await _resolve_prefix(address)
+        system_suffix = await _system_suffix(prefix)
+        try:
+            max_speed_percent = await resolve_max_speed_percent(address)
+        except JmriError:
+            max_speed_percent = 100
+        scale = max(1, min(100, max_speed_percent)) / 100.0
         async with _client_scope(client) as c:
-            acquired = await c.acquire_throttle(throttle_id, address)
+            acquired = await c.acquire_throttle(throttle_id, address, prefix)
             if args.speed_percent is None:
                 data = acquired
             else:
@@ -470,28 +585,29 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
                 target_fraction = max(
                     MIN_SPEED_PERCENT, min(MAX_SPEED_PERCENT, abs(args.speed_percent))
                 ) / 100.0
+                scaled_target_fraction = target_fraction * scale
 
                 if not one_shot and args.seconds is not None:
                     _background_hold(
                         address,
                         _execute_speed_change(
                             c, throttle_id,
-                            target_forward=target_forward, target_fraction=target_fraction,
+                            target_forward=target_forward, target_fraction=scaled_target_fraction,
                             rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
                         ),
                     )
                     forward = target_forward if target_forward is not None else acquired.get("forward")
                     _state.update_address(
-                        address, speed=target_fraction, **({"forward": forward} if forward is not None else {})
+                        address, speed=scaled_target_fraction, **({"forward": forward} if forward is not None else {})
                     )
                     direction_suffix = f" direction={_direction_name(forward)}" if forward is not None else ""
                     hold_suffix = i18n.t("cli.throttle_hold_started_suffix", seconds=args.seconds)
-                    print(f"address={address} speed={target_fraction * 100:.0f}%{direction_suffix}{hold_suffix}")
+                    print(f"address={address} speed={target_fraction * 100:.0f}%{direction_suffix}{hold_suffix}{system_suffix}")
                     return 0
 
                 data = await _execute_speed_change(
                     c, throttle_id,
-                    target_forward=target_forward, target_fraction=target_fraction,
+                    target_forward=target_forward, target_fraction=scaled_target_fraction,
                     rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
                 )
     except JmriError as exc:
@@ -502,7 +618,7 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
     forward = data.get("forward")
     _state.update_address(address, speed=speed, **({"forward": forward} if forward is not None else {}))
     direction_suffix = f" direction={_direction_name(forward)}" if forward is not None else ""
-    print(f"address={address} speed={(speed or 0) * 100:.0f}%{direction_suffix}")
+    print(f"address={address} speed={(speed or 0) / scale * 100:.0f}%{direction_suffix}{system_suffix}")
     return 0
 
 
@@ -550,7 +666,8 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
             for address in addresses:
                 throttle_id = cli_throttle_id(address)
                 try:
-                    await c.acquire_throttle(throttle_id, address)
+                    prefix = await _resolve_prefix(address)
+                    await c.acquire_throttle(throttle_id, address, prefix)
                     data = await _execute_speed_change(
                         c, throttle_id,
                         target_forward=None, target_fraction=0.0,
@@ -608,7 +725,8 @@ async def throttle_estop(args: argparse.Namespace, *, client: JmriWsClient | Non
         async with _client_scope(client) as c:
             for address in addresses:
                 try:
-                    await c.acquire_throttle(cli_throttle_id(address), address)
+                    prefix = await _resolve_prefix(address)
+                    await c.acquire_throttle(cli_throttle_id(address), address, prefix)
                     await c.set_speed(cli_throttle_id(address), -1.0)
                     _state.update_address(address, speed=-1.0)
                     print(f"address={address} emergency-stopped")
@@ -633,7 +751,8 @@ async def _direction_one(
     """
     throttle_id = cli_throttle_id(address)
     try:
-        acquired = await client.acquire_throttle(throttle_id, address)
+        prefix = await _resolve_prefix(address)
+        acquired = await client.acquire_throttle(throttle_id, address, prefix)
         current_fraction = acquired.get("speed") or 0.0
 
         if one_shot and current_fraction > 0.0 and args.seconds is None:
@@ -817,7 +936,8 @@ async def _set_functions_one(
 
     ok = True
     try:
-        await client.acquire_throttle(cli_throttle_id(address), address)
+        prefix = await _resolve_prefix(address)
+        await client.acquire_throttle(cli_throttle_id(address), address, prefix)
     except JmriError as exc:
         print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
         return False
@@ -931,7 +1051,8 @@ async def _engine_start_one(address: int, prefix: str | None, *, client: JmriWsC
     """Acquire, face forward, lights on for one address. Returns True on full success."""
     throttle_id = cli_throttle_id(address)
     try:
-        data = await client.acquire_throttle(throttle_id, address, prefix)
+        resolved_prefix = await _resolve_prefix(address, prefix)
+        data = await client.acquire_throttle(throttle_id, address, resolved_prefix)
         if not data.get("forward", True):
             await client.set_direction(throttle_id, True)
         function_numbers = await _resolve_function_numbers(address, None, lights_only=True)
@@ -1034,7 +1155,8 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
     lights_ok = True
     if function_numbers:
         try:
-            await c.acquire_throttle(throttle_id, address)
+            prefix = await _resolve_prefix(address)
+            await c.acquire_throttle(throttle_id, address, prefix)
         except JmriError as exc:
             print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
             ok = False
@@ -1214,7 +1336,8 @@ async def throttle_sniff(args: argparse.Namespace) -> int:
         await client.connect()
         for address in args.address or []:
             try:
-                await client.acquire_throttle(f"{SNIFF_THROTTLE_ID_PREFIX}{address}", address)
+                prefix = await _resolve_prefix(address)
+                await client.acquire_throttle(f"{SNIFF_THROTTLE_ID_PREFIX}{address}", address, prefix)
                 print(i18n.t("cli.sniff_acquired_for_observation", address=address))
             except JmriError as exc:
                 print(i18n.t("cli.throttle_warning_could_not_acquire", address=address, message=str(exc)), file=sys.stderr)

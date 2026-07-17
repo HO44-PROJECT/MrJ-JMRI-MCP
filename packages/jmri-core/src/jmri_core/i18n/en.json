@@ -113,7 +113,8 @@
             "bymodel": "Sort by model",
             "byowner": "Sort by owner",
             "bydate": "Sort by last-modified date",
-            "bygroup": "Sort by roster group"
+            "bygroup": "Sort by roster group",
+            "bydccsystem": "Sort by DCC system"
         },
         "arg": {
             "regex_pattern": "Python regular expression (case-insensitive)",
@@ -254,7 +255,9 @@
         "model": "Model",
         "owner": "Owner",
         "modified": "Modified",
-        "groups": "Groups"
+        "groups": "Groups",
+        "dcc_system": "DCC system",
+        "max_speed_percent": "Max speed %"
     },
     "banner": {
         "title": "jmri-cli v{version} ({url})",

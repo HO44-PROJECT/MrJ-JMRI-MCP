@@ -113,7 +113,8 @@
             "bymodel": "Trier par modèle",
             "byowner": "Trier par propriétaire",
             "bydate": "Trier par date de dernière modification",
-            "bygroup": "Trier par groupe du roster"
+            "bygroup": "Trier par groupe du roster",
+            "bydccsystem": "Trier par système DCC"
         },
         "arg": {
             "regex_pattern": "Expression régulière Python (insensible à la casse)",
@@ -254,7 +255,9 @@
         "model": "Modèle",
         "owner": "Propriétaire",
         "modified": "Modifié",
-        "groups": "Groupes"
+        "groups": "Groupes",
+        "dcc_system": "Système DCC",
+        "max_speed_percent": "Vitesse max %"
     },
     "banner": {
         "title": "jmri-cli v{version} ({url})",

@@ -12,7 +12,12 @@ resolve to the right F-number without any hardcoded name->function mapping.
 import logging
 
 from jmri_core import i18n, jmri_client
-from jmri_core.jmri_client import JmriError, resolve_roster_entry
+from jmri_core.jmri_client import (
+    JmriError,
+    default_system_prefix,
+    resolve_roster_entry,
+    resolve_system_name,
+)
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -27,27 +32,35 @@ def register(mcp) -> None:
     @mcp.tool()
     async def list_roster() -> dict:
         """List every locomotive in JMRI's roster: name, DCC address, road,
-        road number, manufacturer, model, owner, last-modified date, and
-        roster groups.
+        road number, manufacturer, model, owner, last-modified date, roster
+        groups, DCC system, and max speed percent.
 
         Use this to discover what locomotives exist and their DCC addresses
-        before calling acquire_throttle/set_speed/etc. — those tools take a
-        DCC address, not a name, and this is currently the only way to find
-        out which address belongs to which named loco (e.g. the user says
-        "start the Autorail" but set_speed needs address=4). Any of these
-        fields can be empty (string or list) if the user never filled them
-        in in JMRI — that's normal, not an error. "groups" lists the JMRI
-        Roster Groups (set in PanelPro) this locomotive belongs to — most
-        locomotives belong to none. No side effects.
+        before calling acquire_throttle/set_speed/etc. — this is currently
+        the only way to find which address belongs to which named loco
+        (e.g. "start the Autorail" but set_speed needs address=4). Any
+        field can be empty if unfilled in JMRI — normal, not an error.
+        "groups": JMRI Roster Groups (most belong to none). "dcc_system":
+        command station prefix from a "DccSystem" Roster Entry Attribute,
+        null if unset (JMRI's default station drives it instead) — pass as
+        acquire_throttle's `prefix` when set. "dcc_system_name": full name
+        of the system actually in use, always populated. "max_speed_percent":
+        roster "Throttle Speed Limit" (1-100, default 100) — set_speed/
+        set_speed_ramped already scale by this, so 100% requested means
+        100% of THIS number, not the raw decoder ceiling. No side effects.
 
-        This does NOT resolve a name to an address for you automatically —
-        use find_locomotive for that.
+        Does NOT resolve a name to an address for you — use find_locomotive.
         """
         try:
             roster = await jmri_client.get_roster()
+            systems = await jmri_client.get_systems()
         except JmriError as exc:
             logger.warning("list_roster failed: %s", exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+        names_by_prefix = {str(s.get("prefix", "")): s.get("name") for s in systems}
+        default_prefix = next((s.get("prefix") for s in systems if s.get("default")), None)
+        for entry in roster:
+            entry["dcc_system_name"] = names_by_prefix.get(entry.get("dcc_system") or default_prefix)
         return {"roster": roster}
 
     @mcp.tool()
@@ -67,10 +80,14 @@ def register(mcp) -> None:
         entry, or matches none, this returns an "error" explaining why
         (listing the candidates or the full roster) instead of guessing —
         ask the user to clarify rather than picking one yourself.
+
+        Includes the same "dcc_system"/"dcc_system_name"/"max_speed_percent"
+        fields as list_roster — see that tool's docstring for what they mean.
         """
         try:
             roster = await jmri_client.get_roster()
             entry = resolve_roster_entry(name, roster)
+            entry["dcc_system_name"] = await resolve_system_name(entry.get("dcc_system"))
         except JmriError as exc:
             logger.warning("find_locomotive(%r) failed: %s", name, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}

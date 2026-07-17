@@ -40,16 +40,20 @@ from jmri_core.jmri_client.power import (
     POWER_OFF,
     POWER_ON,
     POWER_UNKNOWN,
+    default_system_prefix,
     get_systems,
     get_version,
     power_off_all,
     power_on_all,
     resolve_system,
+    resolve_system_name,
     set_power,
 )
 from jmri_core.jmri_client.roster import (
     get_roster,
     get_roster_function_labels,
+    resolve_dcc_prefix,
+    resolve_max_speed_percent,
     resolve_roster_entry,
 )
 from jmri_core.jmri_client.sensor import (
@@ -82,8 +86,12 @@ __all__ = [
     "power_off_all",
     "power_on_all",
     "resolve_system",
+    "resolve_system_name",
+    "default_system_prefix",
     "get_roster",
     "get_roster_function_labels",
+    "resolve_dcc_prefix",
+    "resolve_max_speed_percent",
     "resolve_roster_entry",
     "LIGHT_ON",
     "LIGHT_OFF",

@@ -22,14 +22,16 @@
             "title": "Exhibition Mode Password",
             "description": "Password required to exit exhibition mode (a restricted, public-demo-safe mode). Leave blank to use the default password 'this is sparta'.",
             "sensitive": true,
-            "required": false
+            "required": false,
+            "default": "this is sparta"
         },
         {
             "id": "exhibition_allowed_addresses",
             "type": "string",
             "title": "Exhibition Mode Allowed DCC Addresses",
             "description": "Comma-separated DCC addresses locomotives are restricted to while exhibition mode is on, e.g. '4,5,6'. Leave blank to allow any address.",
-            "required": false
+            "required": false,
+            "default": ""
         },
         {
             "id": "exhibition_start_on",
@@ -48,7 +50,8 @@
                 "EXHIBITION_PASSWORD": "${input:exhibition_password}",
                 "EXHIBITION_ALLOWED_ADDRESSES": "${input:exhibition_allowed_addresses}",
                 "EXHIBITION_START_ON": "${input:exhibition_start_on}"
-            }
+            },
+            "default": false
         }
     }
 }

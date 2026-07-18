@@ -101,32 +101,34 @@ Uploads all three packages from `dist/`. **PyPI does not allow re-uploading
 or overwriting a version once published** — double-check the version bump
 and `make testdeploy` dry run before running this.
 
-## Publish the GitHub Release (`.mcpb`)
+## Publish the GitHub Release, then the MCP Registry
 
 ```bash
 make release
 ```
 
-Rebuilds (so the `.mcpb` reflects the current `pyproject.toml` version),
-pushes `main`, tags `vX.Y.Z` (read automatically from
-`packages/jmri-mcp/pyproject.toml`), pushes the tag, and creates a GitHub
-Release (marked pre-release) with the `.mcpb` attached as a downloadable
-asset. Requires `jmri-mcp==X.Y.Z` to already be on PyPI (run `make deploy`
-first) — the `.mcpb`'s manifest pins that exact version, so Claude Desktop
-can't install it otherwise.
+Runs three steps in order, all driven by the version in
+`packages/jmri-mcp/pyproject.toml`:
 
-## Publish to the MCP Registry (optional)
+1. **`publish-github`** — pushes `main`, tags `vX.Y.Z`, pushes the tag.
+2. **`release-mcpb`** — creates a GitHub Release (marked pre-release) with
+   `dist/jmri-mcp-X.Y.Z.mcpb` attached as a downloadable asset. Requires
+   `jmri-mcp==X.Y.Z` to already be on PyPI (run `make deploy` first) — the
+   `.mcpb`'s own manifest pins that exact version, so Claude Desktop can't
+   install it otherwise.
+3. **`publish-mcpb-json`** — renders
+   `packages/jmri-mcp/mcpb/server.json.template` into
+   `dist/jmri-mcp-X.Y.Z.mcpb.json`, filling in the version, the tag (for the
+   release download URL), the filename, and the `.mcpb`'s SHA-256 (computed
+   from the file `release-mcpb` just uploaded), then runs `mcp-publisher
+   publish` on it. Requires `mcp-publisher`, authenticated via `mcp-publisher
+   login github` (see Prerequisites above), and requires step 2's GitHub
+   Release to already exist, since the rendered `server.json`'s download URL
+   points at that release's `.mcpb` asset.
 
-Requires `mcp-publisher`, authenticated via `mcp-publisher login github`
-(see Prerequisites above), and `server.json` at the repo root (already
-checked in — update its `version` and the release download `url` to match
-the new tag before running this). Requires the GitHub Release from `make
-release` above to already exist, since `server.json` points at that
-release's `.mcpb` asset URL.
-
-```bash
-mcp-publisher publish
-```
+There is no `server.json` checked into the repo — it's generated fresh into
+`dist/` on every release from the template, so it can never drift out of
+sync with the version/tag/checksum actually being published.
 
 ## After publishing
 

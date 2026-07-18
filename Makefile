@@ -5,6 +5,8 @@ DIST_DIR := dist
 TWINE := uv tool run twine
 VERSION := $(shell uv run python -c "import tomllib; print(tomllib.load(open('packages/jmri-mcp/pyproject.toml','rb'))['project']['version'])")
 TAG := v$(VERSION)
+MCPB := $(DIST_DIR)/jmri-mcp-$(VERSION).mcpb
+MCPB_JSON := $(DIST_DIR)/jmri-mcp-$(VERSION).mcpb.json
 
 build: clean
 	@for pkg in $(PACKAGES); do \
@@ -25,12 +27,24 @@ testdeploy: build
 deploy: build
 	$(TWINE) upload $(DIST_DIR)/*.whl $(DIST_DIR)/*.tar.gz
 
-release: build
+release: build publish-github release-mcpb publish-mcpb-json
+
+publish-github:
 	git push origin main
 	git tag -a $(TAG) -m "$(TAG)"
 	git push origin $(TAG)
-	gh release create $(TAG) $(DIST_DIR)/*.mcpb \
+
+release-mcpb:
+	gh release create $(TAG) $(MCPB) \
 		--title "$(TAG)" \
 		--prerelease \
 		--generate-notes
 
+publish-mcpb-json:
+	sed \
+		-e "s/__VERSION__/$(VERSION)/g" \
+		-e "s/__TAG__/$(TAG)/g" \
+		-e "s/__SHA256__/$$(openssl dgst -sha256 $(MCPB) | awk '{print $$NF}')/g" \
+		-e "s/__FILENAME__/$$(basename $(MCPB))/g" \
+		packages/jmri-mcp/mcpb/server.json.template > $(MCPB_JSON)
+	mcp-publisher publish $(MCPB_JSON)

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.HO44-PROJECT/jmri-mcp",
+  "description": "JMRI voice/chat control for DCC model railroads",
+  "title": "JMRI MCP",
+  "repository": {
+    "url": "https://github.com/HO44-PROJECT/MrJ-JMRI-MCP",
+    "source": "github"
+  },
+  "version": "__VERSION__",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/releases/download/__TAG__/__FILENAME__",
+      "fileSha256": "__SHA256__",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

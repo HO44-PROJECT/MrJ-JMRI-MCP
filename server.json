@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ho44project/jmri-mcp",
+  "description": "MCP server for JMRI - voice/chat control of DCC model railroads (Claude, xiaozhi, Kira voice assistant)",
+  "repository": {
+    "url": "https://github.com/HO44-PROJECT/MrJ-JMRI-MCP",
+    "source": "github"
+  },
+  "version": "1.0.0rc1",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "jmri-mcp-1.0.0rc1.mcpb",
+      "url": "https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/releases/download/v1.0.0rc1/jmri-mcp-1.0.0rc1.mcpb"
+    }
+  ]
+}

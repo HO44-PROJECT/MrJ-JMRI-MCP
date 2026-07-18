@@ -1,5 +1,7 @@
 # MrJ JMRI AI Assistant
 
+*[Version française](README.fr.md)*
+
 **Talk to your model railroad.**
 
 Bring AI to your [JMRI](https://www.jmri.org/) powered layout. Connect your favorite AI assistant and control your [DCC](https://www.nmra.com/digital-command-control-dcc) model railroad using natural language through voice or chat.
@@ -32,6 +34,41 @@ See the complete MCP tools reference in [mcp-tools.md](mcp-tools.md).
 
 The goal is simple: make advanced JMRI control accessible to every model railroader, from casual operators to automation enthusiasts.
 
+### Built on real hardware, not just the JMRI docs
+
+This project was developed against a real DCC++ layout with multiple command stations,
+and several of its behaviors exist specifically because live hardware doesn't always
+behave the way the JMRI API documentation implies:
+
+- **Self-healing UNKNOWN power states.** Re-sending a command station's *current* power
+  state (a naive "set power ON" when it's already ON) is a known JMRI/DCC++ trap: it
+  knocks the system into an UNKNOWN state instead of being a safe no-op. Every power
+  command re-reads current state first and skips redundant POSTs — and if a genuine ON
+  request still lands in UNKNOWN, it automatically recovers with an OFF → wait → ON
+  retry sequence, rather than leaving the layout stuck.
+- **Per-locomotive command station affinity.** On a layout with more than one DCC
+  connection, sending a locomotive's throttle commands to the wrong command station
+  doesn't raise an error — it's just silently inaudible to the decoder. Roster entries
+  can declare which connection they normally run on via a `DccSystem` custom attribute
+  (set in JMRI's own Roster Entry → Edit → Attributes tab, e.g. `DccSystem` = `T`), and
+  throttle acquisition reads it automatically to target the right station.
+- **DCC connection and hardware address surfaced on every turnout, light, and signal.**
+  Listing a turnout, light, or signal reports which DCC connection actually drives it
+  (resolved from its JMRI system name, e.g. `OT23` → `ohara (turnouts)`) alongside its
+  raw hardware address where JMRI exposes one (turnouts and lights; signal masts don't
+  expose theirs via any JMRI API today, so that field is honestly reported as unknown
+  rather than guessed).
+- **Every write is confirmed by re-reading real state, never by trusting the response.**
+  Power, turnout, light, and signal commands all re-read JMRI's actual state after
+  acting, and report exactly what was observed — including when that doesn't match what
+  was asked for — instead of assuming a 200 response means the layout did what was
+  requested.
+- **Throttle state stays live even when driven from elsewhere.** JMRI broadcasts every
+  throttle change (speed, direction, functions) to all clients holding that
+  locomotive — including other JMRI panels or a second MCP session — and this project's
+  throttle cache is kept continuously in sync with that stream, not just with its own
+  commands, so it never reports stale state after someone else drives the train.
+
 ## What can I say?
 
 Pick the page that matches what you want to do — each links to the next. Available in
@@ -59,13 +96,24 @@ See the [installation guide](docs/install.md) and [quick start guide](docs/quick
 
 ## Command Line Interface
 
-The included CLI provides direct access to your JMRI layout without requiring an AI assistant.
+`jmri-cli` is a full-featured command-line client for your layout, talking to JMRI
+directly with no AI assistant or MCP client required — everything the MCP tools can do,
+a human can do too, from a terminal.
 
-It can be used for:
-- Manual control
-- Scripting
-- Automation
-- Testing and troubleshooting
+Run it bare with no arguments to open an **interactive shell**: a single persistent
+connection that keeps locomotives moving, lit, and acquired between commands (unlike a
+one-shot invocation, which releases every throttle the instant it exits). The shell
+adds real command-line ergonomics on top: up/down arrow **command history** persisted
+across sessions (`~/.jmri-cli/shell_history`), **TAB completion** across the entire
+command tree, `;`-separated multi-command lines, a `wait` command to sequence a
+`--hold` and a following command, and a friendlier natural-language-ish **sentence
+syntax** for speed/direction (`speed Autorail at 30 for 30 up 5 down 6 forward`)
+alongside the regular flag-based form. Exiting always leaves the layout safe: any
+locomotive still in motion gets a ramp-down-and-release prompt, and active functions
+(lights) are turned off before the connection closes, rather than being abandoned.
+
+Every command also works one-shot from a plain terminal for scripting, automation, and
+quick manual checks or troubleshooting against a real layout.
 
 See the [CLI reference](docs/cli.md).
 

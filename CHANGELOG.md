@@ -15,6 +15,30 @@ tested, and live-verified against a real JMRI installation.
 
 ### Added
 
+- `INSTALL.md`: a single entry point covering every installation
+  combination — `jmri-cli` in conda or venv, the `.mcpb` bundle in Claude
+  Desktop, and `jmri-xiaozhi-bridge` run locally (conda/venv) or as an
+  always-on Portainer stack — plus context on what Kira is and why the
+  bridge exists, not just bare commands.
+- `docker-compose.yml` + `.env.example`: minimal Portainer/Docker
+  deployment for `jmri-xiaozhi-bridge`, built on the stock
+  `python:3.12-slim` image with a `pip install jmri-mcp[xiaozhi]` start
+  command — no custom image to build or maintain.
+- README.md/README.fr.md: new "Built on real hardware, not just the JMRI
+  docs" section highlighting verified differentiators (self-healing
+  UNKNOWN power recovery, per-loco command-station affinity, DCC
+  connection/address surfaced on turnout/light/signal, confirm-by-reread
+  honesty, live-synced throttle cache); enriched Command Line Interface
+  section covering the interactive shell's history/TAB-completion/sentence
+  syntax; new Credits/Crédits section. `README.fr.md` added as a full
+  French translation.
+- **Fixed**: the Makefile's `testdeploy`/`deploy` targets required a
+  `TWINE_PASSWORD` env var and force-overrode `TWINE_USERNAME`, ignoring
+  `~/.pypirc` entirely. Now reads `~/.pypirc` natively; also fixed the
+  `dist/*` glob incorrectly sweeping up the `.mcpb` artifact (not a valid
+  PyPI distribution format) into the upload, restricting it to
+  `*.whl`/`*.tar.gz`.
+
 - Interactive shell: human-friendly sentence syntax for speed/direction (#27).
   `speed <loco> [at] <pct> [for D] [up D] [down D] [forward|reverse]` and the
   new `move <loco> [forward|reverse] [at] <pct> [for D] [up D] [down D]` are

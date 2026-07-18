@@ -419,6 +419,19 @@ for different reasons:
   subcommand shows a "DCC system" table column (or `dcc_system=` field for
   the single-entity `find`/`status`/`set` commands), and each domain gained
   a `bydccsystem` sort sibling.
+- **Turnout/light/signal free-text comments.** JMRI returns a `comment`
+  field (set in PanelPro's own object editor, e.g. "Yard throat switch" on
+  a turnout) for turnouts, lights, and signal masts alike — static layout
+  metadata, not live state, same treatment as `compact_block()`'s existing
+  `comment` field. `compact_turnout()`/`compact_light()`/`compact_signal()`
+  in `tools/_common.py` all pass it through verbatim (`None` if never set
+  in PanelPro — not an empty string, not an error). `jmri-cli`'s
+  `turnout.py`/`light.py`/`signal.py` show a "Comment" table column (empty
+  cell when unset) and a `comment=` field on the single-entity
+  `find`/`status`/`set` commands (`-` when unset, matching the "DCC
+  system" column's own no-match convention) — each domain also gained a
+  `bycomment` sort sibling. `turnout.py` already had this from an earlier
+  pass; `light.py`/`signal.py` gained it to match.
 - **`jmri_ws/`** — a persistent WebSocket (`ws://<jmri>:12080/json/`).
   This exists for one reason: **a JMRI throttle is bound to the connection
   that acquired it**. HTTP can't hold a throttle open between requests, so

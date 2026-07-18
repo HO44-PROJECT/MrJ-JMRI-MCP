@@ -27,6 +27,7 @@ def _headers() -> list[str]:
         i18n.t("headers.system_id"),
         i18n.t("headers.light"),
         i18n.t("headers.state"),
+        i18n.t("headers.comment"),
         i18n.t("headers.dcc_system"),
     ]
 
@@ -38,17 +39,19 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "byid": (0, True),
     "byname": (1, True),
     "bystate": (2, True),
-    "bydccsystem": (3, True),
+    "bycomment": (3, True),
+    "bydccsystem": (4, True),
 }
 
 
 def _row(light: dict, names_by_prefix: dict[str, str]) -> list:
-    """Flatten one JMRI light object into a `[system_id, label, state, dcc_system]` table row."""
+    """Flatten one JMRI light object into a `[system_id, label, state, comment, dcc_system]` table row."""
     state = LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN")
     label = light.get("userName") or light.get("name", "?")
     system_id = light.get("name", "?")
+    comment = light.get("comment") or ""
     dcc_system = dcc_system_display(system_id, names_by_prefix)
-    return [system_id, label, state, dcc_system]
+    return [system_id, label, state, comment, dcc_system]
 
 
 def _label(light: dict) -> str:
@@ -104,8 +107,11 @@ async def light_find(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, state, dcc_system = _row(light, names_by_prefix)
-    print(f"system_id={system_id} name={label} state={state} dcc_system={dcc_system}")
+    system_id, label, state, comment, dcc_system = _row(light, names_by_prefix)
+    print(
+        f"system_id={system_id} name={label} state={state} "
+        f"comment={comment or '-'} dcc_system={dcc_system}"
+    )
     return 0
 
 

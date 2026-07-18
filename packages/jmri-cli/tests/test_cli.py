@@ -419,6 +419,20 @@ async def test_light_find_shows_dcc_system(mock_lights, mock_power, capsys):
     assert "dcc_system=-" in out
 
 
+async def test_light_list_shows_comment_column(mock_lights, mock_power, capsys):
+    """None of the fixture lights have a comment set -> all show as "-"."""
+    code, out, _ = await run(capsys, "light", "list")
+    assert code == 0
+    header = out.splitlines()[0]
+    assert "Comment" in header
+
+
+async def test_light_find_shows_comment(mock_lights, mock_power, capsys):
+    code, out, _ = await run(capsys, "light", "find", "IL1")
+    assert code == 0
+    assert "comment=-" in out
+
+
 async def test_light_list_all(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "list")
     assert code == 0
@@ -560,6 +574,12 @@ async def test_turnout_find_shows_dcc_system(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "find", "OT23")
     assert code == 0
     assert "dcc_system=DCC++ Ohara" in out
+
+
+async def test_turnout_find_shows_comment(mock_turnouts, mock_power, capsys):
+    code, out, _ = await run(capsys, "turnout", "find", "IT100")
+    assert code == 0
+    assert "comment=Yard throat switch" in out
 
 
 async def test_turnout_bydccsystem_sorts_by_dcc_system_column(mock_turnouts, mock_power, capsys):
@@ -744,6 +764,20 @@ async def test_signal_find_shows_dcc_system(mock_signals, mock_power, capsys):
     assert "dcc_system=DCC++ Zou" in out
 
 
+async def test_signal_list_shows_comment_column(mock_signals, mock_power, capsys):
+    """Neither fixture signal has a comment set -> shows as "-"."""
+    code, out, _ = await run(capsys, "signal", "list")
+    assert code == 0
+    header = out.splitlines()[0]
+    assert "Comment" in header
+
+
+async def test_signal_find_shows_comment(mock_signals, mock_power, capsys):
+    code, out, _ = await run(capsys, "signal", "find", "Entry Signal A")
+    assert code == 0
+    assert "comment=-" in out
+
+
 async def test_signal_list_all(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "list")
     assert code == 0
@@ -764,7 +798,10 @@ async def test_signal_byaspect_sorts_by_aspect_column(mock_signals, mock_power, 
 async def test_signal_status_one(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "status", "Entry Signal A")
     assert code == 0
-    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1 dcc_system=DCC++ Zou"
+    assert out.strip() == (
+        "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
+        "aspect=Hp1 comment=- dcc_system=DCC++ Zou"
+    )
 
 
 async def test_signal_status_unknown(mock_signals, capsys):
@@ -776,7 +813,10 @@ async def test_signal_status_unknown(mock_signals, capsys):
 async def test_signal_find_by_username(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "find", "Entry Signal A")
     assert code == 0
-    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1 dcc_system=DCC++ Zou"
+    assert out.strip() == (
+        "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
+        "aspect=Hp1 comment=- dcc_system=DCC++ Zou"
+    )
 
 
 async def test_signal_find_by_system_id(mock_signals, mock_power, capsys):
@@ -852,7 +892,10 @@ async def test_signal_set_aspect_and_confirms(monkeypatch, power_fixture, capsys
         )
         code, out, _ = await run(capsys, "signal", "set", "Entry Signal A", "Hp0")
     assert code == 0
-    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp0 dcc_system=DCC++ Zou"
+    assert out.strip() == (
+        "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
+        "aspect=Hp0 comment=- dcc_system=DCC++ Zou"
+    )
     # Regression guard: see matching comment in tests/test_tools.py - JMRI's
     # POST handler reads "state", not "aspect".
     assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0"}]

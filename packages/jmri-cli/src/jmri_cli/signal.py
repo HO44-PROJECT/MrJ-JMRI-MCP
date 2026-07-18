@@ -25,6 +25,7 @@ def _headers() -> list[str]:
         i18n.t("headers.system_id"),
         i18n.t("headers.signal"),
         i18n.t("headers.aspect"),
+        i18n.t("headers.comment"),
         i18n.t("headers.dcc_system"),
     ]
 
@@ -36,17 +37,19 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "byid": (0, True),
     "byname": (1, True),
     "byaspect": (2, True),
-    "bydccsystem": (3, True),
+    "bycomment": (3, True),
+    "bydccsystem": (4, True),
 }
 
 
 def _row(signal: dict, names_by_prefix: dict[str, str]) -> list:
-    """Flatten one JMRI signal mast object into a `[system_id, label, aspect, dcc_system]` table row."""
+    """Flatten one JMRI signal mast object into a `[system_id, label, aspect, comment, dcc_system]` table row."""
     aspect = signal.get("aspect") or "UNKNOWN"
     label = signal.get("userName") or signal.get("name", "?")
     system_id = signal.get("name", "?")
+    comment = signal.get("comment") or ""
     dcc_system = dcc_system_display(system_id, names_by_prefix)
-    return [system_id, label, aspect, dcc_system]
+    return [system_id, label, aspect, comment, dcc_system]
 
 
 def _label(signal: dict) -> str:
@@ -102,8 +105,11 @@ async def signal_status(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, aspect, dcc_system = _row(match, names_by_prefix)
-    print(f"name={label} system_id={system_id} aspect={aspect} dcc_system={dcc_system}")
+    system_id, label, aspect, comment, dcc_system = _row(match, names_by_prefix)
+    print(
+        f"name={label} system_id={system_id} aspect={aspect} "
+        f"comment={comment or '-'} dcc_system={dcc_system}"
+    )
     return 0
 
 
@@ -203,8 +209,11 @@ async def signal_set(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, aspect, dcc_system = _row(result, names_by_prefix)
-    print(f"name={label} system_id={system_id} aspect={aspect} dcc_system={dcc_system}")
+    system_id, label, aspect, comment, dcc_system = _row(result, names_by_prefix)
+    print(
+        f"name={label} system_id={system_id} aspect={aspect} "
+        f"comment={comment or '-'} dcc_system={dcc_system}"
+    )
     if not result["confirmed"]:
         print(i18n.t("cli.signal_aspect_not_confirmed", aspect=args.aspect), file=sys.stderr)
         return 1

@@ -183,9 +183,9 @@ Voir [docs/install.md](docs/install.md) pour les détails d'installation.
 
 ## Crédits
 
-<img src="https://avatars.githubusercontent.com/u/159026337?v=4" width="80" height="80" alt="HO PROJECT" align="left" style="margin-right: 12px; border-radius: 50%;">
+<img src="https://avatars.githubusercontent.com/u/159026337?v=4" width="80" height="80" alt="MrJ" align="left" style="margin-right: 12px; border-radius: 50%;">
 
-Conçu et maintenu par **[HO PROJECT](https://github.com/HO44-PROJECT)**.
+Conçu et maintenu par **[MrJ](https://github.com/HO44-PROJECT)**.
 
 Questions, bugs et demandes de fonctionnalités sont les bienvenus via les [issues](../../issues).
 

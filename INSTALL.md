@@ -199,9 +199,33 @@ the same JMRI server, at the same time. Each talks to JMRI independently;
 JMRI itself has no concept of "which client" beyond the usual multi-client
 behavior described in [docs/architecture.md](docs/architecture.md).
 
+## Try it
+
+Once you've installed at least one front door above, confirm it actually
+talks to your layout:
+
+- **`jmri-cli`**: `jmri-cli status` should print `JMRI reachable, version
+  X.Y.Z` followed by each power system and its state. If this fails, fix
+  connectivity/`JMRI_URL` before wiring up any LLM client — every problem
+  is easier to diagnose from the CLI than from inside a chat window.
+- **Claude Desktop/Code**: ask something that needs a tool call, e.g.
+  "what's the status of the JMRI power systems?" or "list the locomotives
+  on the roster." If it doesn't call any tool, see the "verifying it's
+  connected" section in [docs/llm-setup-claude.md](docs/llm-setup-claude.md).
+- **Kira**: ask it the same kind of question out loud. If nothing happens,
+  check the bridge's logs (terminal output locally, or the container logs
+  in Portainer) — see [docs/llm-setup-xiaozhi.md](docs/llm-setup-xiaozhi.md).
+
 ## Developing on this repo instead
 
 Everything above installs from PyPI. If you're cloning this repo to modify
 the code itself, see [docs/install.md](docs/install.md) instead — it covers
 editable installs of all three packages (`jmri-core`, `jmri-cli`,
 `jmri-mcp`) from the working tree.
+
+## Where to go next
+
+- [docs/cli.md](docs/cli.md) — every `jmri-cli` subcommand.
+- [docs/architecture.md](docs/architecture.md) — module layout and design
+  notes, if you're going to read or modify the code.
+- [docs/testing.md](docs/testing.md) — running the test suite.

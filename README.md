@@ -87,7 +87,7 @@ The conductor/tinkerer/engineer split is borrowed from [DCC-EX](https://dcc-ex.c
 
 Getting started is designed to be simple.
 
-See the [installation guide](docs/install.md) and [quick start guide](docs/quickstart.md) for setup instructions, configuration, and first commands.
+See the [installation guide](INSTALL.md) for every install combination (CLI, Claude Desktop `.mcpb`, Kira bridge), configuration, and first commands.
 
 ## AI Assistant Setup
 
@@ -144,8 +144,8 @@ See [docs/install.md](docs/install.md) for installation details.
 
 ### Getting started
 
-- **[Quick start](docs/quickstart.md)** — fastest path from a fresh installation to a working voice/chat command
-- **[Installation](docs/install.md)** — package installation, configuration, and verification
+- **[Installation guide](INSTALL.md)** — every install combination (CLI, Claude Desktop `.mcpb`, Kira bridge), configuration, and first commands
+- **[Developing on this repo](docs/install.md)** — editable installs from a cloned copy, for working on the code itself
 
 ### AI assistants
 

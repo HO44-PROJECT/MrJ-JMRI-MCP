@@ -92,7 +92,7 @@ Le découpage conducteur/bricoleur/ingénieur est emprunté à [DCC-EX](https://
 
 Le démarrage est conçu pour être simple.
 
-Voir le [guide d'installation](docs/install.md) et le [guide de démarrage rapide](docs/quickstart.md) pour les instructions d'installation, la configuration et les premières commandes.
+Voir le [guide d'installation](INSTALL.md) pour toutes les combinaisons d'installation (CLI, `.mcpb` Claude Desktop, pont Kira), la configuration et les premières commandes.
 
 ## Configuration de l'assistant IA
 
@@ -151,8 +151,8 @@ Voir [docs/install.md](docs/install.md) pour les détails d'installation.
 
 ### Prise en main
 
-- **[Démarrage rapide](docs/quickstart.md)** — le chemin le plus rapide entre une installation neuve et une première commande vocale/chat fonctionnelle
-- **[Installation](docs/install.md)** — installation du package, configuration et vérification
+- **[Guide d'installation](INSTALL.md)** — toutes les combinaisons d'installation (CLI, `.mcpb` Claude Desktop, pont Kira), configuration et premières commandes
+- **[Développer sur ce dépôt](docs/install.md)** — installations éditables depuis une copie clonée, pour travailler sur le code lui-même
 
 ### Assistants IA
 

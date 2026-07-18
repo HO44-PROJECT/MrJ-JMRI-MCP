@@ -390,6 +390,35 @@ for different reasons:
     when the prefix equals the default); `jmri-cli` mirrors this with
     `_system_suffix(prefix)` in `throttle.py`, appending `" system=<name>"`
     to printed lines only in the non-default case.
+- **Turnout/light/signal system attribution: `dcc_system_name`.** Unlike a
+  roster entry (which needs an explicit `DccSystem` attribute or a
+  default-system fallback, see above), a turnout/light/signal's JMRI system
+  name always starts with a real prefix character — the DCC connection
+  prefix (`O`/`R`/`T`/`Z` on this layout) or `I` for a JMRI-internal object
+  with no power connection at all (e.g. `IT100`, `IL1`). `power.py`'s
+  `resolve_dcc_system_name(system_name)` takes a full system name like
+  `"OT23"`, resolves its leading character against `get_systems()`, and
+  returns the owning system's full name (e.g. `"DCC++ Ohara"`) — or `None`
+  (never raises) when the prefix matches nothing (the common case for
+  `I`-prefixed internal objects) or the input is empty/JMRI is unreachable.
+  `tools/_common.py`'s `compact_turnout()`/`compact_light()`/
+  `compact_signal()` are `async def` for this reason (they weren't before)
+  and each add a `"dcc_system_name"` field via this resolver — `None`, not a
+  fallback name, is the correct/expected value for internal objects, so
+  callers must not treat it as an error. `jmri-cli` has its own independent
+  display/formatting code for these three domains (`_row()`/`_headers()` in
+  `turnout.py`/`light.py`/`signal.py` — it does not call the MCP `compact_*`
+  functions), so parity needed a matching CLI-side implementation:
+  `jmri_cli/_dcc_system.py`'s `system_names_by_prefix()` (fetches
+  `get_systems()` once per command, returns `{prefix: name}`) and
+  `dcc_system_display(system_id, names_by_prefix)` (prefix lookup, `"-"` on
+  no match) — a simplified version of `roster.py`'s own
+  `_system_names_by_prefix`/`_dcc_system_display` pair, simpler because
+  there's no "unset, fall back to the default system" case to handle here.
+  Every `turnout`/`light`/`signal` `list`/`find`/`findr`/`findg`/`status`
+  subcommand shows a "DCC system" table column (or `dcc_system=` field for
+  the single-entity `find`/`status`/`set` commands), and each domain gained
+  a `bydccsystem` sort sibling.
 - **`jmri_ws/`** — a persistent WebSocket (`ws://<jmri>:12080/json/`).
   This exists for one reason: **a JMRI throttle is bound to the connection
   that acquired it**. HTTP can't hold a throttle open between requests, so

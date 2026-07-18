@@ -16,6 +16,7 @@ from jmri_core.jmri_client import (
     get_turnouts,
     resolve_block,
     resolve_dcc_prefix,
+    resolve_dcc_system_name,
     resolve_light,
     resolve_max_speed_percent,
     resolve_roster_entry,
@@ -660,6 +661,36 @@ async def test_default_system_prefix_none_on_jmri_error():
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=ConnectError("refused"))
         prefix = await default_system_prefix()
     assert prefix is None
+
+
+# --- resolve_dcc_system_name: raw system name (e.g. "OT23") -> owning DCC system's full name ---
+
+
+async def test_resolve_dcc_system_name_matches_known_prefix(mock_power):
+    name = await resolve_dcc_system_name("OT23")
+    assert name == "DCC++ Ohara"
+
+
+async def test_resolve_dcc_system_name_unknown_prefix_returns_none(mock_power):
+    name = await resolve_dcc_system_name("IT100")
+    assert name is None
+
+
+async def test_resolve_dcc_system_name_none_input_returns_none(mock_power):
+    name = await resolve_dcc_system_name(None)
+    assert name is None
+
+
+async def test_resolve_dcc_system_name_empty_string_returns_none(mock_power):
+    name = await resolve_dcc_system_name("")
+    assert name is None
+
+
+async def test_resolve_dcc_system_name_none_on_jmri_error():
+    with respx.mock() as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=ConnectError("refused"))
+        name = await resolve_dcc_system_name("OT23")
+    assert name is None
 
 
 # --- get_roster_function_labels ---

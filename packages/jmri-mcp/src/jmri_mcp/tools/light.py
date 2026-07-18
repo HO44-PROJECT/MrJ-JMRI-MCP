@@ -41,7 +41,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("list_lights failed: %s", exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {"lights": [compact_light(lt) for lt in lights]}
+        return {"lights": [await compact_light(lt) for lt in lights]}
 
     @mcp.tool()
     async def get_light(name: str) -> dict:
@@ -62,7 +62,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("get_light(%r) failed: %s", name, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return compact_light(match)
+        return await compact_light(match)
 
     @mcp.tool()
     async def set_light(name: str, turn_on: bool) -> dict:
@@ -90,7 +90,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("set_light(%r, %r) failed: %s", name, turn_on, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {**compact_light(result), "confirmed": result["confirmed"]}
+        return {**await compact_light(result), "confirmed": result["confirmed"]}
 
     @mcp.tool()
     async def set_layout_lights(turn_on: bool) -> dict:
@@ -127,7 +127,7 @@ def register(mcp) -> None:
         for lt in lights:
             try:
                 result = await _set_light(lt["name"], turn_on)
-                succeeded.append({**compact_light(result), "confirmed": result["confirmed"]})
+                succeeded.append({**await compact_light(result), "confirmed": result["confirmed"]})
             except JmriError as exc:
                 failed.append({
                     "name": lt.get("userName") or lt.get("name"),

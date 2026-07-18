@@ -20,6 +20,7 @@ from jmri_core.constants.protocol import FIELD_ADDRESS, FIELD_FORWARD, FIELD_SPE
 from jmri_core.jmri_client import (
     default_system_prefix,
     resolve_dcc_prefix,
+    resolve_dcc_system_name,
     resolve_max_speed_percent,
     resolve_system_name,
 )
@@ -50,7 +51,7 @@ def compact_power(system: dict) -> dict:
     }
 
 
-def compact_light(light: dict) -> dict:
+async def compact_light(light: dict) -> dict:
     """Reduce a raw JMRI light dict to the fields worth showing the LLM.
 
     Args:
@@ -58,18 +59,23 @@ def compact_light(light: dict) -> dict:
             at least "name" and "state", and optionally "userName".
 
     Returns:
-        {"name": ..., "state": "ON"/"OFF"/"UNKNOWN"/"INCONSISTENT"}. "name"
-        is the user-friendly userName if JMRI has one set, else falls back
-        to the raw system name (e.g. "IL1") — this is what the LLM should
-        show/match against, not JMRI's internal system name.
+        {"name": ..., "state": "ON"/"OFF"/"UNKNOWN"/"INCONSISTENT",
+        "dcc_system_name": str|None}. "name" is the user-friendly userName
+        if JMRI has one set, else falls back to the raw system name (e.g.
+        "IL1") — this is what the LLM should show/match against, not
+        JMRI's internal system name. "dcc_system_name" is the DCC
+        connection that manages this light, derived from its raw system
+        name's prefix (e.g. "TL51" -> Taya) — None if the prefix matches
+        no known DCC system (see resolve_dcc_system_name).
     """
     return {
         "name": light.get("userName") or light.get("name"),
         "state": LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN"),
+        "dcc_system_name": await resolve_dcc_system_name(light.get("name")),
     }
 
 
-def compact_turnout(turnout: dict) -> dict:
+async def compact_turnout(turnout: dict) -> dict:
     """Reduce a raw JMRI turnout dict to the fields worth showing the LLM.
 
     Args:
@@ -79,20 +85,24 @@ def compact_turnout(turnout: dict) -> dict:
 
     Returns:
         {"name": ..., "state": "CLOSED"/"THROWN"/"UNKNOWN"/"INCONSISTENT",
-        "has_feedback_sensor": bool}. "name" is the user-friendly userName
-        if JMRI has one set, else falls back to the raw system name (e.g.
-        "IT100"). "has_feedback_sensor" is True only if JMRI actually has a
-        real feedback sensor wired to this turnout (a non-null entry in its
-        "sensor" array) — verified live (2026-07-11) that JMRI's
-        "feedbackMode" number alone is NOT a reliable signal for this (a
-        turnout in DIRECT mode can still carry a leftover sensor object),
-        so presence of an actual sensor entry is what's checked instead.
-        When False, INCONSISTENT is normal/expected background noise for
-        that turnout — JMRI has no way to confirm the motor's real
-        position and reports INCONSISTENT indefinitely, even at rest with
-        no command in flight, not just transiently after a set_turnout
-        call. See set_turnout's docstring for how this should change what
-        gets reported to the user.
+        "has_feedback_sensor": bool, "dcc_system_name": str|None}. "name"
+        is the user-friendly userName if JMRI has one set, else falls back
+        to the raw system name (e.g. "IT100"). "has_feedback_sensor" is
+        True only if JMRI actually has a real feedback sensor wired to
+        this turnout (a non-null entry in its "sensor" array) — verified
+        live (2026-07-11) that JMRI's "feedbackMode" number alone is NOT a
+        reliable signal for this (a turnout in DIRECT mode can still carry
+        a leftover sensor object), so presence of an actual sensor entry
+        is what's checked instead. When False, INCONSISTENT is normal/
+        expected background noise for that turnout — JMRI has no way to
+        confirm the motor's real position and reports INCONSISTENT
+        indefinitely, even at rest with no command in flight, not just
+        transiently after a set_turnout call. See set_turnout's docstring
+        for how this should change what gets reported to the user.
+        "dcc_system_name" is the DCC connection that manages this turnout,
+        derived from its raw system name's prefix (e.g. "OT23" -> Ohara)
+        — None for JMRI-internal turnouts with no power connection (e.g.
+        "IT100") or any other unresolvable prefix.
     """
     sensors = turnout.get("sensor") or []
     has_feedback_sensor = any(s is not None for s in sensors)
@@ -100,6 +110,7 @@ def compact_turnout(turnout: dict) -> dict:
         "name": turnout.get("userName") or turnout.get("name"),
         "state": TURNOUT_STATE_NAMES.get(turnout.get("state"), "UNKNOWN"),
         "has_feedback_sensor": has_feedback_sensor,
+        "dcc_system_name": await resolve_dcc_system_name(turnout.get("name")),
     }
 
 
@@ -163,7 +174,7 @@ def compact_block(block: dict) -> dict:
     }
 
 
-def compact_signal(signal: dict) -> dict:
+async def compact_signal(signal: dict) -> dict:
     """Reduce a raw JMRI signal mast dict to the fields worth showing the LLM.
 
     Args:
@@ -172,18 +183,23 @@ def compact_signal(signal: dict) -> dict:
             "lit", "held".
 
     Returns:
-        {"name": ..., "aspect": ..., "lit": bool, "held": bool}. "name" is
-        the user-friendly userName if JMRI has one set, else falls back to
-        the raw system name. "aspect" is passed through verbatim (e.g.
-        "Hp0"/"Hp1") - the valid vocabulary is defined by the mast's own
-        signal system and isn't available over JMRI's JSON API, so this
-        project never hardcodes or translates aspect names.
+        {"name": ..., "aspect": ..., "lit": bool, "held": bool,
+        "dcc_system_name": str|None}. "name" is the user-friendly userName
+        if JMRI has one set, else falls back to the raw system name.
+        "aspect" is passed through verbatim (e.g. "Hp0"/"Hp1") - the valid
+        vocabulary is defined by the mast's own signal system and isn't
+        available over JMRI's JSON API, so this project never hardcodes or
+        translates aspect names. "dcc_system_name" is the DCC connection
+        that manages this signal mast, derived from its raw system name's
+        prefix (e.g. a "Z..." system name -> Zou) — None if the prefix
+        matches no known DCC system.
     """
     return {
         "name": signal.get("userName") or signal.get("name"),
         "aspect": signal.get("aspect"),
         "lit": bool(signal.get("lit")),
         "held": bool(signal.get("held")),
+        "dcc_system_name": await resolve_dcc_system_name(signal.get("name")),
     }
 
 

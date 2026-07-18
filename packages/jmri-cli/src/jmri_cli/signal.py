@@ -16,11 +16,17 @@ from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR
 from jmri_core.jmri_client import JmriError, get_signals, resolve_signal
 from jmri_core.jmri_client import set_signal as _set_signal
+from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
 
 
 def _headers() -> list[str]:
     """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
-    return [i18n.t("headers.system_id"), i18n.t("headers.signal"), i18n.t("headers.aspect")]
+    return [
+        i18n.t("headers.system_id"),
+        i18n.t("headers.signal"),
+        i18n.t("headers.aspect"),
+        i18n.t("headers.dcc_system"),
+    ]
 
 
 # `signal by*` subcommand name -> (index into _row()'s tuple, casefold?).
@@ -30,15 +36,17 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "byid": (0, True),
     "byname": (1, True),
     "byaspect": (2, True),
+    "bydccsystem": (3, True),
 }
 
 
-def _row(signal: dict) -> list:
-    """Flatten one JMRI signal mast object into a `[system_id, label, aspect]` table row."""
+def _row(signal: dict, names_by_prefix: dict[str, str]) -> list:
+    """Flatten one JMRI signal mast object into a `[system_id, label, aspect, dcc_system]` table row."""
     aspect = signal.get("aspect") or "UNKNOWN"
     label = signal.get("userName") or signal.get("name", "?")
     system_id = signal.get("name", "?")
-    return [system_id, label, aspect]
+    dcc_system = dcc_system_display(system_id, names_by_prefix)
+    return [system_id, label, aspect, dcc_system]
 
 
 def _label(signal: dict) -> str:
@@ -60,6 +68,7 @@ async def signal_list(args: argparse.Namespace) -> int:
     """
     try:
         signals = await get_signals()
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -68,7 +77,7 @@ async def signal_list(args: argparse.Namespace) -> int:
         print(i18n.t("cli.no_entities_found", kind="signal mast"))
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
-    rows = sort_rows([_row(s) for s in signals], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(s, names_by_prefix) for s in signals], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -88,12 +97,13 @@ async def signal_status(args: argparse.Namespace) -> int:
     try:
         signals = await get_signals()
         match = resolve_signal(args.name, signals)
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, aspect = _row(match)
-    print(f"name={label} system_id={system_id} aspect={aspect}")
+    system_id, label, aspect, dcc_system = _row(match, names_by_prefix)
+    print(f"name={label} system_id={system_id} aspect={aspect} dcc_system={dcc_system}")
     return 0
 
 
@@ -128,6 +138,7 @@ async def _signal_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         signals = await get_signals()
         matcher = find_regex if regex else find_glob
         matches = matcher(pattern, signals, _label)
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -136,7 +147,7 @@ async def _signal_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(i18n.t("cli.no_entities_match", kind="signal mast", pattern=pattern))
         return 0
     sort_by = sort_by or "byname"
-    rows = sort_rows([_row(s) for s in matches], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(s, names_by_prefix) for s in matches], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -187,12 +198,13 @@ async def signal_set(args: argparse.Namespace) -> int:
         signals = await get_signals()
         match = resolve_signal(args.name, signals)
         result = await _set_signal(match["name"], args.aspect)
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, aspect = _row(result)
-    print(f"name={label} system_id={system_id} aspect={aspect}")
+    system_id, label, aspect, dcc_system = _row(result, names_by_prefix)
+    print(f"name={label} system_id={system_id} aspect={aspect} dcc_system={dcc_system}")
     if not result["confirmed"]:
         print(i18n.t("cli.signal_aspect_not_confirmed", aspect=args.aspect), file=sys.stderr)
         return 1

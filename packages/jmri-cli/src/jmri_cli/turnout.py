@@ -19,6 +19,7 @@ from jmri_core.constants.cli import SORT_INDICATOR, TURNOUT_STATE_NAMES
 from jmri_core.jmri_client import JmriError, get_turnouts, resolve_turnout
 from jmri_core.jmri_client import set_turnout as _set_turnout
 from jmri_core.jmri_client.turnout import TURNOUT_CLOSED, TURNOUT_THROWN
+from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
 
 
 def _headers() -> list[str]:
@@ -29,6 +30,7 @@ def _headers() -> list[str]:
         i18n.t("headers.state"),
         i18n.t("headers.feedback"),
         i18n.t("headers.comment"),
+        i18n.t("headers.dcc_system"),
     ]
 
 
@@ -41,18 +43,20 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "bystate": (2, True),
     "byfeedback": (3, True),
     "bycomment": (4, True),
+    "bydccsystem": (5, True),
 }
 
 
-def _row(turnout: dict) -> list:
-    """Flatten one JMRI turnout object into a `[system_id, label, state, feedback, comment]` table row."""
+def _row(turnout: dict, names_by_prefix: dict[str, str]) -> list:
+    """Flatten one JMRI turnout object into a `[system_id, label, state, feedback, comment, dcc_system]` table row."""
     state = TURNOUT_STATE_NAMES.get(turnout.get("state"), "UNKNOWN")
     label = turnout.get("userName") or turnout.get("name", "?")
     system_id = turnout.get("name", "?")
     sensors = turnout.get("sensor") or []
     feedback = "yes" if any(s is not None for s in sensors) else "no"
     comment = turnout.get("comment") or ""
-    return [system_id, label, state, feedback, comment]
+    dcc_system = dcc_system_display(system_id, names_by_prefix)
+    return [system_id, label, state, feedback, comment, dcc_system]
 
 
 def _label(turnout: dict) -> str:
@@ -74,14 +78,15 @@ async def turnout_find(args: argparse.Namespace) -> int:
     try:
         turnouts = await get_turnouts()
         turnout = resolve_turnout(args.name, turnouts)
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, state, feedback, comment = _row(turnout)
+    system_id, label, state, feedback, comment, dcc_system = _row(turnout, names_by_prefix)
     print(
         f"system_id={system_id} name={label} state={state} "
-        f"feedback_sensor={feedback} comment={comment or '-'}"
+        f"feedback_sensor={feedback} comment={comment or '-'} dcc_system={dcc_system}"
     )
     return 0
 
@@ -98,6 +103,7 @@ async def _turnout_find_pattern(args: argparse.Namespace, *, regex: bool) -> int
         turnouts = await get_turnouts()
         matcher = find_regex if regex else find_glob
         matches = matcher(pattern, turnouts, _label)
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -106,7 +112,7 @@ async def _turnout_find_pattern(args: argparse.Namespace, *, regex: bool) -> int
         print(i18n.t("cli.no_entities_match", kind="turnout", pattern=pattern))
         return 0
     sort_by = sort_by or "byname"
-    rows = sort_rows([_row(t) for t in matches], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(t, names_by_prefix) for t in matches], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -153,6 +159,7 @@ async def turnout_list(args: argparse.Namespace) -> int:
     """
     try:
         turnouts = await get_turnouts()
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -161,7 +168,7 @@ async def turnout_list(args: argparse.Namespace) -> int:
         print(i18n.t("cli.no_entities_found", kind="turnout"))
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
-    rows = sort_rows([_row(t) for t in turnouts], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(t, names_by_prefix) for t in turnouts], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -181,6 +188,7 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
     try:
         turnouts = await get_turnouts()
         targets = [resolve_turnout(args.name, turnouts)] if args.name else turnouts
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -191,7 +199,7 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
     try:
         for target in targets:
             result = await _set_turnout(target["name"], thrown)
-            rows.append(_row(result))
+            rows.append(_row(result, names_by_prefix))
             if not result["confirmed"]:
                 all_confirmed = False
                 sensors = result.get("sensor") or []

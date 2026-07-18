@@ -222,6 +222,35 @@ async def default_system_prefix() -> str | None:
     return str(default.get("prefix")) if default is not None else None
 
 
+async def resolve_dcc_system_name(system_name: str | None) -> str | None:
+    """Resolve a raw JMRI system name's DCC connection to its full system name.
+
+    Args:
+        system_name: A raw JMRI system name for a turnout/light/signal/etc.,
+            e.g. "OT23", "TL51", "IT100" — always `<connection prefix><type
+            letter><suffix>` by JMRI convention. None is passed through as
+            None.
+
+    Returns:
+        The owning DCC system's full name (e.g. "ohara (turnouts)"), or
+        None if `system_name` is None/empty, or its leading character
+        doesn't match any known DCC connection prefix (e.g. "I" for
+        JMRI-internal objects with no power connection, like turnout
+        IT100) — never raises, same fail-open policy as
+        resolve_system_name, since a decoration lookup must not block
+        the caller it's decorating.
+    """
+    if not system_name:
+        return None
+    prefix = system_name[0]
+    try:
+        systems = await get_systems()
+    except JmriError:
+        return None
+    match = next((s for s in systems if str(s.get("prefix", "")) == prefix), None)
+    return match.get("name") if match is not None else None
+
+
 def resolve_system(
     query: str | None, systems: list[dict[str, Any]]
 ) -> dict[str, Any]:

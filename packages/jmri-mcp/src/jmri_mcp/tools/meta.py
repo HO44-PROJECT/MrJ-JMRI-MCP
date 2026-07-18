@@ -291,7 +291,7 @@ def register(mcp) -> None:
             for lt in lights:
                 try:
                     result = await _set_light(lt["name"], False)
-                    succeeded.append({**compact_light(result), "confirmed": result["confirmed"]})
+                    succeeded.append({**await compact_light(result), "confirmed": result["confirmed"]})
                 except JmriError as exc:
                     failed.append({
                         "name": lt.get("userName") or lt.get("name"),
@@ -320,7 +320,7 @@ def register(mcp) -> None:
             for lt in lights:
                 try:
                     result = await _set_light(lt["name"], layout_state)
-                    succeeded.append({**compact_light(result), "confirmed": result["confirmed"]})
+                    succeeded.append({**await compact_light(result), "confirmed": result["confirmed"]})
                 except JmriError as exc:
                     failed.append({
                         "name": lt.get("userName") or lt.get("name"),

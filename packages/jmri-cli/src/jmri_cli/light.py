@@ -18,11 +18,17 @@ from jmri_core.constants.cli import SORT_INDICATOR, LIGHT_STATE_NAMES
 from jmri_core.jmri_client import JmriError, get_lights, resolve_light
 from jmri_core.jmri_client import set_light as _set_light
 from jmri_core.jmri_client.light import LIGHT_ON, LIGHT_OFF
+from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
 
 
 def _headers() -> list[str]:
     """Build translated table headers for `tabulate()`, resolved at call time (not import time) so they reflect the active JMRI_MCP_LANG."""
-    return [i18n.t("headers.system_id"), i18n.t("headers.light"), i18n.t("headers.state")]
+    return [
+        i18n.t("headers.system_id"),
+        i18n.t("headers.light"),
+        i18n.t("headers.state"),
+        i18n.t("headers.dcc_system"),
+    ]
 
 
 # `light by*` subcommand name -> (index into _row()'s tuple, casefold?).
@@ -32,15 +38,17 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "byid": (0, True),
     "byname": (1, True),
     "bystate": (2, True),
+    "bydccsystem": (3, True),
 }
 
 
-def _row(light: dict) -> list:
-    """Flatten one JMRI light object into a `[system_id, label, state]` table row."""
+def _row(light: dict, names_by_prefix: dict[str, str]) -> list:
+    """Flatten one JMRI light object into a `[system_id, label, state, dcc_system]` table row."""
     state = LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN")
     label = light.get("userName") or light.get("name", "?")
     system_id = light.get("name", "?")
-    return [system_id, label, state]
+    dcc_system = dcc_system_display(system_id, names_by_prefix)
+    return [system_id, label, state, dcc_system]
 
 
 def _label(light: dict) -> str:
@@ -62,6 +70,7 @@ async def light_list(args: argparse.Namespace) -> int:
     """
     try:
         lights = await get_lights()
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -70,7 +79,7 @@ async def light_list(args: argparse.Namespace) -> int:
         print(i18n.t("cli.no_entities_found", kind="light"))
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
-    rows = sort_rows([_row(lt) for lt in lights], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(lt, names_by_prefix) for lt in lights], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -90,12 +99,13 @@ async def light_find(args: argparse.Namespace) -> int:
     try:
         lights = await get_lights()
         light = resolve_light(args.name, lights)
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, state = _row(light)
-    print(f"system_id={system_id} name={label} state={state}")
+    system_id, label, state, dcc_system = _row(light, names_by_prefix)
+    print(f"system_id={system_id} name={label} state={state} dcc_system={dcc_system}")
     return 0
 
 
@@ -111,6 +121,7 @@ async def _light_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         lights = await get_lights()
         matcher = find_regex if regex else find_glob
         matches = matcher(pattern, lights, _label)
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -119,7 +130,7 @@ async def _light_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(i18n.t("cli.no_entities_match", kind="light", pattern=pattern))
         return 0
     sort_by = sort_by or "byname"
-    rows = sort_rows([_row(lt) for lt in matches], SORT_FIELDS, sort_by)
+    rows = sort_rows([_row(lt, names_by_prefix) for lt in matches], SORT_FIELDS, sort_by)
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -162,6 +173,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
     try:
         lights = await get_lights()
         targets = [resolve_light(args.name, lights)] if args.name else lights
+        names_by_prefix = await system_names_by_prefix()
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
@@ -171,7 +183,7 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
     try:
         for target in targets:
             result = await _set_light(target["name"], turn_on)
-            rows.append(_row(result))
+            rows.append(_row(result, names_by_prefix))
             if not result["confirmed"]:
                 all_confirmed = False
     except JmriError as exc:

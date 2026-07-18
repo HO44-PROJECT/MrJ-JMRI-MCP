@@ -682,7 +682,7 @@ async def test_lights_off_sets_function_zero(fake_jmri):
     assert out == {"address": 3, "function": 0, "state": False}
 
 
-async def test_list_lights_registered_and_compact(mock_lights):
+async def test_list_lights_registered_and_compact(mock_lights, mock_power):
     mcp = make_server()
     tool_names = {t.name for t in await mcp.list_tools()}
     assert "list_lights" in tool_names
@@ -690,11 +690,29 @@ async def test_list_lights_registered_and_compact(mock_lights):
     out = await call(mcp, "list_lights")
     assert out == {
         "lights": [
-            {"name": "Depot Lighting", "state": "OFF"},
-            {"name": "Street Lamps", "state": "ON"},
-            {"name": "IL3", "state": "OFF"},
+            {"name": "Depot Lighting", "state": "OFF", "dcc_system_name": None},
+            {"name": "Street Lamps", "state": "ON", "dcc_system_name": None},
+            {"name": "IL3", "state": "OFF", "dcc_system_name": None},
         ]
     }
+
+
+async def test_list_lights_dcc_system_name_resolved_from_prefix(mock_power):
+    """Light "OL1" -> prefix "O" -> power_fixture's "DCC++ Ohara"."""
+    import respx
+    from httpx import Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/lights").mock(
+            return_value=Response(200, json=[
+                {"type": "light", "data": {"name": "OL1", "userName": "Quai central", "state": 4}},
+            ])
+        )
+        out = await call(mcp, "list_lights")
+    assert out["lights"][0]["dcc_system_name"] == "DCC++ Ohara"
 
 
 async def test_list_lights_reports_error_honestly(monkeypatch):
@@ -704,10 +722,10 @@ async def test_list_lights_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-async def test_get_light_resolves_by_fragment(mock_lights):
+async def test_get_light_resolves_by_fragment(mock_lights, mock_power):
     mcp = make_server()
     out = await call(mcp, "get_light", name="depot")
-    assert out == {"name": "Depot Lighting", "state": "OFF"}
+    assert out == {"name": "Depot Lighting", "state": "OFF", "dcc_system_name": None}
 
 
 async def test_get_light_unknown_name_returns_error_not_exception(mock_lights):
@@ -716,7 +734,7 @@ async def test_get_light_unknown_name_returns_error_not_exception(mock_lights):
     assert "error" in out and "tgv" in out["error"]
 
 
-async def test_set_light_turns_on_and_confirms():
+async def test_set_light_turns_on_and_confirms(mock_power):
     import respx
     from httpx import Response
 
@@ -733,7 +751,7 @@ async def test_set_light_turns_on_and_confirms():
         )
         router.post(f"{MOCK_JMRI_URL}/json/light/IL1").mock(return_value=Response(200, json={}))
         out = await call(mcp, "set_light", name="depot", turn_on=True)
-    assert out == {"name": "Depot Lighting", "state": "ON", "confirmed": True}
+    assert out == {"name": "Depot Lighting", "state": "ON", "dcc_system_name": None, "confirmed": True}
 
 
 async def test_set_light_reports_error_honestly(monkeypatch):
@@ -743,7 +761,7 @@ async def test_set_light_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-async def test_list_turnouts_registered_and_compact(mock_turnouts):
+async def test_list_turnouts_registered_and_compact(mock_turnouts, mock_power):
     mcp = make_server()
     tool_names = {t.name for t in await mcp.list_tools()}
     assert "list_turnouts" in tool_names
@@ -751,9 +769,12 @@ async def test_list_turnouts_registered_and_compact(mock_turnouts):
     out = await call(mcp, "list_turnouts")
     assert out == {
         "turnouts": [
-            {"name": "Layout Turnout A", "state": "CLOSED", "has_feedback_sensor": True},
-            {"name": "Layout Turnout BL", "state": "CLOSED", "has_feedback_sensor": True},
-            {"name": "A / Mountain A -> Platform A/B", "state": "THROWN", "has_feedback_sensor": False},
+            {"name": "Layout Turnout A", "state": "CLOSED", "has_feedback_sensor": True, "dcc_system_name": None},
+            {"name": "Layout Turnout BL", "state": "CLOSED", "has_feedback_sensor": True, "dcc_system_name": None},
+            {
+                "name": "A / Mountain A -> Platform A/B", "state": "THROWN",
+                "has_feedback_sensor": False, "dcc_system_name": "DCC++ Ohara",
+            },
         ]
     }
 
@@ -765,10 +786,13 @@ async def test_list_turnouts_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-async def test_get_turnout_resolves_by_fragment(mock_turnouts):
+async def test_get_turnout_resolves_by_fragment(mock_turnouts, mock_power):
     mcp = make_server()
     out = await call(mcp, "get_turnout", name="Layout Turnout A")
-    assert out == {"name": "Layout Turnout A", "state": "CLOSED", "has_feedback_sensor": True}
+    assert out == {
+        "name": "Layout Turnout A", "state": "CLOSED",
+        "has_feedback_sensor": True, "dcc_system_name": None,
+    }
 
 
 async def test_get_turnout_unknown_name_returns_error_not_exception(mock_turnouts):
@@ -777,7 +801,7 @@ async def test_get_turnout_unknown_name_returns_error_not_exception(mock_turnout
     assert "error" in out and "tgv" in out["error"]
 
 
-async def test_set_turnout_throws_and_confirms():
+async def test_set_turnout_throws_and_confirms(mock_power):
     import respx
     from httpx import Response
 
@@ -797,8 +821,28 @@ async def test_set_turnout_throws_and_confirms():
         "name": "Layout Turnout A",
         "state": "THROWN",
         "has_feedback_sensor": False,
+        "dcc_system_name": None,
         "confirmed": True,
     }
+
+
+async def test_set_turnout_dcc_system_name_resolved_from_prefix(mock_power):
+    """Turnout "OT23" -> prefix "O" -> power_fixture's "DCC++ Ohara"."""
+    import respx
+    from httpx import Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(
+            return_value=Response(200, json=[
+                {"type": "turnout", "data": {"name": "OT23", "userName": "Mountain A", "state": 4}},
+            ])
+        )
+        router.post(f"{MOCK_JMRI_URL}/json/turnout/OT23").mock(return_value=Response(200, json={}))
+        out = await call(mcp, "set_turnout", name="Mountain A", thrown=True)
+    assert out["dcc_system_name"] == "DCC++ Ohara"
 
 
 async def test_set_turnout_reports_error_honestly(monkeypatch):
@@ -808,38 +852,52 @@ async def test_set_turnout_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-def test_compact_turnout_has_feedback_sensor_true_when_sensor_present():
+async def test_compact_turnout_has_feedback_sensor_true_when_sensor_present(mock_power):
     from jmri_mcp.tools._common import compact_turnout
 
     turnout = {"name": "IT100", "state": 2, "sensor": [{"name": "OS37"}, None]}
-    assert compact_turnout(turnout)["has_feedback_sensor"] is True
+    assert (await compact_turnout(turnout))["has_feedback_sensor"] is True
 
 
-def test_compact_turnout_has_feedback_sensor_false_when_no_sensor():
+async def test_compact_turnout_has_feedback_sensor_false_when_no_sensor(mock_power):
     from jmri_mcp.tools._common import compact_turnout
 
     turnout = {"name": "OT23", "state": 8, "sensor": [None, None]}
-    assert compact_turnout(turnout)["has_feedback_sensor"] is False
+    assert (await compact_turnout(turnout))["has_feedback_sensor"] is False
 
 
-def test_compact_turnout_has_feedback_sensor_false_when_sensor_field_missing():
+async def test_compact_turnout_has_feedback_sensor_false_when_sensor_field_missing(mock_power):
     from jmri_mcp.tools._common import compact_turnout
 
     turnout = {"name": "OT23", "state": 8}
-    assert compact_turnout(turnout)["has_feedback_sensor"] is False
+    assert (await compact_turnout(turnout))["has_feedback_sensor"] is False
 
 
-def test_compact_turnout_has_feedback_sensor_ignores_feedback_mode():
+async def test_compact_turnout_has_feedback_sensor_ignores_feedback_mode(mock_power):
     """feedbackMode alone is not a reliable signal (verified live: a turnout
     can be feedbackMode=2/DIRECT yet still carry a real sensor object) — only
     the sensor array's actual content should matter."""
     from jmri_mcp.tools._common import compact_turnout
 
     turnout = {"name": "OT27", "state": 2, "feedbackMode": 2, "sensor": [{"name": "OS43"}, None]}
-    assert compact_turnout(turnout)["has_feedback_sensor"] is True
+    assert (await compact_turnout(turnout))["has_feedback_sensor"] is True
 
 
-async def test_list_signals_registered_and_compact(mock_signals):
+async def test_compact_turnout_dcc_system_name_present(mock_power):
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "OT23", "state": 8}
+    assert (await compact_turnout(turnout))["dcc_system_name"] == "DCC++ Ohara"
+
+
+async def test_compact_turnout_dcc_system_name_none_for_internal_object(mock_power):
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "IT100", "state": 8}
+    assert (await compact_turnout(turnout))["dcc_system_name"] is None
+
+
+async def test_list_signals_registered_and_compact(mock_signals, mock_power):
     mcp = make_server()
     tool_names = {t.name for t in await mcp.list_tools()}
     assert "list_signals" in tool_names
@@ -847,8 +905,11 @@ async def test_list_signals_registered_and_compact(mock_signals):
     out = await call(mcp, "list_signals")
     assert out == {
         "signals": [
-            {"name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False},
-            {"name": "ZF$dsm:DB-HV-1969:block(45)", "aspect": "Hp0", "lit": True, "held": False},
+            {"name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False, "dcc_system_name": "DCC++ Zou"},
+            {
+                "name": "ZF$dsm:DB-HV-1969:block(45)", "aspect": "Hp0", "lit": True,
+                "held": False, "dcc_system_name": "DCC++ Zou",
+            },
         ]
     }
 
@@ -860,10 +921,13 @@ async def test_list_signals_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-async def test_get_signal_resolves_by_fragment(mock_signals):
+async def test_get_signal_resolves_by_fragment(mock_signals, mock_power):
     mcp = make_server()
     out = await call(mcp, "get_signal", name="Entry Signal")
-    assert out == {"name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False}
+    assert out == {
+        "name": "Entry Signal A", "aspect": "Hp1", "lit": True,
+        "held": False, "dcc_system_name": "DCC++ Zou",
+    }
 
 
 async def test_get_signal_unknown_name_returns_error_not_exception(mock_signals):
@@ -872,7 +936,7 @@ async def test_get_signal_unknown_name_returns_error_not_exception(mock_signals)
     assert "error" in out and "tgv" in out["error"]
 
 
-async def test_set_signal_sets_aspect_and_confirms():
+async def test_set_signal_sets_aspect_and_confirms(mock_power):
     import respx
     from httpx import Response
 
@@ -898,7 +962,10 @@ async def test_set_signal_sets_aspect_and_confirms():
             side_effect=post_signal
         )
         out = await call(mcp, "set_signal", name="Entry Signal A", aspect="Hp0")
-    assert out == {"name": "Entry Signal A", "aspect": "Hp0", "lit": True, "held": False, "confirmed": True}
+    assert out == {
+        "name": "Entry Signal A", "aspect": "Hp0", "lit": True,
+        "held": False, "dcc_system_name": "DCC++ Zou", "confirmed": True,
+    }
     # Regression guard: JMRI's JsonSignalMastHttpService.doPost() reads the
     # "state" field, not "aspect" - sending the wrong key is silently
     # ignored server-side (200 response, no error, aspect never changes).
@@ -1575,7 +1642,7 @@ async def test_park_all_locomotives_with_nothing_acquired(fake_jmri):
     assert out == {"locomotives": []}
 
 
-async def test_set_all_turnouts_confirms_every_turnout():
+async def test_set_all_turnouts_confirms_every_turnout(mock_power):
     import respx
     from httpx import Response
 
@@ -1612,7 +1679,7 @@ async def test_set_all_turnouts_confirms_every_turnout():
     assert all(s["state"] == "THROWN" and s["confirmed"] for s in out["succeeded"])
 
 
-async def test_set_all_turnouts_continues_after_one_failure():
+async def test_set_all_turnouts_continues_after_one_failure(mock_power):
     import respx
     from httpx import ConnectError, Response
 
@@ -1643,7 +1710,7 @@ async def test_set_all_turnouts_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-async def test_set_layout_lights_confirms_every_light():
+async def test_set_layout_lights_confirms_every_light(mock_power):
     import respx
     from httpx import Response
 
@@ -1678,7 +1745,7 @@ async def test_set_layout_lights_confirms_every_light():
     assert all(s["state"] == "ON" and s["confirmed"] for s in out["succeeded"])
 
 
-async def test_set_layout_lights_continues_after_one_failure():
+async def test_set_layout_lights_continues_after_one_failure(mock_power):
     import respx
     from httpx import ConnectError, Response
 
@@ -1923,7 +1990,7 @@ async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fix
     assert get_ws_client().all_throttle_states() == {}
 
 
-async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(fake_jmri, roster_fixture):
+async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(fake_jmri, roster_fixture, power_fixture):
     import respx
     from httpx import Response
 
@@ -1932,6 +1999,7 @@ async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(fak
     router = respx.mock(assert_all_called=False)
     router.start()
     router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(return_value=Response(200, json=[]))
     try:
         mcp = make_server()
@@ -1947,13 +2015,14 @@ async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(fak
     assert "addr4" in get_ws_client().all_throttle_states()
 
 
-async def test_secure_layout_nothing_acquired_still_turns_off_layout_lights(fake_jmri):
+async def test_secure_layout_nothing_acquired_still_turns_off_layout_lights(fake_jmri, power_fixture):
     import respx
     from httpx import Response
 
     from jmri_core.config import get_jmri_url
 
     with respx.mock(assert_all_called=False) as router:
+        router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
         router.get(f"{get_jmri_url()}/json/lights").mock(return_value=Response(200, json=[
             {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": 4}},
         ]))

@@ -54,7 +54,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("list_turnouts failed: %s", exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {"turnouts": [compact_turnout(t) for t in turnouts]}
+        return {"turnouts": [await compact_turnout(t) for t in turnouts]}
 
     @mcp.tool()
     async def get_turnout(name: str) -> dict:
@@ -81,7 +81,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("get_turnout(%r) failed: %s", name, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return compact_turnout(match)
+        return await compact_turnout(match)
 
     @mcp.tool()
     async def set_turnout(name: str, thrown: bool) -> dict:
@@ -109,7 +109,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("set_turnout(%r, %r) failed: %s", name, thrown, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {**compact_turnout(result), "confirmed": result["confirmed"]}
+        return {**await compact_turnout(result), "confirmed": result["confirmed"]}
 
     @mcp.tool()
     async def set_all_turnouts(thrown: bool) -> dict:
@@ -145,7 +145,7 @@ def register(mcp) -> None:
         for t in turnouts:
             try:
                 result = await _set_turnout(t["name"], thrown)
-                succeeded.append({**compact_turnout(result), "confirmed": result["confirmed"]})
+                succeeded.append({**await compact_turnout(result), "confirmed": result["confirmed"]})
             except JmriError as exc:
                 failed.append({
                     "name": t.get("userName") or t.get("name"),

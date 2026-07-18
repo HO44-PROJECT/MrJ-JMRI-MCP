@@ -403,7 +403,23 @@ async def test_roster_functions_reports_none_labeled(mock_roster, capsys):
     assert "no labeled functions" in out
 
 
-async def test_light_list_all(mock_lights, capsys):
+async def test_light_list_shows_dcc_system_column(mock_lights, mock_power, capsys):
+    """All 3 fixture lights are prefix "I" (JMRI-internal) -> no DCC connection match."""
+    code, out, _ = await run(capsys, "light", "list")
+    assert code == 0
+    header = out.splitlines()[0]
+    assert "DCC system" in header
+    lines = [l for l in out.splitlines() if l.startswith("IL")]
+    assert all(l.rstrip().endswith("-") for l in lines)
+
+
+async def test_light_find_shows_dcc_system(mock_lights, mock_power, capsys):
+    code, out, _ = await run(capsys, "light", "find", "IL1")
+    assert code == 0
+    assert "dcc_system=-" in out
+
+
+async def test_light_list_all(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "list")
     assert code == 0
     assert "Depot Lighting" in out and "OFF" in out
@@ -412,7 +428,7 @@ async def test_light_list_all(mock_lights, capsys):
     assert header.index("System ID") < header.index("Light")
 
 
-async def test_light_bystate_sorts_by_state_column(mock_lights, capsys):
+async def test_light_bystate_sorts_by_state_column(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "bystate")
     assert code == 0
     lines = [l for l in out.splitlines() if l.startswith("IL")]
@@ -421,7 +437,7 @@ async def test_light_bystate_sorts_by_state_column(mock_lights, capsys):
     assert "State ▼" in out
 
 
-async def test_light_findg_byid_sorts_filtered_results(mock_lights, capsys):
+async def test_light_findg_byid_sorts_filtered_results(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "findg", "byid", "*")
     assert code == 0
     lines = [l for l in out.splitlines() if l.startswith("IL")]
@@ -434,7 +450,7 @@ async def test_light_on_unknown_name(mock_lights, capsys):
     assert "Unknown light 'tgv'" in err
 
 
-async def test_light_find_by_system_id(mock_lights, capsys):
+async def test_light_find_by_system_id(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "find", "IL1")
     assert code == 0
     assert "system_id=IL1" in out
@@ -443,7 +459,7 @@ async def test_light_find_by_system_id(mock_lights, capsys):
     assert out.index("system_id=") < out.index("name=")
 
 
-async def test_light_find_by_username(mock_lights, capsys):
+async def test_light_find_by_username(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "find", "Street Lamps")
     assert code == 0
     assert "system_id=IL2" in out
@@ -455,14 +471,14 @@ async def test_light_find_unknown_name(mock_lights, capsys):
     assert "Unknown light 'tgv'" in err
 
 
-async def test_light_findr_matches_regex(mock_lights, capsys):
+async def test_light_findr_matches_regex(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "findr", "^Depot")
     assert code == 0
     assert "Depot Lighting" in out
     assert "Street Lamps" not in out
 
 
-async def test_light_findr_no_match(mock_lights, capsys):
+async def test_light_findr_no_match(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "findr", "zzz")
     assert code == 0
     assert "No lights match" in out
@@ -474,20 +490,20 @@ async def test_light_findr_invalid_regex(mock_lights, capsys):
     assert "Invalid regex" in err
 
 
-async def test_light_findg_matches_glob(mock_lights, capsys):
+async def test_light_findg_matches_glob(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "findg", "Depot*")
     assert code == 0
     assert "Depot Lighting" in out
     assert "Street Lamps" not in out
 
 
-async def test_light_findg_no_match(mock_lights, capsys):
+async def test_light_findg_no_match(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "findg", "zzz*")
     assert code == 0
     assert "No lights match" in out
 
 
-async def test_light_on_bare_confirms_every_light(capsys):
+async def test_light_on_bare_confirms_every_light(power_fixture, capsys):
     """No name given -> every light, matching set_layout_lights' MCP-tool coverage."""
     import json
 
@@ -513,6 +529,7 @@ async def test_light_on_bare_confirms_every_light(capsys):
         return handler
 
     with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
         router.get(f"{MOCK_JMRI_URL}/json/lights").mock(side_effect=get_lights)
         router.post(f"{MOCK_JMRI_URL}/json/light/IL1").mock(side_effect=post_light("IL1"))
         router.post(f"{MOCK_JMRI_URL}/json/light/IL2").mock(side_effect=post_light("IL2"))
@@ -526,7 +543,32 @@ async def test_light_on_bare_confirms_every_light(capsys):
     assert live_state == {"IL1": 2, "IL2": 2, "IL3": 2}
 
 
-async def test_turnout_list_all(mock_turnouts, capsys):
+async def test_turnout_list_shows_dcc_system_column(mock_turnouts, mock_power, capsys):
+    """IT100/IT101 (prefix I) have no DCC connection match; OT23 (prefix O) matches "DCC++ Ohara"."""
+    code, out, _ = await run(capsys, "turnout", "list")
+    assert code == 0
+    header = out.splitlines()[0]
+    assert "DCC system" in header
+    lines = out.splitlines()
+    it100_line = next(line for line in lines if "Layout Turnout A" in line)
+    ot23_line = next(line for line in lines if "Mountain A" in line)
+    assert it100_line.rstrip().endswith("-")
+    assert "DCC++ Ohara" in ot23_line
+
+
+async def test_turnout_find_shows_dcc_system(mock_turnouts, mock_power, capsys):
+    code, out, _ = await run(capsys, "turnout", "find", "OT23")
+    assert code == 0
+    assert "dcc_system=DCC++ Ohara" in out
+
+
+async def test_turnout_bydccsystem_sorts_by_dcc_system_column(mock_turnouts, mock_power, capsys):
+    code, out, _ = await run(capsys, "turnout", "bydccsystem")
+    assert code == 0
+    assert "DCC system ▼" in out
+
+
+async def test_turnout_list_all(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "list")
     assert code == 0
     assert "Feedback" in out
@@ -544,7 +586,7 @@ async def test_turnout_list_all(mock_turnouts, capsys):
     assert "no" in ot23_line
 
 
-async def test_turnout_list_defaults_to_byname_order(mock_turnouts, capsys):
+async def test_turnout_list_defaults_to_byname_order(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "list")
     assert code == 0
     lines = [l for l in out.splitlines() if "Layout Turnout" in l or "Mountain" in l]
@@ -553,7 +595,7 @@ async def test_turnout_list_defaults_to_byname_order(mock_turnouts, capsys):
     assert "Turnout ▼" in out
 
 
-async def test_turnout_bystate_sorts_by_state_column(mock_turnouts, capsys):
+async def test_turnout_bystate_sorts_by_state_column(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "bystate")
     assert code == 0
     lines = [l for l in out.splitlines() if "IT100" in l or "IT101" in l or "OT23" in l]
@@ -563,7 +605,7 @@ async def test_turnout_bystate_sorts_by_state_column(mock_turnouts, capsys):
     assert "State ▼" in out
 
 
-async def test_turnout_byid_sorts_by_system_id(mock_turnouts, capsys):
+async def test_turnout_byid_sorts_by_system_id(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "byid")
     assert code == 0
     lines = [l for l in out.splitlines() if l.startswith(("IT", "OT"))]
@@ -571,14 +613,14 @@ async def test_turnout_byid_sorts_by_system_id(mock_turnouts, capsys):
     assert "System ID ▼" in out
 
 
-async def test_turnout_findr_byid_sorts_filtered_results(mock_turnouts, capsys):
+async def test_turnout_findr_byid_sorts_filtered_results(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "findr", "byid", "^Layout")
     assert code == 0
     lines = [l for l in out.splitlines() if l.startswith(("IT", "OT"))]
     assert [l.split()[0] for l in lines] == ["IT100", "IT101"]
 
 
-async def test_turnout_findr_no_sort_word_still_works(mock_turnouts, capsys):
+async def test_turnout_findr_no_sort_word_still_works(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "findr", "^Layout")
     assert code == 0
     assert "Layout Turnout A" in out
@@ -591,7 +633,7 @@ async def test_turnout_closed_unknown_name(mock_turnouts, capsys):
     assert "Unknown turnout 'tgv'" in err
 
 
-async def test_turnout_throw_bare_confirms_every_turnout(capsys):
+async def test_turnout_throw_bare_confirms_every_turnout(power_fixture, capsys):
     """No name given -> every turnout, matching set_all_turnouts' MCP-tool coverage."""
     import json
 
@@ -617,6 +659,7 @@ async def test_turnout_throw_bare_confirms_every_turnout(capsys):
         return handler
 
     with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
         router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(side_effect=get_turnouts)
         router.post(f"{MOCK_JMRI_URL}/json/turnout/IT100").mock(side_effect=post_turnout("IT100"))
         router.post(f"{MOCK_JMRI_URL}/json/turnout/IT101").mock(side_effect=post_turnout("IT101"))
@@ -631,7 +674,7 @@ async def test_turnout_throw_bare_confirms_every_turnout(capsys):
     assert live_state == {"IT100": 4, "IT101": 4, "OT23": 4}
 
 
-async def test_turnout_find_by_system_id(mock_turnouts, capsys):
+async def test_turnout_find_by_system_id(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "find", "IT100")
     assert code == 0
     assert "system_id=IT100" in out
@@ -641,7 +684,7 @@ async def test_turnout_find_by_system_id(mock_turnouts, capsys):
     assert out.index("system_id=") < out.index("name=")
 
 
-async def test_turnout_find_by_username(mock_turnouts, capsys):
+async def test_turnout_find_by_username(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "find", "Layout Turnout BL")
     assert code == 0
     assert "system_id=IT101" in out
@@ -653,14 +696,14 @@ async def test_turnout_find_unknown_name(mock_turnouts, capsys):
     assert "Unknown turnout 'tgv'" in err
 
 
-async def test_turnout_findr_matches_regex(mock_turnouts, capsys):
+async def test_turnout_findr_matches_regex(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "findr", "^Layout")
     assert code == 0
     assert "Layout Turnout A" in out
     assert "Mountain" not in out
 
 
-async def test_turnout_findr_no_match(mock_turnouts, capsys):
+async def test_turnout_findr_no_match(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "findr", "zzz")
     assert code == 0
     assert "No turnouts match" in out
@@ -672,27 +715,43 @@ async def test_turnout_findr_invalid_regex(mock_turnouts, capsys):
     assert "Invalid regex" in err
 
 
-async def test_turnout_findg_matches_glob(mock_turnouts, capsys):
+async def test_turnout_findg_matches_glob(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "findg", "Layout*")
     assert code == 0
     assert "Layout Turnout A" in out
     assert "Mountain" not in out
 
 
-async def test_turnout_findg_no_match(mock_turnouts, capsys):
+async def test_turnout_findg_no_match(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "findg", "zzz*")
     assert code == 0
     assert "No turnouts match" in out
 
 
-async def test_signal_list_all(mock_signals, capsys):
+async def test_signal_list_shows_dcc_system_column(mock_signals, mock_power, capsys):
+    """Both fixture signals are prefix "Z" -> match "DCC++ Zou"."""
+    code, out, _ = await run(capsys, "signal", "list")
+    assert code == 0
+    header = out.splitlines()[0]
+    assert "DCC system" in header
+    lines = [l for l in out.splitlines() if l.startswith("ZF")]
+    assert all("DCC++ Zou" in l for l in lines)
+
+
+async def test_signal_find_shows_dcc_system(mock_signals, mock_power, capsys):
+    code, out, _ = await run(capsys, "signal", "find", "Entry Signal A")
+    assert code == 0
+    assert "dcc_system=DCC++ Zou" in out
+
+
+async def test_signal_list_all(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "list")
     assert code == 0
     assert "Entry Signal A" in out and "Hp1" in out
     assert "ZF$dsm:DB-HV-1969:block(45)" in out and "Hp0" in out
 
 
-async def test_signal_byaspect_sorts_by_aspect_column(mock_signals, capsys):
+async def test_signal_byaspect_sorts_by_aspect_column(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "byaspect")
     assert code == 0
     lines = [l for l in out.splitlines() if l.startswith("ZF")]
@@ -702,10 +761,10 @@ async def test_signal_byaspect_sorts_by_aspect_column(mock_signals, capsys):
     assert "Aspect ▼" in out
 
 
-async def test_signal_status_one(mock_signals, capsys):
+async def test_signal_status_one(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "status", "Entry Signal A")
     assert code == 0
-    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1"
+    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1 dcc_system=DCC++ Zou"
 
 
 async def test_signal_status_unknown(mock_signals, capsys):
@@ -714,13 +773,13 @@ async def test_signal_status_unknown(mock_signals, capsys):
     assert "Unknown signal mast 'tgv'" in err
 
 
-async def test_signal_find_by_username(mock_signals, capsys):
+async def test_signal_find_by_username(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "find", "Entry Signal A")
     assert code == 0
-    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1"
+    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp1 dcc_system=DCC++ Zou"
 
 
-async def test_signal_find_by_system_id(mock_signals, capsys):
+async def test_signal_find_by_system_id(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "find", "ZF$dsm:DB-HV-1969:block(45)")
     assert code == 0
     assert "Hp0" in out
@@ -732,14 +791,14 @@ async def test_signal_find_unknown_name(mock_signals, capsys):
     assert "Unknown signal mast 'tgv'" in err
 
 
-async def test_signal_findr_matches_regex(mock_signals, capsys):
+async def test_signal_findr_matches_regex(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "findr", "^Entry")
     assert code == 0
     assert "Entry Signal A" in out
     assert "Hp0" not in out
 
 
-async def test_signal_findr_no_match(mock_signals, capsys):
+async def test_signal_findr_no_match(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "findr", "zzz")
     assert code == 0
     assert "No signal masts match" in out
@@ -751,20 +810,20 @@ async def test_signal_findr_invalid_regex(mock_signals, capsys):
     assert "Invalid regex" in err
 
 
-async def test_signal_findg_matches_glob(mock_signals, capsys):
+async def test_signal_findg_matches_glob(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "findg", "Entry*")
     assert code == 0
     assert "Entry Signal A" in out
     assert "Hp0" not in out
 
 
-async def test_signal_findg_no_match(mock_signals, capsys):
+async def test_signal_findg_no_match(mock_signals, mock_power, capsys):
     code, out, _ = await run(capsys, "signal", "findg", "zzz*")
     assert code == 0
     assert "No signal masts match" in out
 
 
-async def test_signal_set_aspect_and_confirms(monkeypatch, capsys):
+async def test_signal_set_aspect_and_confirms(monkeypatch, power_fixture, capsys):
     import json
 
     import respx
@@ -774,6 +833,7 @@ async def test_signal_set_aspect_and_confirms(monkeypatch, capsys):
 
     post_bodies = []
     with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
         router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
             return_value=Response(200, json=[
                 {"type": "signalMast", "data": {
@@ -792,7 +852,7 @@ async def test_signal_set_aspect_and_confirms(monkeypatch, capsys):
         )
         code, out, _ = await run(capsys, "signal", "set", "Entry Signal A", "Hp0")
     assert code == 0
-    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp0"
+    assert out.strip() == "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) aspect=Hp0 dcc_system=DCC++ Zou"
     # Regression guard: see matching comment in tests/test_tools.py - JMRI's
     # POST handler reads "state", not "aspect".
     assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0"}]

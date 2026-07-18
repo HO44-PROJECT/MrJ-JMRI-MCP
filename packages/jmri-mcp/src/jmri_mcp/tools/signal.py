@@ -50,7 +50,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("list_signals failed: %s", exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {"signals": [compact_signal(s) for s in signals]}
+        return {"signals": [await compact_signal(s) for s in signals]}
 
     @mcp.tool()
     async def get_signal(name: str) -> dict:
@@ -70,7 +70,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("get_signal(%r) failed: %s", name, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return compact_signal(match)
+        return await compact_signal(match)
 
     @mcp.tool()
     async def set_signal(name: str, aspect: str) -> dict:
@@ -104,4 +104,4 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("set_signal(%r, %r) failed: %s", name, aspect, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {**compact_signal(result), "confirmed": result["confirmed"]}
+        return {**await compact_signal(result), "confirmed": result["confirmed"]}

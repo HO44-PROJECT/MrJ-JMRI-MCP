@@ -16,7 +16,7 @@ from jmri_core import i18n
 from jmri_cli._match import find_glob, find_regex
 from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR, TURNOUT_STATE_NAMES
-from jmri_core.jmri_client import JmriError, get_turnouts, resolve_turnout
+from jmri_core.jmri_client import JmriError, get_turnouts, parse_dcc_address, resolve_turnout
 from jmri_core.jmri_client import set_turnout as _set_turnout
 from jmri_core.jmri_client.turnout import TURNOUT_CLOSED, TURNOUT_THROWN
 from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
@@ -31,6 +31,7 @@ def _headers() -> list[str]:
         i18n.t("headers.feedback"),
         i18n.t("headers.comment"),
         i18n.t("headers.dcc_system"),
+        i18n.t("headers.address"),
     ]
 
 
@@ -44,11 +45,12 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "byfeedback": (3, True),
     "bycomment": (4, True),
     "bydccsystem": (5, True),
+    "byaddress": (6, True),
 }
 
 
 def _row(turnout: dict, names_by_prefix: dict[str, str]) -> list:
-    """Flatten one JMRI turnout object into a `[system_id, label, state, feedback, comment, dcc_system]` table row."""
+    """Flatten one JMRI turnout object into a `[system_id, label, state, feedback, comment, dcc_system, address]` table row."""
     state = TURNOUT_STATE_NAMES.get(turnout.get("state"), "UNKNOWN")
     label = turnout.get("userName") or turnout.get("name", "?")
     system_id = turnout.get("name", "?")
@@ -56,7 +58,9 @@ def _row(turnout: dict, names_by_prefix: dict[str, str]) -> list:
     feedback = "yes" if any(s is not None for s in sensors) else "no"
     comment = turnout.get("comment") or ""
     dcc_system = dcc_system_display(system_id, names_by_prefix)
-    return [system_id, label, state, feedback, comment, dcc_system]
+    address = parse_dcc_address(system_id, "T")
+    address_display = address if address is not None else ""
+    return [system_id, label, state, feedback, comment, dcc_system, address_display]
 
 
 def _label(turnout: dict) -> str:
@@ -83,10 +87,11 @@ async def turnout_find(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, state, feedback, comment, dcc_system = _row(turnout, names_by_prefix)
+    system_id, label, state, feedback, comment, dcc_system, address = _row(turnout, names_by_prefix)
     print(
         f"system_id={system_id} name={label} state={state} "
-        f"feedback_sensor={feedback} comment={comment or '-'} dcc_system={dcc_system}"
+        f"feedback_sensor={feedback} comment={comment or '-'} dcc_system={dcc_system} "
+        f"address={address if address != '' else '-'}"
     )
     return 0
 

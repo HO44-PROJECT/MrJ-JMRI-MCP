@@ -690,9 +690,9 @@ async def test_list_lights_registered_and_compact(mock_lights, mock_power):
     out = await call(mcp, "list_lights")
     assert out == {
         "lights": [
-            {"name": "Depot Lighting", "state": "OFF", "dcc_system_name": None, "comment": None},
-            {"name": "Street Lamps", "state": "ON", "dcc_system_name": None, "comment": None},
-            {"name": "IL3", "state": "OFF", "dcc_system_name": None, "comment": None},
+            {"name": "Depot Lighting", "state": "OFF", "dcc_system_name": None, "dcc_address": 1, "comment": None},
+            {"name": "Street Lamps", "state": "ON", "dcc_system_name": None, "dcc_address": 2, "comment": None},
+            {"name": "IL3", "state": "OFF", "dcc_system_name": None, "dcc_address": 3, "comment": None},
         ]
     }
 
@@ -713,6 +713,7 @@ async def test_list_lights_dcc_system_name_resolved_from_prefix(mock_power):
         )
         out = await call(mcp, "list_lights")
     assert out["lights"][0]["dcc_system_name"] == "DCC++ Ohara"
+    assert out["lights"][0]["dcc_address"] == 1
 
 
 async def test_list_lights_reports_error_honestly(monkeypatch):
@@ -725,7 +726,10 @@ async def test_list_lights_reports_error_honestly(monkeypatch):
 async def test_get_light_resolves_by_fragment(mock_lights, mock_power):
     mcp = make_server()
     out = await call(mcp, "get_light", name="depot")
-    assert out == {"name": "Depot Lighting", "state": "OFF", "dcc_system_name": None, "comment": None}
+    assert out == {
+        "name": "Depot Lighting", "state": "OFF", "dcc_system_name": None,
+        "dcc_address": 1, "comment": None,
+    }
 
 
 async def test_get_light_unknown_name_returns_error_not_exception(mock_lights):
@@ -753,7 +757,7 @@ async def test_set_light_turns_on_and_confirms(mock_power):
         out = await call(mcp, "set_light", name="depot", turn_on=True)
     assert out == {
         "name": "Depot Lighting", "state": "ON", "dcc_system_name": None,
-        "comment": None, "confirmed": True,
+        "dcc_address": 1, "comment": None, "confirmed": True,
     }
 
 
@@ -774,15 +778,16 @@ async def test_list_turnouts_registered_and_compact(mock_turnouts, mock_power):
         "turnouts": [
             {
                 "name": "Layout Turnout A", "state": "CLOSED", "has_feedback_sensor": True,
-                "dcc_system_name": None, "comment": "Yard throat switch",
+                "dcc_system_name": None, "dcc_address": 100, "comment": "Yard throat switch",
             },
             {
                 "name": "Layout Turnout BL", "state": "CLOSED", "has_feedback_sensor": True,
-                "dcc_system_name": None, "comment": None,
+                "dcc_system_name": None, "dcc_address": 101, "comment": None,
             },
             {
                 "name": "A / Mountain A -> Platform A/B", "state": "THROWN",
-                "has_feedback_sensor": False, "dcc_system_name": "DCC++ Ohara", "comment": None,
+                "has_feedback_sensor": False, "dcc_system_name": "DCC++ Ohara",
+                "dcc_address": 23, "comment": None,
             },
         ]
     }
@@ -801,7 +806,7 @@ async def test_get_turnout_resolves_by_fragment(mock_turnouts, mock_power):
     assert out == {
         "name": "Layout Turnout A", "state": "CLOSED",
         "has_feedback_sensor": True, "dcc_system_name": None,
-        "comment": "Yard throat switch",
+        "dcc_address": 100, "comment": "Yard throat switch",
     }
 
 
@@ -832,6 +837,7 @@ async def test_set_turnout_throws_and_confirms(mock_power):
         "state": "THROWN",
         "has_feedback_sensor": False,
         "dcc_system_name": None,
+        "dcc_address": 100,
         "comment": None,
         "confirmed": True,
     }
@@ -854,6 +860,7 @@ async def test_set_turnout_dcc_system_name_resolved_from_prefix(mock_power):
         router.post(f"{MOCK_JMRI_URL}/json/turnout/OT23").mock(return_value=Response(200, json={}))
         out = await call(mcp, "set_turnout", name="Mountain A", thrown=True)
     assert out["dcc_system_name"] == "DCC++ Ohara"
+    assert out["dcc_address"] == 23
 
 
 async def test_set_turnout_reports_error_honestly(monkeypatch):
@@ -950,6 +957,44 @@ async def test_compact_signal_comment_none_when_unset(mock_power):
     assert (await compact_signal(signal))["comment"] is None
 
 
+async def test_compact_turnout_dcc_address_parsed(mock_power):
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "OT23", "state": 8}
+    assert (await compact_turnout(turnout))["dcc_address"] == 23
+
+
+async def test_compact_turnout_dcc_address_none_for_unparseable_name(mock_power):
+    from jmri_mcp.tools._common import compact_turnout
+
+    turnout = {"name": "OT", "state": 8}
+    assert (await compact_turnout(turnout))["dcc_address"] is None
+
+
+async def test_compact_light_dcc_address_parsed(mock_power):
+    from jmri_mcp.tools._common import compact_light
+
+    light = {"name": "TL51", "state": 2}
+    assert (await compact_light(light))["dcc_address"] == 51
+
+
+async def test_compact_light_dcc_address_none_for_unparseable_name(mock_power):
+    from jmri_mcp.tools._common import compact_light
+
+    light = {"name": "TL", "state": 2}
+    assert (await compact_light(light))["dcc_address"] is None
+
+
+async def test_compact_signal_dcc_address_always_none(mock_power):
+    """Signal masts have no clean numeric suffix to parse (system names
+    commonly reference a block, e.g. "ZF$dsm:DB-HV-1969:block(31)") — this
+    field is always None for signals, deliberately, not a bug."""
+    from jmri_mcp.tools._common import compact_signal
+
+    signal = {"name": "ZF$dsm:DB-HV-1969:block(31)", "aspect": "Hp0"}
+    assert (await compact_signal(signal))["dcc_address"] is None
+
+
 async def test_list_signals_registered_and_compact(mock_signals, mock_power):
     mcp = make_server()
     tool_names = {t.name for t in await mcp.list_tools()}
@@ -960,11 +1005,12 @@ async def test_list_signals_registered_and_compact(mock_signals, mock_power):
         "signals": [
             {
                 "name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False,
-                "dcc_system_name": "DCC++ Zou", "comment": None,
+                "dcc_system_name": "DCC++ Zou", "dcc_address": None, "comment": None,
             },
             {
                 "name": "ZF$dsm:DB-HV-1969:block(45)", "aspect": "Hp0", "lit": True,
-                "held": False, "dcc_system_name": "DCC++ Zou", "comment": None,
+                "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": None,
+                "comment": None,
             },
         ]
     }
@@ -982,7 +1028,8 @@ async def test_get_signal_resolves_by_fragment(mock_signals, mock_power):
     out = await call(mcp, "get_signal", name="Entry Signal")
     assert out == {
         "name": "Entry Signal A", "aspect": "Hp1", "lit": True,
-        "held": False, "dcc_system_name": "DCC++ Zou", "comment": None,
+        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": None,
+        "comment": None,
     }
 
 
@@ -1020,7 +1067,8 @@ async def test_set_signal_sets_aspect_and_confirms(mock_power):
         out = await call(mcp, "set_signal", name="Entry Signal A", aspect="Hp0")
     assert out == {
         "name": "Entry Signal A", "aspect": "Hp0", "lit": True,
-        "held": False, "dcc_system_name": "DCC++ Zou", "comment": None, "confirmed": True,
+        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": None,
+        "comment": None, "confirmed": True,
     }
     # Regression guard: JMRI's JsonSignalMastHttpService.doPost() reads the
     # "state" field, not "aspect" - sending the wrong key is silently

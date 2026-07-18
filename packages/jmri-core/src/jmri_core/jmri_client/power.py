@@ -251,6 +251,36 @@ async def resolve_dcc_system_name(system_name: str | None) -> str | None:
     return match.get("name") if match is not None else None
 
 
+def parse_dcc_address(system_name: str | None, type_letter: str) -> int | None:
+    """Parse the numeric DCC hardware address out of a JMRI system name.
+
+    Args:
+        system_name: A raw JMRI system name, e.g. "OT23", "IT100", "TL51".
+            By JMRI convention this is `<connection prefix><type
+            letter><suffix>` — the suffix is usually, but not always, a
+            bare decimal address. None/empty is passed through as None.
+        type_letter: The single JMRI type-letter for this domain ("T" for
+            turnout, "L" for light) — used to strip the two leading
+            characters (prefix + type letter) before parsing the rest.
+
+    Returns:
+        The DCC address as an int (e.g. 23 for "OT23"), or None if
+        `system_name` is None/empty, its second character isn't
+        `type_letter` (unexpected shape), or the remaining suffix isn't a
+        plain decimal integer — e.g. a signal mast's system name like
+        "ZF$dsm:DB-HV-1969:block(31)" has no clean numeric suffix at all
+        and correctly returns None. Never raises — same fail-open policy
+        as resolve_dcc_system_name, since a decoration lookup must not
+        block the caller it's decorating.
+    """
+    if not system_name or len(system_name) < 3 or system_name[1] != type_letter:
+        return None
+    try:
+        return int(system_name[2:])
+    except ValueError:
+        return None
+
+
 def resolve_system(
     query: str | None, systems: list[dict[str, Any]]
 ) -> dict[str, Any]:

@@ -15,7 +15,7 @@ from jmri_core import i18n
 from jmri_cli._match import find_glob, find_regex
 from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR, LIGHT_STATE_NAMES
-from jmri_core.jmri_client import JmriError, get_lights, resolve_light
+from jmri_core.jmri_client import JmriError, get_lights, parse_dcc_address, resolve_light
 from jmri_core.jmri_client import set_light as _set_light
 from jmri_core.jmri_client.light import LIGHT_ON, LIGHT_OFF
 from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
@@ -29,6 +29,7 @@ def _headers() -> list[str]:
         i18n.t("headers.state"),
         i18n.t("headers.comment"),
         i18n.t("headers.dcc_system"),
+        i18n.t("headers.address"),
     ]
 
 
@@ -41,17 +42,20 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "bystate": (2, True),
     "bycomment": (3, True),
     "bydccsystem": (4, True),
+    "byaddress": (5, True),
 }
 
 
 def _row(light: dict, names_by_prefix: dict[str, str]) -> list:
-    """Flatten one JMRI light object into a `[system_id, label, state, comment, dcc_system]` table row."""
+    """Flatten one JMRI light object into a `[system_id, label, state, comment, dcc_system, address]` table row."""
     state = LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN")
     label = light.get("userName") or light.get("name", "?")
     system_id = light.get("name", "?")
     comment = light.get("comment") or ""
     dcc_system = dcc_system_display(system_id, names_by_prefix)
-    return [system_id, label, state, comment, dcc_system]
+    address = parse_dcc_address(system_id, "L")
+    address_display = address if address is not None else ""
+    return [system_id, label, state, comment, dcc_system, address_display]
 
 
 def _label(light: dict) -> str:
@@ -107,10 +111,11 @@ async def light_find(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, state, comment, dcc_system = _row(light, names_by_prefix)
+    system_id, label, state, comment, dcc_system, address = _row(light, names_by_prefix)
     print(
         f"system_id={system_id} name={label} state={state} "
-        f"comment={comment or '-'} dcc_system={dcc_system}"
+        f"comment={comment or '-'} dcc_system={dcc_system} "
+        f"address={address if address != '' else '-'}"
     )
     return 0
 

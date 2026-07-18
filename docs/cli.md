@@ -1196,11 +1196,11 @@ is identical to `jmri-cli light list`.
 
 ```bash
 $ jmri-cli light
-System ID    Light ▼         State    Comment    DCC system
------------  --------------  -------  ---------  ------------
-IL1          Depot Lighting  OFF                 -
-IL3          IL3             OFF                 -
-IL2          Street Lamps    ON                  -
+System ID    Light ▼         State    Comment    DCC system      Address
+-----------  --------------  -------  ---------  ------------  ---------
+IL1          Depot Lighting  OFF                 -                     1
+IL3          IL3             OFF                 -                     3
+IL2          Street Lamps    ON                  -                     2
 ```
 
 A light with no `userName` set in JMRI prints its raw system name (`IL3`
@@ -1216,22 +1216,25 @@ character — `-` (not the default system's name) for a JMRI-internal object
 with no power connection at all, which is every light above (`IL*`, the
 `I` prefix). Unlike `roster list`'s `DCC system` column, there is no
 default-system fallback here: a light either belongs to a real connection
-or it doesn't.
+or it doesn't. `Address` is the numeric DCC hardware address parsed out of
+the rest of the system name (e.g. `1` from `IL1`) — blank when it can't be
+parsed as a plain decimal number.
 
 ### Sorting: `jmri-cli light by<column>`
 
 Every column is sortable via a `by<column>` sibling subcommand (same
 convention as `roster by<column>` above): `light byid` (System ID),
 `light byname` (Light, default), `light bystate` (State), `light
-bycomment` (Comment), `light bydccsystem` (DCC system).
+bycomment` (Comment), `light bydccsystem` (DCC system), `light byaddress`
+(Address — sorts as a string, e.g. `"100"` before `"23"`).
 
 ```bash
 $ jmri-cli light byid
-System ID ▼    Light           State    Comment    DCC system
------------  --------------  -------  ---------  ------------
-IL1          Depot Lighting  OFF                 -
-IL2          Street Lamps    ON                  -
-IL3          IL3             OFF                 -
+System ID ▼    Light           State    Comment    DCC system      Address
+-------------  --------------  -------  ---------  ------------  ---------
+IL1            Depot Lighting  OFF                 -                     1
+IL2            Street Lamps    ON                  -                     2
+IL3            IL3             OFF                 -                     3
 ```
 
 ## `jmri-cli light find <name>`
@@ -1242,7 +1245,7 @@ then unambiguous fragment) as `roster find`/`turnout find`.
 
 ```bash
 $ jmri-cli light find "depot"
-system_id=IL1 name=Depot Lighting state=OFF comment=- dcc_system=-
+system_id=IL1 name=Depot Lighting state=OFF comment=- dcc_system=- address=1
 ```
 
 ## `jmri-cli light findr [by<column>] <regex>` / `light findg [by<column>] <glob>`
@@ -1256,14 +1259,14 @@ case-insensitive) split as `roster findr`/`findg`.
 
 ```bash
 $ jmri-cli light findr '^Depot'
-System ID    Light ▼         State    Comment    DCC system
------------  --------------  -------  ---------  ------------
-IL1          Depot Lighting  OFF                 -
+System ID    Light ▼         State    Comment    DCC system      Address
+-----------  --------------  -------  ---------  ------------  ---------
+IL1          Depot Lighting  OFF                 -                     1
 
 $ jmri-cli light findg byid 'Street*'
-System ID ▼    Light         State    Comment    DCC system
------------  ------------  -------  ---------  ------------
-IL2          Street Lamps  ON                  -
+System ID ▼    Light         State    Comment    DCC system      Address
+-------------  ------------  -------  ---------  ------------  ---------
+IL2            Street Lamps  ON                  -                     2
 ```
 
 ## `jmri-cli light on [name]` / `light off [name]`
@@ -1274,9 +1277,9 @@ Turn a layout light on or off, or **every** light if `[name]` is omitted.
 
 ```bash
 $ jmri-cli light on depot
-System ID    Light           State    Comment    DCC system
------------  --------------  -------  ---------  ------------
-IL1          Depot Lighting  ON                  -
+System ID    Light           State    Comment    DCC system      Address
+-----------  --------------  -------  ---------  ------------  ---------
+IL1          Depot Lighting  ON                  -                     1
 ```
 
 The state is re-read after the command and confirmed the same honest way
@@ -1297,11 +1300,11 @@ turnout` is identical to `jmri-cli turnout list`.
 
 ```bash
 $ jmri-cli turnout
-System ID    Turnout ▼                       State    Feedback  Comment              DCC system
------------  ------------------------------  -------  ----------  -------------------  ------------
-OT23         A / Mountain A -> Platform A/B  THROWN   no                                DCC++ Ohara
-IT100        Layout Turnout A                CLOSED   yes         Yard throat switch  -
-IT101        Layout Turnout BL               CLOSED   yes                              -
+System ID    Turnout ▼                       State    Feedback    Comment             DCC system      Address
+-----------  ------------------------------  -------  ----------  ------------------  ------------  ---------
+OT23         A / Mountain A -> Platform A/B  THROWN   no                              DCC++ Ohara          23
+IT100        Layout Turnout A                CLOSED   yes         Yard throat switch  -                   100
+IT101        Layout Turnout BL               CLOSED   yes                             -                   101
 ```
 
 ### Sorting: `jmri-cli turnout by<column>`
@@ -1310,15 +1313,16 @@ Every column is sortable via a `by<column>` sibling subcommand (same
 convention as `roster by<column>` above): `turnout byid` (System ID),
 `turnout byname` (Turnout, default), `turnout bystate` (State),
 `turnout byfeedback` (Feedback), `turnout bycomment` (Comment), `turnout
-bydccsystem` (DCC system).
+bydccsystem` (DCC system), `turnout byaddress` (Address — sorts as a
+string, e.g. `"100"` before `"23"`).
 
 ```bash
 $ jmri-cli turnout byid
-System ID ▼    Turnout                         State    Feedback  Comment              DCC system
------------  ------------------------------  -------  ----------  -------------------  ------------
-IT100        Layout Turnout A                CLOSED   yes         Yard throat switch  -
-IT101        Layout Turnout BL               CLOSED   yes                              -
-OT23         A / Mountain A -> Platform A/B  THROWN   no                                DCC++ Ohara
+System ID ▼    Turnout                         State    Feedback    Comment             DCC system      Address
+-------------  ------------------------------  -------  ----------  ------------------  ------------  ---------
+IT100          Layout Turnout A                CLOSED   yes         Yard throat switch  -                   100
+IT101          Layout Turnout BL               CLOSED   yes                             -                   101
+OT23           A / Mountain A -> Platform A/B  THROWN   no                              DCC++ Ohara          23
 ```
 
 The "System ID" column is JMRI's own internal name for the turnout (e.g.
@@ -1330,6 +1334,9 @@ JMRI, and always accepted anywhere a turnout name is (`find`, `close`,
 system name's leading prefix character (`O` → `DCC++ Ohara` above) — `-`
 for a JMRI-internal turnout with no power connection (`IT100`/`IT101`, the
 `I` prefix). No default-system fallback, unlike `roster list`'s column.
+"Address" is the numeric DCC hardware address parsed out of the rest of
+the system name (e.g. `23` from `OT23`) — blank when it can't be parsed as
+a plain decimal number.
 
 The "Feedback" column ("yes"/"no") reports whether JMRI has a real position
 sensor wired to that turnout. **A turnout with `Feedback: no` can show
@@ -1353,7 +1360,7 @@ touching anything, mirroring `roster find`.
 
 ```bash
 $ jmri-cli turnout find IT100
-system_id=IT100 name=Layout Turnout A state=CLOSED feedback_sensor=yes comment=Yard throat switch dcc_system=-
+system_id=IT100 name=Layout Turnout A state=CLOSED feedback_sensor=yes comment=Yard throat switch dcc_system=- address=100
 ```
 
 ## `jmri-cli turnout findr [by<column>] <regex>` / `turnout findg [by<column>] <glob>`
@@ -1371,20 +1378,20 @@ $ jmri-cli turnout findr '^Mountain'
 No turnouts match '^Mountain'
 
 $ jmri-cli turnout findr byid 'Mountain'
-System ID ▼    Turnout                         State    Feedback  Comment      DCC system
------------  ------------------------------  -------  ----------  ---------  ------------
-OT23         A / Mountain A -> Platform A/B  THROWN   no                     DCC++ Ohara
-OT25         B / Mountain B -> Platform B    THROWN   no                     DCC++ Ohara
-OT27         C / Mountain C -> Platform B/C  THROWN   yes                    DCC++ Ohara
-OT29         D / Viaduc -> Mountain A/B      THROWN   no                     DCC++ Ohara
+System ID ▼    Turnout                         State    Feedback    Comment    DCC system      Address
+-------------  ------------------------------  -------  ----------  ---------  ------------  ---------
+OT23           A / Mountain A -> Platform A/B  THROWN   no                     DCC++ Ohara          23
+OT25           B / Mountain B -> Platform B    THROWN   no                     DCC++ Ohara          25
+OT27           C / Mountain C -> Platform B/C  THROWN   yes                    DCC++ Ohara          27
+OT29           D / Viaduc -> Mountain A/B      THROWN   no                     DCC++ Ohara          29
 
 $ jmri-cli turnout findg 'Layout*'
-System ID    Turnout ▼          State    Feedback  Comment              DCC system
------------  -----------------  -------  ----------  -------------------  ------------
-IT100        Layout Turnout A   THROWN   yes         Yard throat switch  -
-IT101        Layout Turnout BL  THROWN   yes                              -
-IT102        Layout Turnout BR  CLOSED   yes                              -
-IT103        Layout Turnout C   CLOSED   yes                              -
+System ID    Turnout ▼          State    Feedback    Comment             DCC system      Address
+-----------  -----------------  -------  ----------  ------------------  ------------  ---------
+IT100        Layout Turnout A   THROWN   yes         Yard throat switch  -                   100
+IT101        Layout Turnout BL  THROWN   yes                             -                   101
+IT102        Layout Turnout BR  CLOSED   yes                             -                   102
+IT103        Layout Turnout C   CLOSED   yes                             -                   103
 ```
 
 ## `jmri-cli turnout close [name]` / `turnout throw [name]`
@@ -1399,9 +1406,9 @@ track terminology, which would be ambiguous about which route is which.
 
 ```bash
 $ jmri-cli turnout throw "layout turnout a"
-System ID    Turnout            State    Feedback  Comment              DCC system
------------  -----------------  -------  ----------  -------------------  ------------
-IT100        Layout Turnout A   THROWN   yes         Yard throat switch  -
+System ID    Turnout           State    Feedback    Comment             DCC system      Address
+-----------  ----------------  -------  ----------  ------------------  ------------  ---------
+IT100        Layout Turnout A  THROWN   yes         Yard throat switch  -                   100
 ```
 
 The state is re-read after the command and confirmed the same honest way

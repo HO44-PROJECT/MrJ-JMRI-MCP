@@ -410,7 +410,8 @@ async def test_light_list_shows_dcc_system_column(mock_lights, mock_power, capsy
     header = out.splitlines()[0]
     assert "DCC system" in header
     lines = [l for l in out.splitlines() if l.startswith("IL")]
-    assert all(l.rstrip().endswith("-") for l in lines)
+    # dcc_system is second-to-last now that Address trails it (IL1/IL2/IL3 -> 1/2/3).
+    assert all(l.split()[-2] == "-" for l in lines)
 
 
 async def test_light_find_shows_dcc_system(mock_lights, mock_power, capsys):
@@ -433,6 +434,21 @@ async def test_light_find_shows_comment(mock_lights, mock_power, capsys):
     assert "comment=-" in out
 
 
+async def test_light_list_shows_address_column(mock_lights, mock_power, capsys):
+    code, out, _ = await run(capsys, "light", "list")
+    assert code == 0
+    header = out.splitlines()[0]
+    assert "Address" in header
+    il1_line = next(l for l in out.splitlines() if l.startswith("IL1"))
+    assert il1_line.split()[-1] == "1"
+
+
+async def test_light_find_shows_address(mock_lights, mock_power, capsys):
+    code, out, _ = await run(capsys, "light", "find", "IL1")
+    assert code == 0
+    assert "address=1" in out
+
+
 async def test_light_list_all(mock_lights, mock_power, capsys):
     code, out, _ = await run(capsys, "light", "list")
     assert code == 0
@@ -449,6 +465,14 @@ async def test_light_bystate_sorts_by_state_column(mock_lights, mock_power, caps
     # OFF < ON alphabetically; IL1/IL3 are OFF, IL2 is ON.
     assert [l.split()[0] for l in lines] == ["IL1", "IL3", "IL2"]
     assert "State ▼" in out
+
+
+async def test_light_byaddress_sorts_by_address_column(mock_lights, mock_power, capsys):
+    code, out, _ = await run(capsys, "light", "byaddress")
+    assert code == 0
+    lines = [l for l in out.splitlines() if l.startswith("IL")]
+    assert [l.split()[0] for l in lines] == ["IL1", "IL2", "IL3"]
+    assert "Address ▼" in out
 
 
 async def test_light_findg_byid_sorts_filtered_results(mock_lights, mock_power, capsys):
@@ -566,7 +590,8 @@ async def test_turnout_list_shows_dcc_system_column(mock_turnouts, mock_power, c
     lines = out.splitlines()
     it100_line = next(line for line in lines if "Layout Turnout A" in line)
     ot23_line = next(line for line in lines if "Mountain A" in line)
-    assert it100_line.rstrip().endswith("-")
+    # dcc_system is second-to-last now that Address trails it.
+    assert it100_line.split()[-2] == "-"
     assert "DCC++ Ohara" in ot23_line
 
 
@@ -582,10 +607,35 @@ async def test_turnout_find_shows_comment(mock_turnouts, mock_power, capsys):
     assert "comment=Yard throat switch" in out
 
 
+async def test_turnout_list_shows_address_column(mock_turnouts, mock_power, capsys):
+    code, out, _ = await run(capsys, "turnout", "list")
+    assert code == 0
+    header = out.splitlines()[0]
+    assert "Address" in header
+    it100_line = next(l for l in out.splitlines() if l.startswith("IT100"))
+    assert it100_line.split()[-1] == "100"
+
+
+async def test_turnout_find_shows_address(mock_turnouts, mock_power, capsys):
+    code, out, _ = await run(capsys, "turnout", "find", "IT100")
+    assert code == 0
+    assert "address=100" in out
+
+
 async def test_turnout_bydccsystem_sorts_by_dcc_system_column(mock_turnouts, mock_power, capsys):
     code, out, _ = await run(capsys, "turnout", "bydccsystem")
     assert code == 0
     assert "DCC system ▼" in out
+
+
+async def test_turnout_byaddress_sorts_by_address_column(mock_turnouts, mock_power, capsys):
+    code, out, _ = await run(capsys, "turnout", "byaddress")
+    assert code == 0
+    # Address sorts as a string like every other column here, not numerically:
+    # "100" < "101" < "23" lexicographically.
+    lines = [l for l in out.splitlines() if l.startswith(("IT", "OT"))]
+    assert [l.split()[0] for l in lines] == ["IT100", "IT101", "OT23"]
+    assert "Address ▼" in out
 
 
 async def test_turnout_list_all(mock_turnouts, mock_power, capsys):

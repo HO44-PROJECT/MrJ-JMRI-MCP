@@ -19,6 +19,7 @@ from jmri_core.constants.cli import (
 from jmri_core.constants.protocol import FIELD_ADDRESS, FIELD_FORWARD, FIELD_SPEED
 from jmri_core.jmri_client import (
     default_system_prefix,
+    parse_dcc_address,
     resolve_dcc_prefix,
     resolve_dcc_system_name,
     resolve_max_speed_percent,
@@ -61,20 +62,25 @@ async def compact_light(light: dict) -> dict:
 
     Returns:
         {"name": ..., "state": "ON"/"OFF"/"UNKNOWN"/"INCONSISTENT",
-        "dcc_system_name": str|None, "comment": str|None}. "name" is the
-        user-friendly userName if JMRI has one set, else falls back to the
-        raw system name (e.g. "IL1") — this is what the LLM should
-        show/match against, not JMRI's internal system name.
-        "dcc_system_name" is the DCC connection that manages this light,
-        derived from its raw system name's prefix (e.g. "TL51" -> Taya) —
-        None if the prefix matches no known DCC system (see
-        resolve_dcc_system_name). "comment" is static layout metadata, not
-        live state — None if never set in PanelPro.
+        "dcc_system_name": str|None, "dcc_address": int|None,
+        "comment": str|None}. "name" is the user-friendly userName if JMRI
+        has one set, else falls back to the raw system name (e.g. "IL1")
+        — this is what the LLM should show/match against, not JMRI's
+        internal system name. "dcc_system_name" is the DCC connection that
+        manages this light, derived from its raw system name's prefix
+        (e.g. "TL51" -> Taya) — None if the prefix matches no known DCC
+        system (see resolve_dcc_system_name). "dcc_address" is the numeric
+        hardware address parsed from the same system name (e.g. 51 for
+        "TL51") — None if the system name doesn't carry a plain decimal
+        suffix (e.g. an unusual driver-specific format), never an error.
+        "comment" is static layout metadata, not live state — None if
+        never set in PanelPro.
     """
     return {
         "name": light.get("userName") or light.get("name"),
         "state": LIGHT_STATE_NAMES.get(light.get("state"), "UNKNOWN"),
         "dcc_system_name": await resolve_dcc_system_name(light.get("name")),
+        "dcc_address": parse_dcc_address(light.get("name"), "L"),
         "comment": light.get("comment"),
     }
 
@@ -91,26 +97,30 @@ async def compact_turnout(turnout: dict) -> dict:
     Returns:
         {"name": ..., "state": "CLOSED"/"THROWN"/"UNKNOWN"/"INCONSISTENT",
         "has_feedback_sensor": bool, "dcc_system_name": str|None,
-        "comment": str|None}. "name" is the user-friendly userName if JMRI
-        has one set, else falls back to the raw system name (e.g.
-        "IT100"). "has_feedback_sensor" is True only if JMRI actually has
-        a real feedback sensor wired to this turnout (a non-null entry in
-        its "sensor" array) — verified live (2026-07-11) that JMRI's
-        "feedbackMode" number alone is NOT a reliable signal for this (a
-        turnout in DIRECT mode can still carry a leftover sensor object),
-        so presence of an actual sensor entry is what's checked instead.
-        When False, INCONSISTENT is normal/expected background noise for
-        that turnout — JMRI has no way to confirm the motor's real
-        position and reports INCONSISTENT indefinitely, even at rest with
-        no command in flight, not just transiently after a set_turnout
-        call. See set_turnout's docstring for how this should change what
-        gets reported to the user. "dcc_system_name" is the DCC connection
-        that manages this turnout, derived from its raw system name's
-        prefix (e.g. "OT23" -> Ohara) — None for JMRI-internal turnouts
-        with no power connection (e.g. "IT100") or any other unresolvable
-        prefix. "comment" is static layout metadata, not live state — None
-        if never set in PanelPro (e.g. often used to note what a turnout
-        physically connects, like "Yard throat switch").
+        "dcc_address": int|None, "comment": str|None}. "name" is the
+        user-friendly userName if JMRI has one set, else falls back to the
+        raw system name (e.g. "IT100"). "has_feedback_sensor" is True only
+        if JMRI actually has a real feedback sensor wired to this turnout
+        (a non-null entry in its "sensor" array) — verified live
+        (2026-07-11) that JMRI's "feedbackMode" number alone is NOT a
+        reliable signal for this (a turnout in DIRECT mode can still carry
+        a leftover sensor object), so presence of an actual sensor entry
+        is what's checked instead. When False, INCONSISTENT is
+        normal/expected background noise for that turnout — JMRI has no
+        way to confirm the motor's real position and reports INCONSISTENT
+        indefinitely, even at rest with no command in flight, not just
+        transiently after a set_turnout call. See set_turnout's docstring
+        for how this should change what gets reported to the user.
+        "dcc_system_name" is the DCC connection that manages this turnout,
+        derived from its raw system name's prefix (e.g. "OT23" -> Ohara) —
+        None for JMRI-internal turnouts with no power connection (e.g.
+        "IT100") or any other unresolvable prefix. "dcc_address" is the
+        numeric hardware address parsed from the same system name (e.g.
+        23 for "OT23") — None if the system name doesn't carry a plain
+        decimal suffix, never an error. "comment" is static layout
+        metadata, not live state — None if never set in PanelPro (e.g.
+        often used to note what a turnout physically connects, like "Yard
+        throat switch").
     """
     sensors = turnout.get("sensor") or []
     has_feedback_sensor = any(s is not None for s in sensors)
@@ -119,6 +129,7 @@ async def compact_turnout(turnout: dict) -> dict:
         "state": TURNOUT_STATE_NAMES.get(turnout.get("state"), "UNKNOWN"),
         "has_feedback_sensor": has_feedback_sensor,
         "dcc_system_name": await resolve_dcc_system_name(turnout.get("name")),
+        "dcc_address": parse_dcc_address(turnout.get("name"), "T"),
         "comment": turnout.get("comment"),
     }
 
@@ -194,16 +205,22 @@ async def compact_signal(signal: dict) -> dict:
 
     Returns:
         {"name": ..., "aspect": ..., "lit": bool, "held": bool,
-        "dcc_system_name": str|None, "comment": str|None}. "name" is the
-        user-friendly userName if JMRI has one set, else falls back to the
-        raw system name. "aspect" is passed through verbatim (e.g.
-        "Hp0"/"Hp1") - the valid vocabulary is defined by the mast's own
-        signal system and isn't available over JMRI's JSON API, so this
-        project never hardcodes or translates aspect names.
-        "dcc_system_name" is the DCC connection that manages this signal
-        mast, derived from its raw system name's prefix (e.g. a "Z..."
-        system name -> Zou) — None if the prefix matches no known DCC
-        system. "comment" is static layout metadata, not live state — None
+        "dcc_system_name": str|None, "dcc_address": None, "comment":
+        str|None}. "name" is the user-friendly userName if JMRI has one
+        set, else falls back to the raw system name. "aspect" is passed
+        through verbatim (e.g. "Hp0"/"Hp1") - the valid vocabulary is
+        defined by the mast's own signal system and isn't available over
+        JMRI's JSON API, so this project never hardcodes or translates
+        aspect names. "dcc_system_name" is the DCC connection that manages
+        this signal mast, derived from its raw system name's prefix (e.g.
+        a "Z..." system name -> Zou) — None if the prefix matches no known
+        DCC system. "dcc_address" is always None: unlike turnouts/lights,
+        a signal mast's system name commonly encodes a block/signal-system
+        reference rather than a bare accessory number (e.g.
+        "ZF$dsm:DB-HV-1969:block(31)"), so there is no reliable numeric
+        address to parse out — kept as a field (not omitted) so the shape
+        matches turnout/light output and callers don't need a special
+        case. "comment" is static layout metadata, not live state — None
         if never set in PanelPro.
     """
     return {
@@ -212,6 +229,7 @@ async def compact_signal(signal: dict) -> dict:
         "lit": bool(signal.get("lit")),
         "held": bool(signal.get("held")),
         "dcc_system_name": await resolve_dcc_system_name(signal.get("name")),
+        "dcc_address": None,
         "comment": signal.get("comment"),
     }
 

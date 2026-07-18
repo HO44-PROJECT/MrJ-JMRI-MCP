@@ -432,6 +432,36 @@ for different reasons:
   system" column's own no-match convention) — each domain also gained a
   `bycomment` sort sibling. `turnout.py` already had this from an earlier
   pass; `light.py`/`signal.py` gained it to match.
+- **Turnout/light numeric DCC hardware address: `dcc_address`.** Unlike
+  `dcc_system_name` (which resolves only the leading prefix character of a
+  system name to *which DCC connection* owns an object), `dcc_address`
+  parses the actual numeric accessory address out of the rest of the
+  system name — e.g. `23` from `"OT23"`, `100` from `"IT100"`.
+  `power.py`'s `parse_dcc_address(system_name, type_letter)` is a
+  synchronous, pure-string-parsing sibling of `resolve_dcc_system_name`
+  (same fail-open contract: never raises, `None` on anything unparseable —
+  empty/`None` input, a second character that doesn't match `type_letter`,
+  or a non-decimal suffix). `tools/_common.py`'s `compact_turnout()`/
+  `compact_light()` each add a `"dcc_address"` field via
+  `parse_dcc_address(name, "T")`/`parse_dcc_address(name, "L")`.
+  `jmri-cli`'s `turnout.py`/`light.py` show an "Address" table column
+  (empty cell when unparseable) and an `address=` field on the
+  single-entity `find` commands (`-` when unparseable), each domain
+  gaining a `byaddress` sort sibling — note this sorts as a string like
+  every other column here, not numerically (`"100"` sorts before `"23"`).
+  **Signal masts are deliberately excluded**: `compact_signal()` always
+  returns `"dcc_address": None`, and `signal.py` has no Address
+  column/field at all. This isn't a parsing gap — confirmed live against
+  the user's real JMRI (`GET /json/signalMasts`) that a mast's system name
+  (e.g. `"OF$dsm:DB-HV-1969:block(123)"`) encodes a block/signal-system
+  reference, not the DCC accessory address, and that JMRI's `/json/signalMast`
+  payload (`name`/`userName`/`comment`/`properties`/`aspect`/`lit`/`held`/
+  `state`) never includes an address field at all — not even for a mast
+  configured with a "DCC Signal Mast Decoder" driver in PanelPro, where
+  the address (e.g. 123) genuinely exists in JMRI's own config but is only
+  visible in PanelPro's UI/panel XML, never served over this server's JSON
+  API. Recovering it is tracked separately as a follow-up, not blocking
+  this feature for turnout/light.
 - **`jmri_ws/`** — a persistent WebSocket (`ws://<jmri>:12080/json/`).
   This exists for one reason: **a JMRI throttle is bound to the connection
   that acquired it**. HTTP can't hold a throttle open between requests, so

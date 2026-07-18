@@ -14,6 +14,7 @@ from jmri_core.jmri_client import (
     get_sensors,
     get_systems,
     get_turnouts,
+    parse_dcc_address,
     resolve_block,
     resolve_dcc_prefix,
     resolve_dcc_system_name,
@@ -691,6 +692,41 @@ async def test_resolve_dcc_system_name_none_on_jmri_error():
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=ConnectError("refused"))
         name = await resolve_dcc_system_name("OT23")
     assert name is None
+
+
+# --- parse_dcc_address: raw system name (e.g. "OT23") -> numeric DCC address ---
+
+
+def test_parse_dcc_address_turnout():
+    assert parse_dcc_address("OT23", "T") == 23
+
+
+def test_parse_dcc_address_internal_turnout():
+    assert parse_dcc_address("IT100", "T") == 100
+
+
+def test_parse_dcc_address_light():
+    assert parse_dcc_address("TL51", "L") == 51
+
+
+def test_parse_dcc_address_wrong_type_letter_returns_none():
+    assert parse_dcc_address("OT23", "L") is None
+
+
+def test_parse_dcc_address_non_numeric_suffix_returns_none():
+    assert parse_dcc_address("ZF$dsm:DB-HV-1969:block(31)", "F") is None
+
+
+def test_parse_dcc_address_none_input_returns_none():
+    assert parse_dcc_address(None, "T") is None
+
+
+def test_parse_dcc_address_empty_string_returns_none():
+    assert parse_dcc_address("", "T") is None
+
+
+def test_parse_dcc_address_too_short_returns_none():
+    assert parse_dcc_address("OT", "T") is None
 
 
 # --- get_roster_function_labels ---

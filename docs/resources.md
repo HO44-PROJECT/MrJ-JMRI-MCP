@@ -27,7 +27,7 @@ Reference links used while building this project, grouped by topic.
   firmware/project `xiaozhi_wrapper` bridges to; its MCP pipe example is the basis for
   this project's bridge (see `packages/jmri-mcp/src/xiaozhi_wrapper/__init__.py`'s module
   docstring and the README's "Third-party code" section for the MIT license notice).
-- [Kira AI Assistant (MakerWorld)](https://makerworld.com/en/models/2836210-kira-ai-assistant) —
+- [Kira AI Assistant (MakerWorld)](https://makerworld.com/en/models/2836210-kira-ai-assistant#profileId-3161104) —
   the physical voice-assistant device this project was built to control JMRI from.
 
 ## MrJ hardware

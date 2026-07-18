@@ -2,11 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
-this project does not yet follow strict semantic versioning (pre-1.0, `jmri-mcp`
-package version stays `0.1.0` during active milestone development).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and this project follows [Semantic Versioning](https://semver.org/). All
+three packages (`jmri-core`, `jmri-cli`, `jmri-mcp`) are versioned and
+released together, in lockstep, from this one repo.
 
-## [Unreleased]
+## [1.0.0rc1] - Unreleased
+
+Release candidate for the 1.0.0 milestone: every planned M1-M5 feature
+(power, throttle, roster, layout, integrations — see below) is implemented,
+tested, and live-verified against a real JMRI installation.
 
 ### Added
 

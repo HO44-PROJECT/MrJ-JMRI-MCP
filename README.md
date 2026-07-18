@@ -174,6 +174,14 @@ See [docs/install.md](docs/install.md) for installation details.
 | `EXHIBITION_ALLOWED_ADDRESSES` | (none) | Comma-separated DCC addresses locomotives are restricted to while exhibition mode is on. |
 | `EXHIBITION_START_ON` | (off) | If set to `1`/`true`/`yes`/`on`, the server starts already in exhibition mode. |
 
+## Credits
+
+<img src="https://avatars.githubusercontent.com/u/159026337?v=4" width="80" height="80" alt="HO PROJECT" align="left" style="margin-right: 12px; border-radius: 50%;">
+
+Built and maintained by **[HO PROJECT](https://github.com/HO44-PROJECT)**.
+
+Questions, bugs, and feature requests are welcome via [issues](../../issues).
+
 ## License
 
 [AGPL-3.0-or-later](LICENSE)

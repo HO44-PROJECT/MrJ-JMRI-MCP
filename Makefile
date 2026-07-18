@@ -18,10 +18,8 @@ clean:
 	rm -rf $(DIST_DIR)
 
 testdeploy: build
-	@test -n "$$TWINE_PASSWORD" || (echo "TWINE_PASSWORD (TestPyPI API token) is not set" && exit 1)
-	TWINE_USERNAME=__token__ $(TWINE) upload --repository testpypi $(DIST_DIR)/*
+	$(TWINE) upload --repository testpypi $(DIST_DIR)/*.whl $(DIST_DIR)/*.tar.gz
 
 deploy: build
-	@test -n "$$TWINE_PASSWORD" || (echo "TWINE_PASSWORD (PyPI API token) is not set" && exit 1)
-	TWINE_USERNAME=__token__ $(TWINE) upload $(DIST_DIR)/*
+	$(TWINE) upload $(DIST_DIR)/*.whl $(DIST_DIR)/*.tar.gz
 

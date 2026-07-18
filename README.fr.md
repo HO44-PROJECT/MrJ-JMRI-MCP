@@ -181,6 +181,14 @@ Voir [docs/install.md](docs/install.md) pour les détails d'installation.
 | `EXHIBITION_ALLOWED_ADDRESSES` | (aucun) | Adresses DCC (séparées par des virgules) auxquelles les locomotives sont restreintes tant que le mode exhibition est actif. |
 | `EXHIBITION_START_ON` | (désactivé) | Si défini à `1`/`true`/`yes`/`on`, le serveur démarre déjà en mode exhibition. |
 
+## Crédits
+
+<img src="https://avatars.githubusercontent.com/u/159026337?v=4" width="80" height="80" alt="HO PROJECT" align="left" style="margin-right: 12px; border-radius: 50%;">
+
+Conçu et maintenu par **[HO PROJECT](https://github.com/HO44-PROJECT)**.
+
+Questions, bugs et demandes de fonctionnalités sont les bienvenus via les [issues](../../issues).
+
 ## Licence
 
 [AGPL-3.0-or-later](LICENSE)

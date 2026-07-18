@@ -96,19 +96,44 @@ control JMRI directly. No terminal needed after the install step.
 
 1. Download the latest `jmri-mcp-<version>.mcpb` file from this repo's
    [Releases](../../releases) page.
-2. Double-click it (or drag it into Claude Desktop). Claude Desktop opens an
-   install prompt showing what the bundle requests.
-3. Fill in the requested value — `JMRI_URL` (e.g.
-   `http://<your-jmri-host>:12080`) — when prompted.
-4. Confirm the install. Claude Desktop manages the Python environment and
-   `jmri-mcp` install for you; there's no separate `pip install` step.
+2. Double-click it. Claude Desktop opens to an install confirmation screen:
+
+   <img src="docs/img/mcpb-install-01-confirm.png" width="500" alt="Claude Desktop's install confirmation screen for the JMRI MCP extension, showing it was developed by MrJ and all requirements are met">
+
+   Click **Install**, then confirm the macOS system prompt that follows
+   (fetches the extension's dependencies):
+
+   <img src="docs/img/mcpb-install-02-macos-prompt.png" width="260" alt="macOS system prompt confirming installation of the JMRI MCP desktop extension">
+
+   > If Claude shows a "Claude will return soon" / temporary service
+   > disruption page at this point, it's an unrelated transient hiccup —
+   > click **Try again** and installation proceeds normally.
+
+3. Once installed, JMRI MCP shows up under **Settings → Extensions**:
+
+   <img src="docs/img/mcpb-install-03-extensions-list.png" width="600" alt="JMRI MCP listed under Claude Desktop's installed extensions">
+
+4. Click **Configure** on the JMRI MCP extension and fill in the settings —
+   at minimum `JMRI Server URL` (e.g. `http://<your-jmri-host>:12080`); the
+   exhibition-mode fields are optional (see
+   [docs/exhibition.md](docs/exhibition.md)). Click **Save**.
+
+   <img src="docs/img/mcpb-install-04-configure.png" width="600" alt="JMRI MCP extension configuration screen with JMRI Server URL and exhibition mode fields">
+
+5. Scroll down to **Tool permissions** and allow the JMRI tools you want
+   Claude to be able to call (or set the whole group to **Always allow**).
+   Claude Desktop manages the Python environment for you — there's no
+   separate `pip install` step.
 
 ### Verify
 
-Restart Claude Desktop if it was already running (**Cmd+Q**, not just
-closing the window), then ask it something that needs a tool call, e.g.
-"what's the status of the JMRI power systems?". See
-[docs/llm-setup-claude.md](docs/llm-setup-claude.md) for troubleshooting
+Ask Claude something that needs a tool call, e.g. "what's the DCC address of
+my Autorail?" — it should call a JMRI tool and answer from your actual
+roster/layout data:
+
+<img src="docs/img/mcpb-install-05-chat-example.png" width="500" alt="Claude Desktop answering a JMRI roster question using the JMRI MCP tools">
+
+See [docs/llm-setup-claude.md](docs/llm-setup-claude.md) for troubleshooting
 (log locations, subprocess checks) and for wiring Claude Code instead, which
 doesn't use `.mcpb` and is configured via `claude mcp add`.
 

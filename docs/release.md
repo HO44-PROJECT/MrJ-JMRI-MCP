@@ -72,13 +72,13 @@ Runs the full mocked test suite (`uv run --all-packages pytest`) — see
 opt-in live suite. `make build` does not run tests; run `make test`
 separately before publishing.
 
-## Publish to TestPyPI (dry run)
+## Deploy to TestPyPI (dry run)
 
 Recommended before the first real publish of a new version, to catch
 packaging issues without consuming the real PyPI listing:
 
 ```bash
-make testdeploy
+make deploy-testpypi
 ```
 
 Then verify the install works from TestPyPI in a scratch environment:
@@ -91,15 +91,15 @@ pip install --index-url https://test.pypi.org/simple/ \
 (`--extra-index-url` is needed because TestPyPI doesn't mirror `jmri-mcp`'s
 own dependencies like `mcp`.)
 
-## Publish to PyPI
+## Deploy to PyPI
 
 ```bash
-make deploy
+make deploy-pypi
 ```
 
 Uploads all three packages from `dist/`. **PyPI does not allow re-uploading
 or overwriting a version once published** — double-check the version bump
-and `make testdeploy` dry run before running this.
+and `make deploy-testpypi` dry run before running this.
 
 ## Publish the GitHub Release, then the MCP Registry
 
@@ -107,24 +107,38 @@ and `make testdeploy` dry run before running this.
 make release
 ```
 
-Runs three steps in order, all driven by the version in
+Runs two steps in order, all driven by the version in
 `packages/jmri-mcp/pyproject.toml`:
 
-1. **`publish-github`** — pushes `main`, tags `vX.Y.Z`, pushes the tag.
-2. **`release-mcpb`** — creates a GitHub Release (marked pre-release) with
-   `dist/jmri-mcp-X.Y.Z.mcpb` attached as a downloadable asset. Requires
-   `jmri-mcp==X.Y.Z` to already be on PyPI (run `make deploy` first) — the
-   `.mcpb`'s own manifest pins that exact version, so Claude Desktop can't
-   install it otherwise.
-3. **`publish-mcpb-json`** — renders
+1. **`release-github`** — pushes `main`, tags `vX.Y.Z`, pushes the tag.
+2. **`mcpb`** — builds and publishes the `.mcpb`, see below.
+
+### Republishing just the `.mcpb`
+
+```bash
+make mcpb
+```
+
+Rebuilds `dist/` and republishes the `.mcpb` end to end, without re-tagging
+or touching PyPI — the target to use when only the `.mcpb` itself changed
+(e.g. fixing a bad manifest) and `vX.Y.Z` is already tagged and released.
+Runs two steps in order:
+
+1. **`release-github-asset`** — creates a GitHub Release (marked
+   pre-release) with `dist/jmri-mcp-X.Y.Z.mcpb` attached as a downloadable
+   asset (deleting and recreating the release if it already exists, so this
+   is safe to re-run). The `.mcpb` bundles `jmri-mcp`'s own source directly
+   (`server.type: "uv"`), so only its `jmri-core` dependency needs to
+   already be on PyPI (run `make deploy-pypi` first) — `jmri-mcp` itself
+   does not need to be published for the `.mcpb` to install.
+2. **`release-mcp-registry`** — renders
    `packages/jmri-mcp/mcpb/server.json.template` into
    `dist/jmri-mcp-X.Y.Z.mcpb.json`, filling in the version, the tag (for the
    release download URL), the filename, and the `.mcpb`'s SHA-256 (computed
-   from the file `release-mcpb` just uploaded), then runs `mcp-publisher
-   publish` on it. Requires `mcp-publisher`, authenticated via `mcp-publisher
-   login github` (see Prerequisites above), and requires step 2's GitHub
-   Release to already exist, since the rendered `server.json`'s download URL
-   points at that release's `.mcpb` asset.
+   from the file `release-github-asset` just uploaded, so it can never point
+   at a stale local copy), then runs `mcp-publisher publish` on it. Requires
+   `mcp-publisher`, authenticated via `mcp-publisher login github` (see
+   Prerequisites above).
 
 There is no `server.json` checked into the repo — it's generated fresh into
 `dist/` on every release from the template, so it can never drift out of

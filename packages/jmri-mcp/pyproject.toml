@@ -1,6 +1,6 @@
 [project]
 name = "jmri-mcp"
-version = "1.0.0rc1"
+version = "1.0.0rc2"
 description = "MCP server for JMRI - voice/chat control of DCC model railroads (xiaozhi, Claude, ...)"
 readme = "README.md"
 requires-python = ">=3.10"

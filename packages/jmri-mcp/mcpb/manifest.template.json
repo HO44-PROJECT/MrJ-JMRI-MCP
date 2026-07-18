@@ -1,23 +1,35 @@
 {
-    "schema_version": "1",
+    "manifest_version": "0.4",
     "name": "JMRI MCP",
     "description": "MCP server for JMRI - voice/chat control of DCC model railroads",
     "version": "{{VERSION}}",
-    "packages": [
-        {
-            "type": "pip",
-            "package": "jmri-mcp=={{VERSION}}"
+    "icon": "icon.png",
+    "author": {
+        "name": "MrJ",
+        "url": "https://github.com/HO44-PROJECT"
+    },
+    "server": {
+        "type": "uv",
+        "entry_point": "src/jmri_mcp/server/__init__.py",
+        "mcp_config": {
+            "command": "uv",
+            "args": ["run", "jmri-mcp"],
+            "env": {
+                "JMRI_URL": "${user_config.jmri_url}",
+                "EXHIBITION_PASSWORD": "${user_config.exhibition_password}",
+                "EXHIBITION_ALLOWED_ADDRESSES": "${user_config.exhibition_allowed_addresses}",
+                "EXHIBITION_START_ON": "${user_config.exhibition_start_on}"
+            }
         }
-    ],
-    "inputs": [
-        {
-            "id": "jmri_url",
+    },
+    "user_config": {
+        "jmri_url": {
             "type": "string",
             "title": "JMRI Server URL",
-            "description": "URL of your JMRI Web Server"
+            "description": "URL of your JMRI Web Server",
+            "required": true
         },
-        {
-            "id": "exhibition_password",
+        "exhibition_password": {
             "type": "string",
             "title": "Exhibition Mode Password",
             "description": "Password required to exit exhibition mode (a restricted, public-demo-safe mode). Leave blank to use the default password 'this is sparta'.",
@@ -25,32 +37,18 @@
             "required": false,
             "default": "this is sparta"
         },
-        {
-            "id": "exhibition_allowed_addresses",
+        "exhibition_allowed_addresses": {
             "type": "string",
             "title": "Exhibition Mode Allowed DCC Addresses",
             "description": "Comma-separated DCC addresses locomotives are restricted to while exhibition mode is on, e.g. '4,5,6'. Leave blank to allow any address.",
             "required": false,
             "default": ""
         },
-        {
-            "id": "exhibition_start_on",
+        "exhibition_start_on": {
             "type": "boolean",
             "title": "Start Already in Exhibition Mode",
             "description": "If enabled, the server starts already in exhibition mode instead of requiring a spoken/typed command to enter it.",
-            "required": false
-        }
-    ],
-    "servers": {
-        "default": {
-            "type": "stdio",
-            "command": "jmri-mcp",
-            "env": {
-                "JMRI_URL": "${input:jmri_url}",
-                "EXHIBITION_PASSWORD": "${input:exhibition_password}",
-                "EXHIBITION_ALLOWED_ADDRESSES": "${input:exhibition_allowed_addresses}",
-                "EXHIBITION_START_ON": "${input:exhibition_start_on}"
-            },
+            "required": false,
             "default": false
         }
     }

@@ -985,13 +985,24 @@ async def test_compact_light_dcc_address_none_for_unparseable_name(mock_power):
     assert (await compact_light(light))["dcc_address"] is None
 
 
-async def test_compact_signal_dcc_address_always_none(mock_power):
-    """Signal masts have no clean numeric suffix to parse (system names
-    commonly reference a block, e.g. "ZF$dsm:DB-HV-1969:block(31)") — this
-    field is always None for signals, deliberately, not a bug."""
+async def test_compact_signal_dcc_address_parsed_for_dcc_signal_mast(mock_power):
+    """A "$dsm"-driven mast's trailing parenthesized number IS its DCC
+    accessory address (confirmed against JMRI's own DccSignalMast source,
+    issue #67) — parsed out, not left None."""
     from jmri_mcp.tools._common import compact_signal
 
     signal = {"name": "ZF$dsm:DB-HV-1969:block(31)", "aspect": "Hp0"}
+    assert (await compact_signal(signal))["dcc_address"] == 31
+
+
+async def test_compact_signal_dcc_address_none_for_non_dcc_driver(mock_power):
+    """A mast not driven by JMRI's "DCC Signal Mast Decoder" (e.g.
+    SignalHead-based, virtual) has no such address — system name has no
+    "$dsm" marker, so this stays None rather than misparsing an unrelated
+    trailing number."""
+    from jmri_mcp.tools._common import compact_signal
+
+    signal = {"name": "ZF1", "aspect": "Hp0"}
     assert (await compact_signal(signal))["dcc_address"] is None
 
 
@@ -1005,11 +1016,11 @@ async def test_list_signals_registered_and_compact(mock_signals, mock_power):
         "signals": [
             {
                 "name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False,
-                "dcc_system_name": "DCC++ Zou", "dcc_address": None, "comment": None,
+                "dcc_system_name": "DCC++ Zou", "dcc_address": 31, "comment": None,
             },
             {
                 "name": "ZF$dsm:DB-HV-1969:block(45)", "aspect": "Hp0", "lit": True,
-                "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": None,
+                "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": 45,
                 "comment": None,
             },
         ]
@@ -1028,7 +1039,7 @@ async def test_get_signal_resolves_by_fragment(mock_signals, mock_power):
     out = await call(mcp, "get_signal", name="Entry Signal")
     assert out == {
         "name": "Entry Signal A", "aspect": "Hp1", "lit": True,
-        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": None,
+        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": 31,
         "comment": None,
     }
 
@@ -1067,7 +1078,7 @@ async def test_set_signal_sets_aspect_and_confirms(mock_power):
         out = await call(mcp, "set_signal", name="Entry Signal A", aspect="Hp0")
     assert out == {
         "name": "Entry Signal A", "aspect": "Hp0", "lit": True,
-        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": None,
+        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": 31,
         "comment": None, "confirmed": True,
     }
     # Regression guard: JMRI's JsonSignalMastHttpService.doPost() reads the

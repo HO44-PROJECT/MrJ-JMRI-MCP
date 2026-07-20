@@ -267,16 +267,70 @@ def parse_dcc_address(system_name: str | None, type_letter: str) -> int | None:
         The DCC address as an int (e.g. 23 for "OT23"), or None if
         `system_name` is None/empty, its second character isn't
         `type_letter` (unexpected shape), or the remaining suffix isn't a
-        plain decimal integer — e.g. a signal mast's system name like
-        "ZF$dsm:DB-HV-1969:block(31)" has no clean numeric suffix at all
-        and correctly returns None. Never raises — same fail-open policy
-        as resolve_dcc_system_name, since a decoration lookup must not
-        block the caller it's decorating.
+        plain decimal integer. Not used for signal masts — a mast's system
+        name has a different shape entirely (see parse_signal_dcc_address).
+        Never raises — same fail-open policy as resolve_dcc_system_name,
+        since a decoration lookup must not block the caller it's
+        decorating.
     """
     if not system_name or len(system_name) < 3 or system_name[1] != type_letter:
         return None
     try:
         return int(system_name[2:])
+    except ValueError:
+        return None
+
+
+def parse_signal_dcc_address(system_name: str | None) -> int | None:
+    """Parse the numeric DCC accessory address out of a signal mast's JMRI system name.
+
+    Args:
+        system_name: A raw JMRI signal mast system name, e.g.
+            "ZF$dsm:DB-HV-1969:block(31)". None/empty is passed through as
+            None.
+
+    A mast's system name has the shape `<connection prefix>F$dsm:<signal
+    system>:<aspect map>(<address>)` — e.g. prefix "Z", signal system
+    "DB-HV-1969", aspect map "block", address 31. Unlike turnout/light
+    (parse_dcc_address), this trailing parenthesized number is only a DCC
+    accessory address for masts actually driven by JMRI's "DCC Signal Mast
+    Decoder" (the "$dsm" marker after the prefix); other mast drivers
+    (SignalHead-based, virtual) don't use this shape/meaning at all, hence
+    the "$dsm" check below rather than parsing any parenthesized suffix.
+
+    Confirmed by reading JMRI's own source
+    (jmri.implementation.DccSignalMast, JMRI-master):
+    - configureFromName() parses this exact trailing "(N)" into the field
+      `dccSignalDecoderAddress` (the constructor's only way to populate it —
+      there is no separate address field anywhere else).
+    - getDccSignalMastAddress() returns that same field, and is what
+      PanelPro's own mast editor (DccSignalMastAddPane) displays and
+      disables for editing after creation — i.e. this parsed number IS the
+      configured DCC accessory address, not a distinct block/signal-system
+      reference as previously assumed (see #67).
+    - JMRI's JSON signal mast servlet (JsonSignalMastHttpService) never
+      serializes this field — confirmed absent from both the handler and
+      the signalMast-server.json schema (which sets
+      "additionalProperties": false) — so parsing it out of the "name"
+      JMRI already returns is the only way to get it over the JSON API
+      today; there is no live endpoint to call instead.
+
+    Returns:
+        The DCC accessory address as an int, or None if `system_name` is
+        None/empty, doesn't contain the "$dsm" DCC-signal-mast-driver
+        marker, or has no trailing "(<digits>)" — e.g. a SignalHead-driven
+        or virtual mast's system name, which correctly returns None. Never
+        raises — same fail-open policy as parse_dcc_address.
+    """
+    if not system_name or "$dsm" not in system_name:
+        return None
+    if not system_name.endswith(")"):
+        return None
+    open_paren = system_name.rfind("(")
+    if open_paren == -1:
+        return None
+    try:
+        return int(system_name[open_paren + 1:-1])
     except ValueError:
         return None
 

@@ -11,3 +11,5 @@ venv/
 .DS_Store
 packages/jmri-core/tests/config/live.ini
 .claude/
+demo
+

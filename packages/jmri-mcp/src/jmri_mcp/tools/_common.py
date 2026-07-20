@@ -20,6 +20,7 @@ from jmri_core.constants.protocol import FIELD_ADDRESS, FIELD_FORWARD, FIELD_SPE
 from jmri_core.jmri_client import (
     default_system_prefix,
     parse_dcc_address,
+    parse_signal_dcc_address,
     resolve_dcc_prefix,
     resolve_dcc_system_name,
     resolve_max_speed_percent,
@@ -205,7 +206,7 @@ async def compact_signal(signal: dict) -> dict:
 
     Returns:
         {"name": ..., "aspect": ..., "lit": bool, "held": bool,
-        "dcc_system_name": str|None, "dcc_address": None, "comment":
+        "dcc_system_name": str|None, "dcc_address": int|None, "comment":
         str|None}. "name" is the user-friendly userName if JMRI has one
         set, else falls back to the raw system name. "aspect" is passed
         through verbatim (e.g. "Hp0"/"Hp1") - the valid vocabulary is
@@ -214,14 +215,22 @@ async def compact_signal(signal: dict) -> dict:
         aspect names. "dcc_system_name" is the DCC connection that manages
         this signal mast, derived from its raw system name's prefix (e.g.
         a "Z..." system name -> Zou) — None if the prefix matches no known
-        DCC system. "dcc_address" is always None: unlike turnouts/lights,
-        a signal mast's system name commonly encodes a block/signal-system
-        reference rather than a bare accessory number (e.g.
-        "ZF$dsm:DB-HV-1969:block(31)"), so there is no reliable numeric
-        address to parse out — kept as a field (not omitted) so the shape
-        matches turnout/light output and callers don't need a special
-        case. "comment" is static layout metadata, not live state — None
-        if never set in PanelPro.
+        DCC system. "dcc_address" is the numeric DCC accessory address for
+        masts driven by JMRI's "DCC Signal Mast Decoder" (system name like
+        "ZF$dsm:DB-HV-1969:block(31)" -> 31) — None for any other mast
+        driver (SignalHead-based, virtual), which has no such address.
+        Resolved by parse_signal_dcc_address (issue #67): confirmed by
+        reading JMRI's own source (jmri.implementation.DccSignalMast) that
+        this trailing parenthesized number in the system name IS the
+        configured accessory address — the same value
+        getDccSignalMastAddress() returns and PanelPro's own mast editor
+        displays — not merely a block/signal-system reference as earlier
+        assumed; JMRI's JSON signal mast servlet never serializes this
+        field on its own (confirmed absent from JsonSignalMastHttpService
+        and the signalMast-server.json schema), so this project parses it
+        out of the "name" JMRI already returns rather than waiting on a
+        live JMRI endpoint. "comment" is static layout metadata, not live
+        state — None if never set in PanelPro.
     """
     return {
         "name": signal.get("userName") or signal.get("name"),
@@ -229,7 +238,7 @@ async def compact_signal(signal: dict) -> dict:
         "lit": bool(signal.get("lit")),
         "held": bool(signal.get("held")),
         "dcc_system_name": await resolve_dcc_system_name(signal.get("name")),
-        "dcc_address": None,
+        "dcc_address": parse_signal_dcc_address(signal.get("name")),
         "comment": signal.get("comment"),
     }
 

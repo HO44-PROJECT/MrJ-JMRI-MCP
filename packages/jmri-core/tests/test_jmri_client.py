@@ -15,6 +15,7 @@ from jmri_core.jmri_client import (
     get_systems,
     get_turnouts,
     parse_dcc_address,
+    parse_signal_dcc_address,
     resolve_block,
     resolve_dcc_prefix,
     resolve_dcc_system_name,
@@ -727,6 +728,37 @@ def test_parse_dcc_address_empty_string_returns_none():
 
 def test_parse_dcc_address_too_short_returns_none():
     assert parse_dcc_address("OT", "T") is None
+
+
+# --- parse_signal_dcc_address: signal mast system name -> DCC accessory address (#67) ---
+
+
+def test_parse_signal_dcc_address_dcc_signal_mast():
+    assert parse_signal_dcc_address("ZF$dsm:DB-HV-1969:block(31)") == 31
+
+
+def test_parse_signal_dcc_address_different_prefix_and_address():
+    assert parse_signal_dcc_address("OF$dsm:DB-HV-1969:block(123)") == 123
+
+
+def test_parse_signal_dcc_address_no_dsm_marker_returns_none():
+    assert parse_signal_dcc_address("ZF1") is None
+
+
+def test_parse_signal_dcc_address_none_input_returns_none():
+    assert parse_signal_dcc_address(None) is None
+
+
+def test_parse_signal_dcc_address_empty_string_returns_none():
+    assert parse_signal_dcc_address("") is None
+
+
+def test_parse_signal_dcc_address_dsm_without_trailing_paren_returns_none():
+    assert parse_signal_dcc_address("ZF$dsm:DB-HV-1969:block") is None
+
+
+def test_parse_signal_dcc_address_non_numeric_paren_contents_returns_none():
+    assert parse_signal_dcc_address("ZF$dsm:DB-HV-1969:block(abc)") is None
 
 
 # --- get_roster_function_labels ---

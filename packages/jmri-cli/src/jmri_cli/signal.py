@@ -14,7 +14,7 @@ from jmri_core import i18n
 from jmri_cli._match import find_glob, find_regex
 from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR
-from jmri_core.jmri_client import JmriError, get_signals, resolve_signal
+from jmri_core.jmri_client import JmriError, get_signals, parse_signal_dcc_address, resolve_signal
 from jmri_core.jmri_client import set_signal as _set_signal
 from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
 
@@ -27,6 +27,7 @@ def _headers() -> list[str]:
         i18n.t("headers.aspect"),
         i18n.t("headers.comment"),
         i18n.t("headers.dcc_system"),
+        i18n.t("headers.address"),
     ]
 
 
@@ -39,17 +40,20 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
     "byaspect": (2, True),
     "bycomment": (3, True),
     "bydccsystem": (4, True),
+    "byaddress": (5, True),
 }
 
 
 def _row(signal: dict, names_by_prefix: dict[str, str]) -> list:
-    """Flatten one JMRI signal mast object into a `[system_id, label, aspect, comment, dcc_system]` table row."""
+    """Flatten one JMRI signal mast object into a `[system_id, label, aspect, comment, dcc_system, address]` table row."""
     aspect = signal.get("aspect") or "UNKNOWN"
     label = signal.get("userName") or signal.get("name", "?")
     system_id = signal.get("name", "?")
     comment = signal.get("comment") or ""
     dcc_system = dcc_system_display(system_id, names_by_prefix)
-    return [system_id, label, aspect, comment, dcc_system]
+    address = parse_signal_dcc_address(system_id)
+    address_display = address if address is not None else ""
+    return [system_id, label, aspect, comment, dcc_system, address_display]
 
 
 def _label(signal: dict) -> str:
@@ -105,10 +109,11 @@ async def signal_status(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, aspect, comment, dcc_system = _row(match, names_by_prefix)
+    system_id, label, aspect, comment, dcc_system, address = _row(match, names_by_prefix)
     print(
         f"name={label} system_id={system_id} aspect={aspect} "
-        f"comment={comment or '-'} dcc_system={dcc_system}"
+        f"comment={comment or '-'} dcc_system={dcc_system} "
+        f"address={address if address != '' else '-'}"
     )
     return 0
 
@@ -209,10 +214,11 @@ async def signal_set(args: argparse.Namespace) -> int:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
-    system_id, label, aspect, comment, dcc_system = _row(result, names_by_prefix)
+    system_id, label, aspect, comment, dcc_system, address = _row(result, names_by_prefix)
     print(
         f"name={label} system_id={system_id} aspect={aspect} "
-        f"comment={comment or '-'} dcc_system={dcc_system}"
+        f"comment={comment or '-'} dcc_system={dcc_system} "
+        f"address={address if address != '' else '-'}"
     )
     if not result["confirmed"]:
         print(i18n.t("cli.signal_aspect_not_confirmed", aspect=args.aspect), file=sys.stderr)

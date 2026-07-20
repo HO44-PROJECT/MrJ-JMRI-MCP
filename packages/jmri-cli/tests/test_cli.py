@@ -850,7 +850,7 @@ async def test_signal_status_one(mock_signals, mock_power, capsys):
     assert code == 0
     assert out.strip() == (
         "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
-        "aspect=Hp1 comment=- dcc_system=DCC++ Zou"
+        "aspect=Hp1 comment=- dcc_system=DCC++ Zou address=31"
     )
 
 
@@ -865,7 +865,7 @@ async def test_signal_find_by_username(mock_signals, mock_power, capsys):
     assert code == 0
     assert out.strip() == (
         "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
-        "aspect=Hp1 comment=- dcc_system=DCC++ Zou"
+        "aspect=Hp1 comment=- dcc_system=DCC++ Zou address=31"
     )
 
 
@@ -944,7 +944,7 @@ async def test_signal_set_aspect_and_confirms(monkeypatch, power_fixture, capsys
     assert code == 0
     assert out.strip() == (
         "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
-        "aspect=Hp0 comment=- dcc_system=DCC++ Zou"
+        "aspect=Hp0 comment=- dcc_system=DCC++ Zou address=31"
     )
     # Regression guard: see matching comment in tests/test_tools.py - JMRI's
     # POST handler reads "state", not "aspect".

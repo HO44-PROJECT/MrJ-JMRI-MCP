@@ -449,19 +449,29 @@ for different reasons:
   single-entity `find` commands (`-` when unparseable), each domain
   gaining a `byaddress` sort sibling — note this sorts as a string like
   every other column here, not numerically (`"100"` sorts before `"23"`).
-  **Signal masts are deliberately excluded**: `compact_signal()` always
-  returns `"dcc_address": None`, and `signal.py` has no Address
-  column/field at all. This isn't a parsing gap — confirmed live against
-  the user's real JMRI (`GET /json/signalMasts`) that a mast's system name
-  (e.g. `"OF$dsm:DB-HV-1969:block(123)"`) encodes a block/signal-system
-  reference, not the DCC accessory address, and that JMRI's `/json/signalMast`
-  payload (`name`/`userName`/`comment`/`properties`/`aspect`/`lit`/`held`/
-  `state`) never includes an address field at all — not even for a mast
-  configured with a "DCC Signal Mast Decoder" driver in PanelPro, where
-  the address (e.g. 123) genuinely exists in JMRI's own config but is only
-  visible in PanelPro's UI/panel XML, never served over this server's JSON
-  API. Recovering it is tracked separately as a follow-up, not blocking
-  this feature for turnout/light.
+  **Signal masts use a separate parser, `parse_signal_dcc_address(system_name)`**
+  (issue #67, superseding an earlier #66-era assumption that a mast's
+  system name couldn't carry a real accessory address at all — confirmed
+  wrong by reading JMRI's own source, `jmri.implementation.DccSignalMast`):
+  a mast driven by JMRI's "DCC Signal Mast Decoder" has a system name
+  shaped `<prefix>F$dsm:<signal system>:<aspect map>(<address>)` — e.g.
+  `"OF$dsm:DB-HV-1969:block(123)"` — and `DccSignalMast.configureFromName()`
+  parses that exact trailing `(N)` into `dccSignalDecoderAddress`, the same
+  value `getDccSignalMastAddress()` returns and PanelPro's own mast editor
+  displays. So the parenthesized number *is* the real accessory address,
+  not an unrelated block/signal-system reference. `parse_signal_dcc_address`
+  gates on the `"$dsm"` marker (absent for SignalHead-based/virtual masts,
+  which correctly get `None`) rather than trying to reuse
+  `parse_dcc_address`'s single-type-letter shape, since a mast's prefix is
+  followed by `F$dsm:...`, not a bare type letter + digits. JMRI's own
+  `/json/signalMasts` payload still never includes this address as its own
+  field (confirmed by reading `JsonSignalMastHttpService`: it only
+  serializes `aspect`/`lit`/`held`/`state` plus the generic
+  `name`/`userName`/`comment`/`properties`, and `DccSignalMast` never
+  populates `properties` via `setProperty`) — but since `name` already
+  carries the address encoded in it, no live JMRI endpoint or config-file
+  read is needed; `compact_signal()` parses it straight out of the `name`
+  JMRI already returns.
 - **`jmri_ws/`** — a persistent WebSocket (`ws://<jmri>:12080/json/`).
   This exists for one reason: **a JMRI throttle is bound to the connection
   that acquired it**. HTTP can't hold a throttle open between requests, so

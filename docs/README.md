@@ -10,6 +10,7 @@
 - [Testing](testing.md) — the mocked test suite vs. the opt-in live suite, and the hardware-safety config.
 - [Release procedure](release.md) — building and publishing `jmri-core`/`jmri-cli`/`jmri-mcp` to PyPI.
 - [Resources](resources.md) — reference links for JMRI, MCP, and xiaozhi/Kira.
+- [Known JMRI issues reported upstream](jmri-upstream-issues.md) — JMRI bugs found while building this project, reported to the JMRI tracker, and what this project does to work around them.
 - [Acknowledgments](../ACKNOWLEDGMENTS.md) — thanks to the open-source projects this depends on.
 
 See the top-level [README](../README.md) for the project overview, and [CLAUDE.md](../CLAUDE.md) for

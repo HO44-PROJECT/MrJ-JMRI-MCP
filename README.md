@@ -2,6 +2,21 @@
 
 *[Version française](README.fr.md)*
 
+> **License & attribution — please read before reusing this work.**
+> This project is © HO44 PROJECT (MrJ) and licensed under **AGPL-3.0-or-later** (see [LICENSE](LICENSE)).
+> If you redistribute, modify, or republish any part of this project — `jmri-core`, `jmri-cli`, `jmri-mcp`,
+> the `.mcpb`/`.codex.zip` bundles, or the documentation — **on this repository or anywhere else** (a fork,
+> another platform, a package registry, a video, a write-up), you **must**:
+> - keep the original author credit (**MrJ / HO44 PROJECT**) and a link back to
+>   [this repository](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP), and
+> - keep the same AGPL-3.0-or-later license on any redistributed or modified version.
+>
+> Removing or hiding this attribution is not just bad etiquette — under AGPL-3.0 it is a
+> **license violation**, and it will be treated as one. See [NOTICE.md](NOTICE.md) for details.
+>
+> Questions or general discussion: use [GitHub Discussions](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/discussions).
+> Bug reports and feature requests: use [Issues](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/issues).
+
 **Talk to your model railroad.**
 
 Bring AI to your [JMRI](https://www.jmri.org/) powered layout. Connect your favorite AI assistant and control your [DCC](https://www.nmra.com/digital-command-control-dcc) model railroad using natural language through voice or chat.
@@ -188,7 +203,7 @@ Questions, bugs, and feature requests are welcome via [issues](../../issues).
 
 Chosen deliberately over a permissive license (MIT/Apache) so that anyone who modifies this project and offers it as a network service (not just redistributes the code) must also publish their modified source.
 
-See the [license text](LICENSE) for the exact terms.
+See the [license text](LICENSE) for the exact terms, and [NOTICE.md](NOTICE.md) for what attribution is required when reusing this project.
 
 ### Third-party code
 

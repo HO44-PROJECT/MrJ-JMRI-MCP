@@ -2,6 +2,21 @@
 
 *[English version](README.md)*
 
+> **Licence et attribution — à lire avant toute réutilisation.**
+> Ce projet est © HO44 PROJECT (MrJ) et publié sous licence **AGPL-3.0-or-later** (voir [LICENSE](LICENSE)).
+> Si vous redistribuez, modifiez ou republiez tout ou partie de ce projet — `jmri-core`, `jmri-cli`, `jmri-mcp`,
+> les bundles `.mcpb`/`.codex.zip`, ou la documentation — **sur ce dépôt ou ailleurs** (un fork, une autre
+> plateforme, un registre de paquets, une vidéo, un article), vous **devez** :
+> - conserver le crédit de l'auteur original (**MrJ / HO44 PROJECT**) et un lien vers
+>   [ce dépôt](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP), et
+> - conserver la même licence AGPL-3.0-or-later sur toute version redistribuée ou modifiée.
+>
+> Retirer ou masquer cette attribution n'est pas qu'une question de savoir-vivre — au regard de l'AGPL-3.0,
+> c'est une **violation de licence**, et elle sera traitée comme telle. Voir [NOTICE.md](NOTICE.md) pour le détail.
+>
+> Questions ou discussion générale : [GitHub Discussions](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/discussions).
+> Bugs et demandes de fonctionnalités : [Issues](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/issues).
+
 **Parlez à votre réseau ferroviaire miniature.**
 
 Apportez l'IA à votre réseau [JMRI](https://www.jmri.org/). Connectez votre assistant IA préféré et contrôlez votre réseau miniature [DCC](https://www.nmra.com/digital-command-control-dcc) en langage naturel, à la voix ou par chat.
@@ -195,7 +210,7 @@ Questions, bugs et demandes de fonctionnalités sont les bienvenus via les [issu
 
 Choisie délibérément plutôt qu'une licence permissive (MIT/Apache), pour que quiconque modifie ce projet et le propose en tant que service réseau (pas seulement en redistribuant le code) doive aussi publier son code source modifié.
 
-Voir le [texte de la licence](LICENSE) pour les termes exacts.
+Voir le [texte de la licence](LICENSE) pour les termes exacts, et [NOTICE.md](NOTICE.md) (en anglais) pour l'attribution requise en cas de réutilisation.
 
 ### Code tiers
 

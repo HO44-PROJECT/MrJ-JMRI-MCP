@@ -1,6 +1,6 @@
 [project]
 name = "jmri-mcp"
-version = "1.0.0rc2"
+version = "1.0.0rc3"
 description = "MCP server for JMRI - voice/chat control of DCC model railroads (xiaozhi, Claude, ...)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,7 +20,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "jmri-core==1.0.0rc1",
+    "jmri-core==1.0.0rc3",
     "mcp~=1.28",
 ]
 
@@ -29,7 +29,7 @@ xiaozhi = [
     "python-dotenv~=1.2",
 ]
 test = [
-    "jmri-core[test]==1.0.0rc1",
+    "jmri-core[test]==1.0.0rc3",
 ]
 
 [project.urls]

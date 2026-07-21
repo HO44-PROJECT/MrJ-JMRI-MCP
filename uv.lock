@@ -333,7 +333,7 @@ wheels = [
 
 [[package]]
 name = "jmri-cli"
-version = "1.0.0rc1"
+version = "1.0.0rc3"
 source = { editable = "packages/jmri-cli" }
 dependencies = [
     { name = "jmri-core" },
@@ -355,7 +355,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "jmri-core"
-version = "1.0.0rc1"
+version = "1.0.0rc3"
 source = { editable = "packages/jmri-core" }
 dependencies = [
     { name = "httpx" },
@@ -381,7 +381,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "jmri-mcp"
-version = "1.0.0rc2"
+version = "1.0.0rc3"
 source = { editable = "packages/jmri-mcp" }
 dependencies = [
     { name = "jmri-core" },

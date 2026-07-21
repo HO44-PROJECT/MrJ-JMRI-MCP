@@ -1,6 +1,6 @@
 [project]
 name = "jmri-core"
-version = "1.0.0rc1"
+version = "1.0.0rc3"
 description = "Shared JMRI HTTP/WebSocket client foundation for jmri-cli and jmri-mcp"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -7,13 +7,54 @@ and this project follows [Semantic Versioning](https://semver.org/). All
 three packages (`jmri-core`, `jmri-cli`, `jmri-mcp`) are versioned and
 released together, in lockstep, from this one repo.
 
-## [1.0.0rc1] - Unreleased
+## [1.0.0rc3] - Unreleased
 
 Release candidate for the 1.0.0 milestone: every planned M1-M5 feature
 (power, throttle, roster, layout, integrations — see below) is implemented,
 tested, and live-verified against a real JMRI installation.
 
 ### Added
+
+- Codex (ChatGPT) integration (#68): `packages/jmri-mcp/codex/jmri_mcpctl.py`
+  registers, starts, stops, and uninstalls `jmri-mcp` in OpenAI Codex's own
+  MCP config (requires a ChatGPT Plus+ subscription), mirroring the existing
+  `.mcpb`/Claude Desktop flow. Runs under a dedicated `.venv-jmri-mcp-codex`
+  virtual environment (not `uv`'s default `.venv`), isolated from this repo's
+  shared dev environment so `uninstall --purge` can never remove it by
+  accident; the env var is also passed through to Codex's own later `uv run`
+  invocation, not just this script's. `build_codex_zip.py` (+ `make
+  codex-zip`) produces a standalone, self-contained `jmri-mcp-<version>
+  .codex.zip` distributable (bundled source + pyproject.toml, PyPI-pinned
+  `jmri-core`/`mcp`) attached to GitHub Releases alongside the `.mcpb`. See
+  `docs/llm-setup-codex.md`.
+- Signal masts: `list_signals`/`get_signal`/`jmri-cli signal` now surface the
+  real DCC accessory address (#67) — JMRI source research
+  (`DccSignalMast.configureFromName`/`getDccSignalMastAddress`) showed the
+  parenthesized number in a `$dsm` mast's system name is the DCC address, not
+  a block reference as previously assumed. New `parse_signal_dcc_address()`
+  in `jmri-core`, wired through `compact_signal()` and a new `signal`
+  Address column/`byaddress` sort (parity with turnout/light).
+- `docs/jmri-upstream-issues.md`: consolidates two JMRI bugs found through
+  live testing (DCC-EX power state stuck `UNKNOWN` after a physical power
+  cycle; redundant `ON` flipping an already-`ON` connection to `UNKNOWN`)
+  with links to the filed JMRI/JMRI#15278 and #15279 and this project's
+  existing workarounds in `power.py`.
+
+### Fixed
+
+- `.mcpb` bundle: `manifest.template.json` used a schema not matching MCPB
+  v0.4 (`server.type "uv"`, `mcp_config`, `user_config`), and `icon.png`'s
+  presence alone doesn't get auto-detected — needs an explicit `"icon"` key.
+  `build_mcpb.py` now bundles `jmri-mcp`'s own source tree plus a standalone
+  `pyproject.toml` instead of declaring an external PyPI package, so the
+  bundle is self-contained. Added a real logo (`packages/jmri-mcp/mcpb/icon.png`),
+  replacing the generic letter-avatar Claude Desktop showed before.
+- `Makefile` reorganized into sections (build/test/clean, PyPI deploy,
+  GitHub/Registry release) with a `deploy-*`/`release-*` naming scheme; added
+  a standalone `mcpb` target that rebuilds and republishes the `.mcpb`/
+  `.codex.zip` (GitHub Release assets + MCP Registry) without re-tagging, and
+  fixed `release-github-asset`/`release-mcp-registry` dependency chaining so
+  the published SHA-256 always matches the actual release asset.
 
 - `INSTALL.md`: a single entry point covering every installation
   combination — `jmri-cli` in conda or venv, the `.mcpb` bundle in Claude

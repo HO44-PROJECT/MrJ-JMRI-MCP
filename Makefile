@@ -1,4 +1,4 @@
-.PHONY: build test clean deploy-testpypi deploy-pypi release release-github mcpb release-github-asset release-mcp-registry
+.PHONY: build test clean deploy-testpypi deploy-pypi release release-github mcpb release-github-asset release-mcp-registry codex-zip
 
 # --- Variables ---
 
@@ -9,17 +9,23 @@ VERSION := $(shell uv run python -c "import tomllib; print(tomllib.load(open('pa
 TAG := v$(VERSION)
 MCPB := $(DIST_DIR)/jmri-mcp-$(VERSION).mcpb
 MCPB_JSON := $(DIST_DIR)/jmri-mcp-$(VERSION).mcpb.json
+CODEX_ZIP := $(DIST_DIR)/jmri-mcp-$(VERSION).codex.zip
 
 # --- Build / test / clean ---
 
-# Build sdist+wheel for all 3 packages, build the .mcpb bundle, then
-# validate PyPI metadata on the wheels/sdists (not the .mcpb).
+# Build sdist+wheel for all 3 packages, build the .mcpb and .codex.zip
+# bundles, then validate PyPI metadata on the wheels/sdists (not the bundles).
 build: clean
 	@for pkg in $(PACKAGES); do \
 		uv build --package $$pkg --out-dir $(DIST_DIR) || exit 1; \
 	done
 	uv run python packages/jmri-mcp/mcpb/build_mcpb.py --out-dir $(DIST_DIR)
+	uv run python packages/jmri-mcp/codex/build_codex_zip.py --out-dir $(DIST_DIR)
 	$(TWINE) check $(DIST_DIR)/*.whl $(DIST_DIR)/*.tar.gz
+
+# Rebuild just the standalone Codex distributable (see docs/llm-setup-codex.md).
+codex-zip:
+	uv run python packages/jmri-mcp/codex/build_codex_zip.py --out-dir $(DIST_DIR)
 
 # Run the full mocked test suite across all packages (live suite is opt-in, see docs/testing.md).
 test:
@@ -42,10 +48,10 @@ deploy-pypi: build
 
 # --- Release: GitHub Release + MCP Registry ---
 # `release` runs these in order; each is also runnable standalone (see `mcpb`
-# below for republishing just the .mcpb without re-tagging).
+# below for republishing just the .mcpb/.codex.zip without re-tagging).
 
-# Push/tag on GitHub, then build+publish the .mcpb (GitHub Release asset +
-# MCP Registry) via `mcpb`.
+# Push/tag on GitHub, then build+publish the .mcpb and .codex.zip (GitHub
+# Release assets + MCP Registry) via `mcpb`.
 release: release-github mcpb
 
 # Push main and the vX.Y.Z tag to origin.
@@ -54,18 +60,19 @@ release-github:
 	git tag -a $(TAG) -m "$(TAG)"
 	git push origin $(TAG)
 
-# Rebuild the .mcpb and republish it end to end: GitHub Release asset, then
-# MCP Registry — without re-tagging or touching PyPI. This is the target to
-# re-publish a fixed .mcpb onto an already-tagged release (e.g. `v1.0.0rc1`
-# already exists, only the .mcpb itself changed).
+# Rebuild the .mcpb/.codex.zip and republish them end to end: GitHub Release
+# assets, then MCP Registry (.mcpb only — the .codex.zip has no MCP Registry
+# entry) — without re-tagging or touching PyPI. This is the target to
+# re-publish a fixed bundle onto an already-tagged release (e.g. `v1.0.0rc1`
+# already exists, only a bundle itself changed).
 mcpb: release-github-asset release-mcp-registry
 
 # (Re)create the GitHub Release for this tag, marked pre-release, with the
-# built .mcpb attached as a downloadable asset. Standalone-safe: rebuilds
-# first.
+# built .mcpb and .codex.zip attached as downloadable assets. Standalone-safe:
+# rebuilds first.
 release-github-asset: build
 	gh release delete $(TAG) -y || true
-	gh release create $(TAG) $(MCPB) \
+	gh release create $(TAG) $(MCPB) $(CODEX_ZIP) \
 		--title "$(TAG)" \
 		--prerelease \
 		--generate-notes

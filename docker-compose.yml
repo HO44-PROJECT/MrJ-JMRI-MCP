@@ -1,8 +1,0 @@
-services:
-  jmri-xiaozhi-bridge:
-    image: python:3.12-slim
-    restart: unless-stopped
-    command: sh -c "pip install --no-cache-dir jmri-mcp[xiaozhi] && jmri-xiaozhi-bridge"
-    environment:
-      MCP_ENDPOINT: ${MCP_ENDPOINT}
-      JMRI_URL: ${JMRI_URL:-http://localhost:12080}

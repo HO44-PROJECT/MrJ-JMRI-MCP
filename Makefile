@@ -67,14 +67,16 @@ release-github:
 # already exists, only a bundle itself changed).
 mcpb: release-github-asset release-mcp-registry
 
-# (Re)create the GitHub Release for this tag, marked pre-release, with the
-# built .mcpb and .codex.zip attached as downloadable assets. Standalone-safe:
-# rebuilds first.
+# (Re)create the GitHub Release for this tag, with the built .mcpb and
+# .codex.zip attached as downloadable assets. Standalone-safe: rebuilds
+# first. Marked pre-release only for rcN tags (e.g. v1.0.0rc4) — a final
+# version like v1.0.0 is a normal (non-prerelease) release, which is also
+# what lets GitHub mark it "Latest release".
 release-github-asset: build
 	gh release delete $(TAG) -y || true
 	gh release create $(TAG) $(MCPB) $(CODEX_ZIP) \
 		--title "$(TAG)" \
-		--prerelease \
+		$(if $(findstring rc,$(TAG)),--prerelease,) \
 		--generate-notes
 
 # Render server.json from the template (version, tag, .mcpb SHA-256,

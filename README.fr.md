@@ -115,6 +115,9 @@ Le démarrage est conçu pour être simple.
 
 Voir le [guide d'installation](INSTALL.md) pour toutes les combinaisons d'installation (CLI, `.mcpb` Claude Desktop, pont Kira), la configuration et les premières commandes.
 
+Vous préférez un guide pas-à-pas avec captures d'écran ? Voir l'Instructable
+de la communauté (en anglais) : [Control Your JMRI Railroad by Chatting With Claude](https://www.instructables.com/Control-Your-JMRI-Railroad-by-Chatting-With-Claude/).
+
 ## Configuration de l'assistant IA
 
 - [Claude Desktop et Claude Code](docs/llm-setup-claude.md)

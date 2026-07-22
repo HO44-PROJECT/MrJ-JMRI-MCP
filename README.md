@@ -110,6 +110,9 @@ Getting started is designed to be simple.
 
 See the [installation guide](INSTALL.md) for every install combination (CLI, Claude Desktop `.mcpb`, Kira bridge), configuration, and first commands.
 
+Prefer a step-by-step walkthrough with screenshots? See the community
+Instructable: [Control Your JMRI Railroad by Chatting With Claude](https://www.instructables.com/Control-Your-JMRI-Railroad-by-Chatting-With-Claude/).
+
 ## AI Assistant Setup
 
 - [Claude Desktop and Claude Code](docs/llm-setup-claude.md)

@@ -1,6 +1,6 @@
 [project]
 name = "jmri-cli"
-version = "1.0.0rc3"
+version = "1.0.0"
 description = "Command-line client for JMRI - control DCC model railroads from a terminal"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,13 +21,13 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "jmri-core==1.0.0rc3",
+    "jmri-core==1.0.0",
     "tabulate~=0.10",
 ]
 
 [project.optional-dependencies]
 test = [
-    "jmri-core[test]==1.0.0rc3",
+    "jmri-core[test]==1.0.0",
 ]
 
 [project.urls]

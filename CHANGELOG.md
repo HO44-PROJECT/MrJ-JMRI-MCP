@@ -7,13 +7,26 @@ and this project follows [Semantic Versioning](https://semver.org/). All
 three packages (`jmri-core`, `jmri-cli`, `jmri-mcp`) are versioned and
 released together, in lockstep, from this one repo.
 
-## [1.0.0rc3] - Unreleased
+## [1.0.0] - 2026-07-22
 
-Release candidate for the 1.0.0 milestone: every planned M1-M5 feature
-(power, throttle, roster, layout, integrations — see below) is implemented,
-tested, and live-verified against a real JMRI installation.
+First stable release: every planned M1-M5 feature (power, throttle, roster,
+layout, integrations — see below) is implemented, tested, and
+live-verified against a real JMRI installation.
 
 ### Added
+
+- `NOTICE.md`: explicit AGPL reuse/attribution obligations, a copy-paste
+  attribution template, and contact channels — with matching banners added
+  to the top of `README.md`/`README.fr.md` stating that removing
+  attribution is a license violation, not just poor etiquette. GitHub
+  Discussions enabled as the general-discussion channel alongside Issues.
+
+### Removed
+
+- `docker-compose.yml`/`.env.example` at the repo root: unreferenced by any
+  doc — `INSTALL.md`'s Portainer section already inlines the same compose
+  YAML for direct copy-paste into the Stack UI, which is the only
+  documented usage path for this xiaozhi-bridge-specific example.
 
 - Codex (ChatGPT) integration (#68): `packages/jmri-mcp/codex/jmri_mcpctl.py`
   registers, starts, stops, and uninstalls `jmri-mcp` in OpenAI Codex's own

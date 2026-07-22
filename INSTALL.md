@@ -94,44 +94,71 @@ Use this if you want to talk to Claude Desktop in natural language ("what's
 the status of the layout?", "move loco 3 forward at 40%") and have it
 control JMRI directly. No terminal needed after the install step.
 
-1. Download the latest `jmri-mcp-<version>.mcpb` file from this repo's
-   [Releases](../../releases) page.
-2. Double-click it. Claude Desktop opens to an install confirmation screen:
+1. In JMRI (PanelPro), open **Edit → Preferences → Web Server** and make
+   sure the web server is enabled, with **Start automatically with
+   application** checked. Note the port number (default `12080`) — you'll
+   need it for `JMRI Server URL` in a later step:
 
-   <img src="docs/img/mcpb-install-01-confirm.png" width="500" alt="Claude Desktop's install confirmation screen for the JMRI MCP extension, showing it was developed by MrJ and all requirements are met">
+   <img src="docs/img/mcpb-install-01-jmri-webserver.png" width="500" alt="JMRI PanelPro Preferences dialog, Web Server tab, showing the port number and Start automatically with application checkbox">
 
-   Click **Install**, then confirm the macOS system prompt that follows
-   (fetches the extension's dependencies):
+2. On this repo's GitHub page, find the **Releases** card in the right
+   sidebar and click into the latest release:
 
-   <img src="docs/img/mcpb-install-02-macos-prompt.png" width="260" alt="macOS system prompt confirming installation of the JMRI MCP desktop extension">
+   <img src="docs/img/mcpb-install-02-find-release.png" width="500" alt="This repo's GitHub page with the Releases card highlighted in the right sidebar">
+
+3. On the release page, download the `jmri-mcp-<version>.mcpb` asset (not
+   the `.codex.zip`, which is for the Codex/ChatGPT setup instead — see
+   [docs/llm-setup-codex.md](docs/llm-setup-codex.md)):
+
+   <img src="docs/img/mcpb-install-03-download-mcpb.png" width="500" alt="GitHub release assets list with the .mcpb file highlighted">
+
+4. Double-click the downloaded file. Claude Desktop opens to an install
+   confirmation screen — click **Install**:
+
+   <img src="docs/img/mcpb-install-04-confirm.png" width="500" alt="Claude Desktop's install confirmation screen for the JMRI MCP extension, with the Install button highlighted">
+
+   Then confirm the macOS system prompt that follows (fetches the
+   extension's dependencies):
+
+   <img src="docs/img/mcpb-install-05-macos-prompt.png" width="260" alt="macOS system prompt confirming installation of the JMRI MCP desktop extension">
 
    > If Claude shows a "Claude will return soon" / temporary service
    > disruption page at this point, it's an unrelated transient hiccup —
    > click **Try again** and installation proceeds normally.
 
-3. Once installed, JMRI MCP shows up under **Settings → Extensions**:
+5. Once installed, click **Configure** on the JMRI MCP extension and fill in
+   `JMRI Server URL` (e.g. `http://<your-jmri-host>:12080`, using the port
+   from step 1) — the exhibition-mode fields are optional (see
+   [docs/exhibition.md](docs/exhibition.md)). Click **Save**:
 
-   <img src="docs/img/mcpb-install-03-extensions-list.png" width="600" alt="JMRI MCP listed under Claude Desktop's installed extensions">
+   <img src="docs/img/mcpb-install-06-configure.png" width="600" alt="JMRI MCP extension configuration screen with the JMRI Server URL field and Save button highlighted">
 
-4. Click **Configure** on the JMRI MCP extension and fill in the settings —
-   at minimum `JMRI Server URL` (e.g. `http://<your-jmri-host>:12080`); the
-   exhibition-mode fields are optional (see
-   [docs/exhibition.md](docs/exhibition.md)). Click **Save**.
+6. Back on the extension card, toggle it **Enabled**:
 
-   <img src="docs/img/mcpb-install-04-configure.png" width="600" alt="JMRI MCP extension configuration screen with JMRI Server URL and exhibition mode fields">
+   <img src="docs/img/mcpb-install-07-enabled.png" width="600" alt="JMRI MCP extension card with the Enabled toggle highlighted">
 
-5. Scroll down to **Tool permissions** and allow the JMRI tools you want
+7. JMRI MCP now shows up enabled under **Settings → Extensions**:
+
+   <img src="docs/img/mcpb-install-08-extensions-list.png" width="600" alt="JMRI MCP listed under Claude Desktop's installed extensions">
+
+8. Scroll down to **Tool permissions** and allow the JMRI tools you want
    Claude to be able to call (or set the whole group to **Always allow**).
    Claude Desktop manages the Python environment for you — there's no
    separate `pip install` step.
 
 ### Verify
 
-Ask Claude something that needs a tool call, e.g. "what's the DCC address of
-my Autorail?" — it should call a JMRI tool and answer from your actual
-roster/layout data:
+Ask Claude something that needs a tool call, e.g. "can you provide a summary
+of your capabilities regarding JMRI?" — it should confirm it can see the
+JMRI tools and summarize what it can do:
 
-<img src="docs/img/mcpb-install-05-chat-example.png" width="500" alt="Claude Desktop answering a JMRI roster question using the JMRI MCP tools">
+<img src="docs/img/mcpb-install-09-chat-capabilities.png" width="500" alt="Claude Desktop summarizing its JMRI capabilities using the JMRI MCP tools">
+
+Then a follow-up question should trigger a real call and answer from your
+actual JMRI data, e.g. "what information is available regarding my DCC
+systems?":
+
+<img src="docs/img/mcpb-install-10-status-example.png" width="500" alt="Claude Desktop answering a JMRI DCC systems status question using the JMRI MCP tools">
 
 See [docs/llm-setup-claude.md](docs/llm-setup-claude.md) for troubleshooting
 (log locations, subprocess checks) and for wiring Claude Code instead, which

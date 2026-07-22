@@ -5,47 +5,40 @@ launches it. This page covers Claude Desktop and Claude Code.
 
 ## Claude Desktop
 
-Claude Desktop spawns each configured MCP server as a subprocess itself, using
-its own launcher (not your shell), so it does **not** inherit your shell `PATH`.
-The `command` must be an absolute path to the `jmri-mcp` script inside the
-environment where you installed the `jmri-mcp` package (see [install.md](install.md)).
+Claude Desktop installs `jmri-mcp` as a **desktop extension** (`.mcpb`
+bundle) — a double-click install with a graphical Configure screen. Claude
+Desktop manages the Python environment itself; there's no `pip install` step
+and no JSON file to hand-edit.
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add
-an entry under `mcpServers`:
+Follow **[section 2 of the installation guide](../INSTALL.md#2-mcpb-bundle-in-claude-desktop)**
+for the full walkthrough with screenshots: enabling JMRI's web server,
+downloading the `.mcpb` from the [latest release](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/releases/latest),
+installing it, setting `JMRI Server URL` on the Configure screen, and
+enabling the extension.
 
-```json
-{
-  "mcpServers": {
-    "jmri": {
-      "command": "/absolute/path/to/your/env/bin/jmri-mcp",
-      "env": {
-        "JMRI_URL": "http://localhost:12080"
-      }
-    }
-  }
-}
-```
-
-Find the absolute path with `which jmri-mcp` after activating the right
-environment. Restart Claude Desktop (**Cmd+Q**, not just closing the window —
-closing the window leaves the app and its subprocess running) for config
-changes to take effect.
+A community-written, more visual version of the same walkthrough is also
+available: the [Instructable](https://www.instructables.com/Control-Your-JMRI-Railroad-by-Chatting-With-Claude/)
+"Control Your JMRI Railroad by Chatting With Claude."
 
 ### Verifying it's connected
 
 Ask Claude something that needs a tool call, e.g. "what's the status of the
-JMRI power systems?". If it says the JMRI tools aren't available, the
-subprocess likely isn't running — check:
+JMRI power systems?". If it says the JMRI tools aren't available, check:
 
 ```bash
-ps aux | grep jmri-mcp
 tail -f ~/Library/Logs/Claude/mcp-server-jmri.log
 ```
 
 A healthy startup ends with `Server started and connected successfully`
 followed by successful `tools/list` request/response pairs, and no
 `Shutting down` line afterwards. If the process is simply gone with no error,
-restart Claude Desktop (Cmd+Q, relaunch).
+restart Claude Desktop (**Cmd+Q**, not just closing the window — closing the
+window leaves the app and its subprocess running) — see also the "Claude
+will return soon" transient hiccup noted in the install guide.
+
+If the extension is installed but tools still aren't showing up, check
+**Settings → Extensions → JMRI MCP** is toggled **Enabled** and that Tool
+permissions weren't left denied.
 
 ## Claude Code
 

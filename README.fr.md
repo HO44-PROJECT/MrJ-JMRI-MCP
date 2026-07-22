@@ -2,6 +2,12 @@
 
 *[English version](README.md)*
 
+[![PyPI - jmri-mcp](https://img.shields.io/pypi/v/jmri-mcp?label=jmri-mcp)](https://pypi.org/project/jmri-mcp/)
+[![PyPI - jmri-cli](https://img.shields.io/pypi/v/jmri-cli?label=jmri-cli)](https://pypi.org/project/jmri-cli/)
+[![PyPI - jmri-core](https://img.shields.io/pypi/v/jmri-core?label=jmri-core)](https://pypi.org/project/jmri-core/)
+[![Downloads](https://img.shields.io/pypi/dm/jmri-mcp)](https://pypi.org/project/jmri-mcp/)
+[![GitHub Release](https://img.shields.io/github/v/release/HO44-PROJECT/MrJ-JMRI-MCP)](https://github.com/HO44-PROJECT/MrJ-JMRI-MCP/releases/latest)
+
 > **Licence et attribution — à lire avant toute réutilisation.**
 > Ce projet est © HO44 PROJECT (MrJ) et publié sous licence **AGPL-3.0-or-later** (voir [LICENSE](LICENSE)).
 > Si vous redistribuez, modifiez ou republiez tout ou partie de ce projet — `jmri-core`, `jmri-cli`, `jmri-mcp`,

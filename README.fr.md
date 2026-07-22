@@ -121,6 +121,7 @@ de la communauté (en anglais) : [Control Your JMRI Railroad by Chatting With Cl
 ## Configuration de l'assistant IA
 
 - [Claude Desktop et Claude Code](docs/llm-setup-claude.md)
+- [Codex (ChatGPT)](docs/llm-setup-codex.md)
 - [xiaozhi / Kira](docs/llm-setup-xiaozhi.md)
 
 ## Interface en ligne de commande
@@ -181,6 +182,7 @@ Voir [docs/install.md](docs/install.md) pour les détails d'installation.
 ### Assistants IA
 
 - **[Configuration Claude Desktop / Claude Code](docs/llm-setup-claude.md)** — connecter votre assistant IA à JMRI
+- **[Configuration Codex (ChatGPT)](docs/llm-setup-codex.md)** — enregistrer le serveur MCP auprès d'OpenAI Codex
 - **[Configuration xiaozhi / Kira](docs/llm-setup-xiaozhi.md)** — exposer le contrôle JMRI aux assistants vocaux
 
 ### Utilisateurs avancés

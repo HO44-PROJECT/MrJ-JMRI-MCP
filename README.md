@@ -116,6 +116,7 @@ Instructable: [Control Your JMRI Railroad by Chatting With Claude](https://www.i
 ## AI Assistant Setup
 
 - [Claude Desktop and Claude Code](docs/llm-setup-claude.md)
+- [Codex (ChatGPT)](docs/llm-setup-codex.md)
 - [xiaozhi / Kira](docs/llm-setup-xiaozhi.md)
 
 ## Command Line Interface
@@ -174,6 +175,7 @@ See [docs/install.md](docs/install.md) for installation details.
 ### AI assistants
 
 - **[Claude Desktop / Claude Code setup](docs/llm-setup-claude.md)** — connect your AI assistant to JMRI
+- **[Codex (ChatGPT) setup](docs/llm-setup-codex.md)** — register the MCP server with OpenAI Codex
 - **[xiaozhi / Kira setup](docs/llm-setup-xiaozhi.md)** — expose JMRI control to voice assistants
 
 ### Advanced users

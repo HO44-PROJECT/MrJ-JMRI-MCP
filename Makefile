@@ -29,6 +29,7 @@ codex-zip:
 
 # Run the full mocked test suite across all packages (live suite is opt-in, see docs/testing.md).
 test:
+	uv sync --all-packages --extra test
 	uv run --all-packages pytest
 
 # Remove all build artifacts (dist/).

@@ -46,6 +46,7 @@ from jmri_mcp.tools._common import (
     throttle_id,
 )
 from jmri_mcp.tools.mode import is_exhibition_mode
+from jmri_mcp.tools.power import _power_recovery_fields
 
 logger = logging.getLogger("jmri_mcp.tools")
 
@@ -417,7 +418,7 @@ def register(mcp) -> None:
             locomotives.append(entry)
 
         return {
-            "systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in power_results],
+            "systems": [{**compact_power(r), **_power_recovery_fields(r)} for r in power_results],
             "locomotives": locomotives,
         }
 
@@ -486,5 +487,5 @@ def register(mcp) -> None:
 
         return {
             "locomotives": locomotives,
-            "systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in power_results],
+            "systems": [{**compact_power(r), **_power_recovery_fields(r)} for r in power_results],
         }

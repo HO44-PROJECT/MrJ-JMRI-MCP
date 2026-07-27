@@ -6,12 +6,15 @@ One-shot async HTTP against JMRI's /json/power and /json/version endpoints
 
 import asyncio
 import logging
+import re
 from typing import Any
 
 from jmri_core.constants import endpoints
 from jmri_core.constants.client_tuning import (
     POWER_POST_RECHECK_DELAY_SECONDS,
+    POWER_UNKNOWN_JMRI_FIX_VERSION,
     POWER_UNKNOWN_RECOVERY_DELAY_SECONDS,
+    POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS,
 )
 from jmri_core.jmri_client._http import JmriError, _get_json, _post_json, _unwrap
 
@@ -35,6 +38,40 @@ async def get_version() -> str:
     if not isinstance(data, dict) or not data:
         raise JmriError("unexpected_payload", endpoint=endpoints.VERSION, payload=payload)
     return next(iter(data))
+
+
+def _parse_jmri_version(version: str) -> tuple[int, ...]:
+    """Parse a JMRI version string into a tuple of ints for ordered comparison.
+
+    e.g. "5.4.0" -> (5, 4, 0), "5.17.1" -> (5, 17, 1). Non-numeric
+    components (rare pre-release suffixes) are truncated at the first
+    non-digit dotted segment. A string compare would sort "5.9" after
+    "5.17" ("9" > "1" as characters), which is wrong -- this compares
+    numerically instead.
+    """
+    parts = re.match(r"(\d+(?:\.\d+)*)", version.strip())
+    if not parts:
+        return ()
+    return tuple(int(p) for p in parts.group(1).split("."))
+
+
+async def _self_recovers_from_unknown() -> bool:
+    """Whether the connected JMRI is new enough to self-recover a redundant-
+    power-command UNKNOWN flip on its own (JMRI/JMRI#15287, see
+    POWER_UNKNOWN_JMRI_FIX_VERSION's docstring).
+
+    Fails safe to False (use the old forced OFF/ON recovery) if the version
+    can't be determined or parsed -- an unknown/unparseable version is
+    never assumed to have the fix.
+    """
+    try:
+        version = await get_version()
+    except JmriError:
+        return False
+    parsed = _parse_jmri_version(version)
+    if not parsed:
+        return False
+    return parsed >= _parse_jmri_version(POWER_UNKNOWN_JMRI_FIX_VERSION)
 
 
 async def get_systems() -> list[dict[str, Any]]:
@@ -63,20 +100,37 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     not the POST response itself.
 
     Re-POSTing the SAME state JMRI/DCC++ already reports is a known JMRI
-    bug, not a safe no-op: it knocks the system into state UNKNOWN, which
-    is awkward to recover from (verified by the user against their real
-    installation). To avoid ever triggering it, this always re-reads
-    current state first and skips the POST entirely if it already matches
-    the request — "already ON" and "turn ON" must be indistinguishable
-    from the caller's point of view, not just an optimization.
+    bug (JMRI/JMRI#15279), not a safe no-op: on JMRI versions before the
+    fix (POWER_UNKNOWN_JMRI_FIX_VERSION), it knocks the system into state
+    UNKNOWN and does not recover on its own (verified by the user against
+    their real installation). To avoid ever triggering it, this always
+    re-reads current state first and skips the POST entirely if it already
+    matches the request — "already ON" and "turn ON" must be
+    indistinguishable from the caller's point of view, not just an
+    optimization.
 
-    UNKNOWN-after-ON recovery: if an ON was requested and the post-POST
-    re-read observes UNKNOWN (state 0) rather than ON, the command
-    station rejected/lost the ON and does not self-recover — this posts
-    OFF, waits POWER_UNKNOWN_RECOVERY_DELAY_SECONDS, then retries ON once
-    more (verified against the user's real DCC++ station). Only one retry
-    is attempted; a second failure is still reported honestly via
-    "confirmed": False rather than retried indefinitely.
+    UNKNOWN-after-ON recovery differs by JMRI version (both branches
+    verified live by the user against their own DCC-EX stations):
+
+    - JMRI >= POWER_UNKNOWN_JMRI_FIX_VERSION (fixed by JMRI/JMRI#15287):
+      the connection self-recovers to the correct state on its own,
+      typically within a few seconds — this only waits
+      POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS and re-reads, it does NOT
+      force an OFF/ON cycle (doing so would fight the station's own
+      recovery, and is unnecessary since a power command sent while still
+      UNKNOWN is honored immediately). "recovered_by_jmri_fix" is set True
+      in the result whenever this path actually observed a landing in
+      UNKNOWN and waited it out.
+    - JMRI < POWER_UNKNOWN_JMRI_FIX_VERSION: the station does not
+      self-recover — this posts OFF, waits
+      POWER_UNKNOWN_RECOVERY_DELAY_SECONDS, then retries ON once more, the
+      original workaround. "outdated_jmri_version" is set in the result
+      (the observed version string) so callers can tell the user to
+      upgrade JMRI instead of relying on this workaround indefinitely.
+
+    Only one retry/recovery wait is attempted either way; a second failure
+    is still reported honestly via "confirmed": False rather than retried
+    indefinitely.
     """
     desired = POWER_ON if turn_on else POWER_OFF
 
@@ -91,13 +145,33 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
 
     observed = await _post_and_reread(prefix, desired)
 
+    extra: dict[str, Any] = {}
     if turn_on and observed.get("state") == POWER_UNKNOWN:
-        logger.warning(
-            "set_power(%s, True): landed in UNKNOWN, recovering via OFF/wait/ON", prefix,
-        )
-        await _post_and_reread(prefix, POWER_OFF)
-        await asyncio.sleep(POWER_UNKNOWN_RECOVERY_DELAY_SECONDS)
-        observed = await _post_and_reread(prefix, POWER_ON)
+        if await _self_recovers_from_unknown():
+            logger.info(
+                "set_power(%s, True): landed in UNKNOWN, waiting %ss for JMRI's own recovery",
+                prefix, POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS,
+            )
+            await asyncio.sleep(POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS)
+            systems = await get_systems()
+            matches = [s for s in systems if str(s.get("prefix", "")) == prefix]
+            if not matches:
+                raise JmriError("prefix_vanished_after_post", prefix=prefix)
+            observed = matches[0]
+            extra["recovered_by_jmri_fix"] = True
+        else:
+            logger.warning(
+                "set_power(%s, True): landed in UNKNOWN, recovering via OFF/wait/ON"
+                " (JMRI is older than %s, no self-recovery)",
+                prefix, POWER_UNKNOWN_JMRI_FIX_VERSION,
+            )
+            await _post_and_reread(prefix, POWER_OFF)
+            await asyncio.sleep(POWER_UNKNOWN_RECOVERY_DELAY_SECONDS)
+            observed = await _post_and_reread(prefix, POWER_ON)
+            try:
+                extra["outdated_jmri_version"] = await get_version()
+            except JmriError:
+                pass
 
     confirmed = observed.get("state") == desired
     if not confirmed:
@@ -105,7 +179,7 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
             "set_power(%s, %s): requested state=%s but observed state=%s",
             prefix, turn_on, desired, observed.get("state"),
         )
-    return {**observed, "confirmed": confirmed}
+    return {**observed, "confirmed": confirmed, **extra}
 
 
 async def _post_and_reread(prefix: str, desired: int) -> dict[str, Any]:

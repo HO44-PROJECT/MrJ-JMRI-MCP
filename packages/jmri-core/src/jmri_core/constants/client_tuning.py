@@ -7,8 +7,30 @@ POWER_POST_RECHECK_DELAY_SECONDS = 1.0
 # (not ON, not the pre-existing OFF) -- the command station rejected/lost
 # the ON and needs a clean OFF->ON cycle to recover -- set_power posts OFF,
 # waits this long, then retries ON once. Verified against the user's real
-# DCC++ station: an ON that lands in UNKNOWN never self-recovers on its own.
+# DCC++ station on JMRI < POWER_UNKNOWN_JMRI_FIX_VERSION: an ON that lands
+# in UNKNOWN never self-recovers on its own there. On JMRI >=
+# POWER_UNKNOWN_JMRI_FIX_VERSION this forced OFF/ON cycle is no longer used
+# -- see POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS below.
 POWER_UNKNOWN_RECOVERY_DELAY_SECONDS = 2.0
+
+# JMRI version (JMRI/JMRI#15279, fixed by JMRI/JMRI#15287, shipped from
+# build 1381) from which a DCC-EX connection self-recovers from a
+# redundant-power-command UNKNOWN flip on its own, typically within a few
+# seconds -- no OFF/ON cycle needed or wanted anymore. Verified live by the
+# user against their own DCC-EX stations post-upgrade: UNKNOWN clears back
+# to the correct state by itself around ~5s, and any power command sent
+# while still UNKNOWN is honored immediately rather than fought by a
+# leftover forced cycle. Compared as a (major, minor, patch) tuple via
+# _parse_jmri_version, not a string compare (e.g. "5.9" must sort before
+# "5.17").
+POWER_UNKNOWN_JMRI_FIX_VERSION = "5.17.1"
+
+# How long to wait before re-reading state after a redundant power command
+# lands in UNKNOWN, on JMRI >= POWER_UNKNOWN_JMRI_FIX_VERSION -- just long
+# enough for the DCC-EX connection's own self-recovery (observed ~5s by the
+# user) to have happened, so the re-read reports the real settled state
+# instead of a still-in-flight UNKNOWN.
+POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS = 5.0
 
 WS_CONNECT_TIMEOUT_SECONDS = 5.0
 WS_REQUEST_TIMEOUT_SECONDS = 5.0

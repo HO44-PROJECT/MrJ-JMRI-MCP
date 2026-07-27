@@ -1511,26 +1511,53 @@ invocation in the case where a POST does end up being sent (current state
 differs from requested) — accepted deliberately, since avoiding the
 UNKNOWN failure mode matters more than saving one HTTP round-trip.
 
-## `set_power`: OFF/wait/ON recovery when a power-ON lands in UNKNOWN
+## `set_power`: recovery when a power-ON lands in UNKNOWN, version-branched
 
 A second, distinct UNKNOWN failure mode from the redundant-POST bug
 above: a command station can also reject or lose a genuine ON request,
-landing the post-POST re-read on state UNKNOWN instead of ON — and it
-does not self-recover from this on its own.
+landing the post-POST re-read on state UNKNOWN instead of ON. How this
+recovers depends on the connected JMRI's version, since JMRI/JMRI#15287
+(shipped from build 1381 / JMRI 5.17.1) changed DCC-EX's own behavior
+here — verified live by the user against their own DCC-EX stations
+post-upgrade.
 
-When `set_power(prefix, turn_on=True)`'s post-POST re-read observes
-UNKNOWN, it posts OFF for that system, waits
-`POWER_UNKNOWN_RECOVERY_DELAY_SECONDS`, then retries ON once more and
-re-reads. Only one retry is attempted — a second failure is still
+`set_power` queries `get_version()` and compares it against
+`POWER_UNKNOWN_JMRI_FIX_VERSION` ("5.17.1", in `client_tuning.py`) via
+`_parse_jmri_version`/`_self_recovers_from_unknown` — an int-tuple
+comparison, not a string compare (a string compare would wrongly sort
+"5.9" after "5.17", and "5.17.10" before "5.17.1"). If the version can't
+be determined or parsed, it fails safe to the older/more conservative
+path below rather than assuming the fix is present.
+
+- **JMRI >= 5.17.1** (has the fix): DCC-EX self-recovers from the UNKNOWN
+  flip on its own within a few seconds, and honors any power command sent
+  during that window immediately — no forced cycle is wanted anymore, it
+  would only fight the connection's own recovery. `set_power` just waits
+  `POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS` (5s) and re-reads once. The
+  result includes `recovered_by_jmri_fix: True`.
+- **JMRI < 5.17.1** (no fix): does not self-recover. `set_power` posts
+  OFF for that system, waits `POWER_UNKNOWN_RECOVERY_DELAY_SECONDS`, then
+  retries ON once more and re-reads — the original workaround, unchanged.
+  The result includes `outdated_jmri_version` (the version string) so
+  callers can tell the user to upgrade JMRI.
+
+Only one recovery attempt is made either way — a second failure is still
 reported honestly via `confirmed: False` rather than retried
 indefinitely. This recovery path only triggers for `turn_on=True`; a
 power-OFF that lands in UNKNOWN is reported honestly with no retry, since
-the recovery cycle itself ends in an ON state and would contradict the
-caller's OFF request.
+the old-JMRI recovery cycle itself ends in an ON state and would
+contradict the caller's OFF request.
 
 Every caller of `set_power` (the MCP tool, `jmri-cli power on`/`off`, and
 `_set_power_all` behind `power_off_all`/`power_on_all`) inherits this
-recovery automatically, same as the redundant-POST guard above.
+version-branched recovery automatically, same as the redundant-POST guard
+above. The MCP tool layer's `_power_recovery_fields()` helper
+(`tools/power.py`, reused by `tools/meta.py`'s `start_session`/
+`end_session`) re-splices `outdated_jmri_version`/`recovered_by_jmri_fix`
+into every compacted power result, since `compact_power()` itself is a
+narrow name/state/default projection that doesn't carry extra fields
+through on its own. `jmri-cli power on`/`off` prints the upgrade note to
+stderr via the `cli.power_unknown_outdated_jmri` i18n key when it fires.
 
 ## `get_power` / `list_systems`: connection name doubles as system description
 

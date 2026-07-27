@@ -16,6 +16,23 @@ from jmri_mcp.tools.mode import is_exhibition_mode
 logger = logging.getLogger("jmri_mcp.tools")
 
 
+def _power_recovery_fields(result: dict) -> dict:
+    """Extract set_power's "confirmed"/recovery-path fields for the MCP response.
+
+    "outdated_jmri_version" is only present when a redundant ON landed in
+    UNKNOWN and JMRI was found to be older than the JMRI/JMRI#15287 fix —
+    its presence is the signal to tell the user to upgrade JMRI.
+    "recovered_by_jmri_fix" is only present when the fixed version's own
+    self-recovery was observed and waited out.
+    """
+    fields = {"confirmed": result["confirmed"]}
+    if "outdated_jmri_version" in result:
+        fields["outdated_jmri_version"] = result["outdated_jmri_version"]
+    if "recovered_by_jmri_fix" in result:
+        fields["recovered_by_jmri_fix"] = result["recovered_by_jmri_fix"]
+    return fields
+
+
 def register(mcp) -> None:
     """Register this module's tools on `mcp`.
 
@@ -84,9 +101,11 @@ def register(mcp) -> None:
         Safe to call repeatedly with the same turn_on value, including
         right after another call already set that state: current state is
         always checked first, and nothing is sent to JMRI if it already
-        matches the request. This is not just an optimization — re-POSTing
-        a state JMRI already reports is a real JMRI/DCC++ bug that knocks
-        the system into UNKNOWN, which is awkward to recover from.
+        matches the request — re-POSTing a state JMRI already reports is a
+        real bug (JMRI/JMRI#15279) that knocks the system into UNKNOWN.
+        JMRI 5.17.1+ self-recovers from that within seconds; older JMRI
+        doesn't, so this result may include "outdated_jmri_version" — tell
+        the user to upgrade JMRI rather than expect this to self-heal.
 
         In exhibition mode, turn_on=True is REFUSED (returns an error,
         power stays off) — turn_on=False (an emergency power cut) always
@@ -101,7 +120,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("set_power(%r, %r) failed: %s", system, turn_on, exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {**compact_power(result), "confirmed": result["confirmed"]}
+        return {**compact_power(result), **_power_recovery_fields(result)}
 
     @mcp.tool()
     async def power_off_all() -> dict:
@@ -125,15 +144,15 @@ def register(mcp) -> None:
         only a real emergency.
 
         Each system's result is re-read and confirmed like set_power —
-        check "confirmed" per system rather than assuming the whole
-        layout is now unpowered.
+        check "confirmed" per system (see set_power's docstring for the
+        "outdated_jmri_version" upgrade note, also per system here).
         """
         try:
             results = await _power_off_all()
         except JmriError as exc:
             logger.warning("power_off_all failed: %s", exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {"systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in results]}
+        return {"systems": [{**compact_power(r), **_power_recovery_fields(r)} for r in results]}
 
     @mcp.tool()
     async def power_on_all() -> dict:
@@ -153,9 +172,9 @@ def register(mcp) -> None:
         "undo" of power_off_all or emergency_stop_all. Tell the user
         locomotives will need to be started again after calling this.
 
-        Each system's result is re-read and confirmed the same way
-        set_power does (see its docstring) — check "confirmed" per system
-        rather than assuming the whole layout is now powered.
+        Each system's result is re-read and confirmed like set_power —
+        check "confirmed" per system (see set_power's docstring for the
+        "outdated_jmri_version" upgrade note, also per system here).
 
         In exhibition mode this is REFUSED entirely (returns an error,
         no system is touched) — power_off_all is unaffected. See
@@ -168,7 +187,7 @@ def register(mcp) -> None:
         except JmriError as exc:
             logger.warning("power_on_all failed: %s", exc)
             return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
-        return {"systems": [{**compact_power(r), "confirmed": r["confirmed"]} for r in results]}
+        return {"systems": [{**compact_power(r), **_power_recovery_fields(r)} for r in results]}
 
     @mcp.tool()
     async def system_status() -> dict:

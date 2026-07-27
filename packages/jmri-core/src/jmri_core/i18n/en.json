@@ -306,6 +306,7 @@
         "sniff_listening": "Listening for JMRI messages, Ctrl-C to stop...",
         "jmri_unreachable": "JMRI unreachable: {message}",
         "power_systems_unavailable": "Power systems unavailable: {message}",
+        "power_unknown_outdated_jmri": "NOTE: this JMRI ({version}) landed in UNKNOWN and needed a forced OFF/ON cycle to recover — JMRI 5.17.1+ fixes this connection to self-recover on its own (JMRI/JMRI#15287). Consider upgrading JMRI.",
         "throttle_error_stopping_address": "Error stopping address={address}: {message}",
         "throttle_error_address": "Error: address={address}: {message}",
         "throttle_error_function": "Error: F{function}: {message}",

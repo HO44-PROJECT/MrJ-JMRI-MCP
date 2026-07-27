@@ -215,17 +215,22 @@ async def _power_set(args: argparse.Namespace, turn_on: bool) -> int:
 
     results = []
     all_confirmed = True
+    outdated_version = None
     try:
         for target in targets:
             result = await set_power(target["prefix"], turn_on)
             results.append(result)
             if not result["confirmed"]:
                 all_confirmed = False
+            if "outdated_jmri_version" in result:
+                outdated_version = result["outdated_jmri_version"]
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
         return 1
 
     _print_systems_table(results)
+    if outdated_version is not None:
+        print(i18n.t("cli.power_unknown_outdated_jmri", version=outdated_version), file=sys.stderr)
     if not all_confirmed:
         print(i18n.t("cli.not_every_system_confirmed", state_name=state_name), file=sys.stderr)
         return 1

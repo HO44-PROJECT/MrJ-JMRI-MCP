@@ -6,12 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 
 def default_source_dir() -> Path:

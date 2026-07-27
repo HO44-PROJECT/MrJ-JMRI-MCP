@@ -42,8 +42,11 @@ async def get_turnouts() -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise JmriError("unexpected_payload", endpoint=endpoints.TURNOUTS, payload=payload)
     turnouts = [_unwrap(entry) for entry in payload]
-    logger.info("Discovered %d turnout(s): %s",
-                len(turnouts), [t.get("userName") or t.get("name") for t in turnouts])
+    logger.info(
+        "Discovered %d turnout(s): %s",
+        len(turnouts),
+        [t.get("userName") or t.get("name") for t in turnouts],
+    )
     return turnouts
 
 
@@ -73,7 +76,10 @@ async def set_turnout(name: str, thrown: bool) -> dict[str, Any]:
     if not confirmed:
         logger.warning(
             "set_turnout(%s, %s): requested state=%s but observed state=%s",
-            name, thrown, desired, observed.get("state"),
+            name,
+            thrown,
+            desired,
+            observed.get("state"),
         )
     return {**observed, "confirmed": confirmed}
 
@@ -96,17 +102,17 @@ def resolve_turnout(query: str, turnouts: list[dict[str, Any]]) -> dict[str, Any
     labels = [str(t.get("userName") or t.get("name", "")) for t in turnouts]
 
     exact = [
-        t for t in turnouts
-        if str(t.get("name", "")).casefold() == q
-        or str(t.get("userName") or "").casefold() == q
+        t
+        for t in turnouts
+        if str(t.get("name", "")).casefold() == q or str(t.get("userName") or "").casefold() == q
     ]
     if len(exact) == 1:
         return exact[0]
 
     partial = [
-        t for t in turnouts
-        if q in str(t.get("userName") or "").casefold()
-        or q in str(t.get("name", "")).casefold()
+        t
+        for t in turnouts
+        if q in str(t.get("userName") or "").casefold() or q in str(t.get("name", "")).casefold()
     ]
     if len(partial) == 1:
         return partial[0]

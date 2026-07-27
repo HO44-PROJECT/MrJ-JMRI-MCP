@@ -9,11 +9,7 @@ typing the leaf name too.
 import argparse
 import sys
 
-from tabulate import tabulate
-
 from jmri_core import i18n
-from jmri_cli._match import find_glob, find_regex
-from jmri_cli._sort import mark_sorted_header, sort_rows
 from jmri_core.constants.cli import POWER_STATE_NAMES, SORT_INDICATOR
 from jmri_core.jmri_client import (
     JmriError,
@@ -22,7 +18,11 @@ from jmri_core.jmri_client import (
     resolve_system,
     set_power,
 )
-from jmri_core.jmri_client.power import POWER_ON, POWER_OFF
+from jmri_core.jmri_client.power import POWER_OFF, POWER_ON
+from tabulate import tabulate
+
+from jmri_cli._match import find_glob, find_regex
+from jmri_cli._sort import mark_sorted_header, sort_rows
 
 
 def _state_name(system: dict) -> str:
@@ -39,13 +39,21 @@ SORT_FIELDS: dict[str, tuple[int, bool]] = {
 
 
 def _headers() -> list[str]:
-    return [i18n.t("headers.system_id"), i18n.t("headers.system"),
-            i18n.t("headers.state"), i18n.t("headers.default")]
+    return [
+        i18n.t("headers.system_id"),
+        i18n.t("headers.system"),
+        i18n.t("headers.state"),
+        i18n.t("headers.default"),
+    ]
 
 
 def _row(system: dict) -> list:
-    return [system.get("prefix", "?"), system.get("name", "?"),
-            _state_name(system), "yes" if system.get("default") else ""]
+    return [
+        system.get("prefix", "?"),
+        system.get("name", "?"),
+        _state_name(system),
+        "yes" if system.get("default") else "",
+    ]
 
 
 def _print_systems_table(systems: list[dict], sort_by: str = "byname") -> None:

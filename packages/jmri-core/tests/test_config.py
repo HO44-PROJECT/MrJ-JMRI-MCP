@@ -1,5 +1,4 @@
 import pytest
-
 from jmri_core.config import DEFAULT_JMRI_URL, get_exhibition_start_on, get_jmri_url
 
 

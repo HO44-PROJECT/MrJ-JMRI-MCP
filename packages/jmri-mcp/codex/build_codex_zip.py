@@ -1,10 +1,9 @@
-from pathlib import Path
 import argparse
 import shutil
 import tempfile
 import tomllib
 import zipfile
-
+from pathlib import Path
 
 parser = argparse.ArgumentParser(description="Build the standalone Codex distributable")
 parser.add_argument(

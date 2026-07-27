@@ -8,7 +8,8 @@ tools depend on it — this is the lowest common module for the two.
 """
 
 import asyncio
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from jmri_core.constants.client_tuning import RAMP_STEPS_PER_SECOND
 from jmri_core.constants.protocol import FIELD_FORWARD, FIELD_SPEED

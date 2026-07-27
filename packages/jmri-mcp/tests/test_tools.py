@@ -1,9 +1,8 @@
 import json
 
 import pytest
-from mcp.server.fastmcp import FastMCP
-
 from jmri_mcp import tools
+from mcp.server.fastmcp import FastMCP
 
 
 def make_server() -> FastMCP:
@@ -35,7 +34,6 @@ async def test_list_systems_registered_and_compact(mock_power):
 async def test_list_systems_reports_jmri_error_without_raising(monkeypatch):
     import respx
     from httpx import ConnectError
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
@@ -67,15 +65,20 @@ async def test_get_power_unknown_system_returns_error_not_exception(mock_power):
 async def test_compact_power_preserves_parenthetical_description(monkeypatch):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(
-            return_value=Response(200, json=[
-                {"type": "power", "data": {"name": "zou (test)", "prefix": "Z", "state": 2, "default": True}},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "power",
+                        "data": {"name": "zou (test)", "prefix": "Z", "state": 2, "default": True},
+                    },
+                ],
+            )
         )
         out = await call(mcp, "get_power", system="zou")
     assert out["name"] == "zou (test)"
@@ -84,7 +87,6 @@ async def test_compact_power_preserves_parenthetical_description(monkeypatch):
 async def test_system_status_reports_version_and_systems(mock_power, version_fixture):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
@@ -102,7 +104,6 @@ async def test_system_status_reports_version_and_systems(mock_power, version_fix
 async def test_system_status_unreachable_reports_honestly():
     import respx
     from httpx import ConnectError
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
@@ -124,24 +125,45 @@ async def test_list_roster_registered_and_compact(mock_roster, mock_power):
     assert out == {
         "roster": [
             {
-                "name": "141R", "address": 2, "road": "Mikado 141 R",
-                "road_number": "141 R 1246, dépôt de Miramas", "manufacturer": "Jouef",
-                "model": "8273", "owner": "SNCF", "date_modified": "2024-01-20T13:18:40.774+00:00",
-                "groups": ["test"], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+                "name": "141R",
+                "address": 2,
+                "road": "Mikado 141 R",
+                "road_number": "141 R 1246, dépôt de Miramas",
+                "manufacturer": "Jouef",
+                "model": "8273",
+                "owner": "SNCF",
+                "date_modified": "2024-01-20T13:18:40.774+00:00",
+                "groups": ["test"],
+                "dcc_system": None,
+                "dcc_system_name": "DCC++ Raijin",
                 "max_speed_percent": 100,
             },
             {
-                "name": "Autorail", "address": 4, "road": "Railcar",
-                "road_number": "", "manufacturer": "", "model": "4185A",
-                "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-                "groups": [], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+                "name": "Autorail",
+                "address": 4,
+                "road": "Railcar",
+                "road_number": "",
+                "manufacturer": "",
+                "model": "4185A",
+                "owner": "",
+                "date_modified": "2024-01-20T13:18:40.774+00:00",
+                "groups": [],
+                "dcc_system": None,
+                "dcc_system_name": "DCC++ Raijin",
                 "max_speed_percent": 100,
             },
             {
-                "name": "Boite à Sel", "address": 8, "road": "",
-                "road_number": "", "manufacturer": "", "model": "",
-                "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-                "groups": [], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+                "name": "Boite à Sel",
+                "address": 8,
+                "road": "",
+                "road_number": "",
+                "manufacturer": "",
+                "model": "",
+                "owner": "",
+                "date_modified": "2024-01-20T13:18:40.774+00:00",
+                "groups": [],
+                "dcc_system": None,
+                "dcc_system_name": "DCC++ Raijin",
                 "max_speed_percent": 100,
             },
         ]
@@ -162,10 +184,17 @@ async def test_find_locomotive_resolves_fuzzy_name(mock_roster, mock_power):
 
     out = await call(mcp, "find_locomotive", name="autorail")
     assert out == {
-        "name": "Autorail", "address": 4, "road": "Railcar",
-        "road_number": "", "manufacturer": "", "model": "4185A",
-        "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-        "groups": [], "dcc_system": None, "dcc_system_name": "DCC++ Raijin",
+        "name": "Autorail",
+        "address": 4,
+        "road": "Railcar",
+        "road_number": "",
+        "manufacturer": "",
+        "model": "4185A",
+        "owner": "",
+        "date_modified": "2024-01-20T13:18:40.774+00:00",
+        "groups": [],
+        "dcc_system": None,
+        "dcc_system_name": "DCC++ Raijin",
         "max_speed_percent": 100,
     }
 
@@ -176,19 +205,22 @@ async def test_find_locomotive_accent_insensitive(mock_roster, mock_power):
     assert out["name"] == "Boite à Sel"
 
 
-async def test_find_locomotive_reports_explicit_dcc_system_not_default(roster_fixture, power_fixture):
+async def test_find_locomotive_reports_explicit_dcc_system_not_default(
+    roster_fixture, power_fixture
+):
     """A locomotive WITH a DccSystem attribute set must still show its own
     system, not silently fall back to the default one."""
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     roster_fixture[1]["data"]["attributes"] = [{"name": "DccSystem", "value": "O"}]
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     try:
         mcp = make_server()
@@ -328,7 +360,9 @@ async def test_set_speed_auto_acquires_using_roster_dcc_system_prefix(fake_jmri,
     assert client._throttles[throttle_id(5)]["prefix"] == "T"
 
 
-async def test_set_speed_auto_acquire_falls_back_to_default_when_no_dcc_system(fake_jmri, roster_fixture):
+async def test_set_speed_auto_acquire_falls_back_to_default_when_no_dcc_system(
+    fake_jmri, roster_fixture
+):
     """The common case (no DccSystem attribute set) must keep going to
     JMRI's default command station, exactly as before this fix."""
     from jmri_core.jmri_ws import get_ws_client
@@ -451,7 +485,9 @@ async def test_set_speed_with_direction_flips_while_moving(fake_jmri):
     assert out == {"address": 3, "speed_percent": 40.0, "direction": "forward"}
 
 
-async def test_set_speed_with_direction_already_facing_that_way_no_extra_ramp(fake_jmri, monkeypatch):
+async def test_set_speed_with_direction_already_facing_that_way_no_extra_ramp(
+    fake_jmri, monkeypatch
+):
     """No wasted flip-through-zero when the loco already faces the
     requested direction -- execute_speed_change must not call
     set_direction at all in that case."""
@@ -578,7 +614,13 @@ async def test_set_speed_ramped_direction_flips_while_moving(fake_jmri, monkeypa
     await call(mcp, "set_direction", address=3, direction="reverse")
     await call(mcp, "set_speed", address=3, speed_percent=30)
     out = await call(
-        mcp, "set_speed_ramped", address=3, speed_percent=40, direction="forward", rampup_seconds=1, rampdown_seconds=1
+        mcp,
+        "set_speed_ramped",
+        address=3,
+        speed_percent=40,
+        direction="forward",
+        rampup_seconds=1,
+        rampdown_seconds=1,
     )
     assert out == {"address": 3, "speed_percent": 40.0, "direction": "forward"}
 
@@ -690,9 +732,27 @@ async def test_list_lights_registered_and_compact(mock_lights, mock_power):
     out = await call(mcp, "list_lights")
     assert out == {
         "lights": [
-            {"name": "Depot Lighting", "state": "OFF", "dcc_system_name": None, "dcc_address": 1, "comment": None},
-            {"name": "Street Lamps", "state": "ON", "dcc_system_name": None, "dcc_address": 2, "comment": None},
-            {"name": "IL3", "state": "OFF", "dcc_system_name": None, "dcc_address": 3, "comment": None},
+            {
+                "name": "Depot Lighting",
+                "state": "OFF",
+                "dcc_system_name": None,
+                "dcc_address": 1,
+                "comment": None,
+            },
+            {
+                "name": "Street Lamps",
+                "state": "ON",
+                "dcc_system_name": None,
+                "dcc_address": 2,
+                "comment": None,
+            },
+            {
+                "name": "IL3",
+                "state": "OFF",
+                "dcc_system_name": None,
+                "dcc_address": 3,
+                "comment": None,
+            },
         ]
     }
 
@@ -701,15 +761,20 @@ async def test_list_lights_dcc_system_name_resolved_from_prefix(mock_power):
     """Light "OL1" -> prefix "O" -> power_fixture's "DCC++ Ohara"."""
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{MOCK_JMRI_URL}/json/lights").mock(
-            return_value=Response(200, json=[
-                {"type": "light", "data": {"name": "OL1", "userName": "Quai central", "state": 4}},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "light",
+                        "data": {"name": "OL1", "userName": "Quai central", "state": 4},
+                    },
+                ],
+            )
         )
         out = await call(mcp, "list_lights")
     assert out["lights"][0]["dcc_system_name"] == "DCC++ Ohara"
@@ -727,8 +792,11 @@ async def test_get_light_resolves_by_fragment(mock_lights, mock_power):
     mcp = make_server()
     out = await call(mcp, "get_light", name="depot")
     assert out == {
-        "name": "Depot Lighting", "state": "OFF", "dcc_system_name": None,
-        "dcc_address": 1, "comment": None,
+        "name": "Depot Lighting",
+        "state": "OFF",
+        "dcc_system_name": None,
+        "dcc_address": 1,
+        "comment": None,
     }
 
 
@@ -741,23 +809,35 @@ async def test_get_light_unknown_name_returns_error_not_exception(mock_lights):
 async def test_set_light_turns_on_and_confirms(mock_power):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{MOCK_JMRI_URL}/json/lights").mock(
-            return_value=Response(200, json=[
-                {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": 2}},
-                {"type": "light", "data": {"name": "IL2", "userName": "Street Lamps", "state": 2}},
-                {"type": "light", "data": {"name": "IL3", "userName": None, "state": 4}},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "light",
+                        "data": {"name": "IL1", "userName": "Depot Lighting", "state": 2},
+                    },
+                    {
+                        "type": "light",
+                        "data": {"name": "IL2", "userName": "Street Lamps", "state": 2},
+                    },
+                    {"type": "light", "data": {"name": "IL3", "userName": None, "state": 4}},
+                ],
+            )
         )
         router.post(f"{MOCK_JMRI_URL}/json/light/IL1").mock(return_value=Response(200, json={}))
         out = await call(mcp, "set_light", name="depot", turn_on=True)
     assert out == {
-        "name": "Depot Lighting", "state": "ON", "dcc_system_name": None,
-        "dcc_address": 1, "comment": None, "confirmed": True,
+        "name": "Depot Lighting",
+        "state": "ON",
+        "dcc_system_name": None,
+        "dcc_address": 1,
+        "comment": None,
+        "confirmed": True,
     }
 
 
@@ -777,17 +857,28 @@ async def test_list_turnouts_registered_and_compact(mock_turnouts, mock_power):
     assert out == {
         "turnouts": [
             {
-                "name": "Layout Turnout A", "state": "CLOSED", "has_feedback_sensor": True,
-                "dcc_system_name": None, "dcc_address": 100, "comment": "Yard throat switch",
+                "name": "Layout Turnout A",
+                "state": "CLOSED",
+                "has_feedback_sensor": True,
+                "dcc_system_name": None,
+                "dcc_address": 100,
+                "comment": "Yard throat switch",
             },
             {
-                "name": "Layout Turnout BL", "state": "CLOSED", "has_feedback_sensor": True,
-                "dcc_system_name": None, "dcc_address": 101, "comment": None,
+                "name": "Layout Turnout BL",
+                "state": "CLOSED",
+                "has_feedback_sensor": True,
+                "dcc_system_name": None,
+                "dcc_address": 101,
+                "comment": None,
             },
             {
-                "name": "A / Mountain A -> Platform A/B", "state": "THROWN",
-                "has_feedback_sensor": False, "dcc_system_name": "DCC++ Ohara",
-                "dcc_address": 23, "comment": None,
+                "name": "A / Mountain A -> Platform A/B",
+                "state": "THROWN",
+                "has_feedback_sensor": False,
+                "dcc_system_name": "DCC++ Ohara",
+                "dcc_address": 23,
+                "comment": None,
             },
         ]
     }
@@ -804,9 +895,12 @@ async def test_get_turnout_resolves_by_fragment(mock_turnouts, mock_power):
     mcp = make_server()
     out = await call(mcp, "get_turnout", name="Layout Turnout A")
     assert out == {
-        "name": "Layout Turnout A", "state": "CLOSED",
-        "has_feedback_sensor": True, "dcc_system_name": None,
-        "dcc_address": 100, "comment": "Yard throat switch",
+        "name": "Layout Turnout A",
+        "state": "CLOSED",
+        "has_feedback_sensor": True,
+        "dcc_system_name": None,
+        "dcc_address": 100,
+        "comment": "Yard throat switch",
     }
 
 
@@ -819,16 +913,24 @@ async def test_get_turnout_unknown_name_returns_error_not_exception(mock_turnout
 async def test_set_turnout_throws_and_confirms(mock_power):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(
-            return_value=Response(200, json=[
-                {"type": "turnout", "data": {"name": "IT100", "userName": "Layout Turnout A", "state": 4}},
-                {"type": "turnout", "data": {"name": "IT101", "userName": "Layout Turnout BL", "state": 2}},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "turnout",
+                        "data": {"name": "IT100", "userName": "Layout Turnout A", "state": 4},
+                    },
+                    {
+                        "type": "turnout",
+                        "data": {"name": "IT101", "userName": "Layout Turnout BL", "state": 2},
+                    },
+                ],
+            )
         )
         router.post(f"{MOCK_JMRI_URL}/json/turnout/IT100").mock(return_value=Response(200, json={}))
         out = await call(mcp, "set_turnout", name="Layout Turnout A", thrown=True)
@@ -847,15 +949,20 @@ async def test_set_turnout_dcc_system_name_resolved_from_prefix(mock_power):
     """Turnout "OT23" -> prefix "O" -> power_fixture's "DCC++ Ohara"."""
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(
-            return_value=Response(200, json=[
-                {"type": "turnout", "data": {"name": "OT23", "userName": "Mountain A", "state": 4}},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "turnout",
+                        "data": {"name": "OT23", "userName": "Mountain A", "state": 4},
+                    },
+                ],
+            )
         )
         router.post(f"{MOCK_JMRI_URL}/json/turnout/OT23").mock(return_value=Response(200, json={}))
         out = await call(mcp, "set_turnout", name="Mountain A", thrown=True)
@@ -1015,12 +1122,21 @@ async def test_list_signals_registered_and_compact(mock_signals, mock_power):
     assert out == {
         "signals": [
             {
-                "name": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False,
-                "dcc_system_name": "DCC++ Zou", "dcc_address": 31, "comment": None,
+                "name": "Entry Signal A",
+                "aspect": "Hp1",
+                "lit": True,
+                "held": False,
+                "dcc_system_name": "DCC++ Zou",
+                "dcc_address": 31,
+                "comment": None,
             },
             {
-                "name": "ZF$dsm:DB-HV-1969:block(45)", "aspect": "Hp0", "lit": True,
-                "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": 45,
+                "name": "ZF$dsm:DB-HV-1969:block(45)",
+                "aspect": "Hp0",
+                "lit": True,
+                "held": False,
+                "dcc_system_name": "DCC++ Zou",
+                "dcc_address": 45,
                 "comment": None,
             },
         ]
@@ -1038,8 +1154,12 @@ async def test_get_signal_resolves_by_fragment(mock_signals, mock_power):
     mcp = make_server()
     out = await call(mcp, "get_signal", name="Entry Signal")
     assert out == {
-        "name": "Entry Signal A", "aspect": "Hp1", "lit": True,
-        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": 31,
+        "name": "Entry Signal A",
+        "aspect": "Hp1",
+        "lit": True,
+        "held": False,
+        "dcc_system_name": "DCC++ Zou",
+        "dcc_address": 31,
         "comment": None,
     }
 
@@ -1053,19 +1173,27 @@ async def test_get_signal_unknown_name_returns_error_not_exception(mock_signals)
 async def test_set_signal_sets_aspect_and_confirms(mock_power):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     post_bodies = []
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
-            return_value=Response(200, json=[
-                {"type": "signalMast", "data": {
-                    "name": "ZF$dsm:DB-HV-1969:block(31)", "userName": "Entry Signal A",
-                    "aspect": "Hp0", "lit": True, "held": False,
-                }},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "signalMast",
+                        "data": {
+                            "name": "ZF$dsm:DB-HV-1969:block(31)",
+                            "userName": "Entry Signal A",
+                            "aspect": "Hp0",
+                            "lit": True,
+                            "held": False,
+                        },
+                    },
+                ],
+            )
         )
 
         def post_signal(request):
@@ -1077,9 +1205,14 @@ async def test_set_signal_sets_aspect_and_confirms(mock_power):
         )
         out = await call(mcp, "set_signal", name="Entry Signal A", aspect="Hp0")
     assert out == {
-        "name": "Entry Signal A", "aspect": "Hp0", "lit": True,
-        "held": False, "dcc_system_name": "DCC++ Zou", "dcc_address": 31,
-        "comment": None, "confirmed": True,
+        "name": "Entry Signal A",
+        "aspect": "Hp0",
+        "lit": True,
+        "held": False,
+        "dcc_system_name": "DCC++ Zou",
+        "dcc_address": 31,
+        "comment": None,
+        "confirmed": True,
     }
     # Regression guard: JMRI's JsonSignalMastHttpService.doPost() reads the
     # "state" field, not "aspect" - sending the wrong key is silently
@@ -1137,12 +1270,24 @@ async def test_list_blocks_registered_and_compact(mock_blocks):
     assert out == {
         "blocks": [
             {
-                "name": "Montagne A", "state": "UNOCCUPIED", "sensor": "RS24", "value": None,
-                "length": 934.24, "curvature": 2, "speed": "Fifty", "comment": None,
+                "name": "Montagne A",
+                "state": "UNOCCUPIED",
+                "sensor": "RS24",
+                "value": None,
+                "length": 934.24,
+                "curvature": 2,
+                "speed": "Fifty",
+                "comment": None,
             },
             {
-                "name": "Montagne B", "state": "OCCUPIED", "sensor": "RS42", "value": None,
-                "length": 1661.63, "curvature": 1, "speed": "Sixty", "comment": None,
+                "name": "Montagne B",
+                "state": "OCCUPIED",
+                "sensor": "RS42",
+                "value": None,
+                "length": 1661.63,
+                "curvature": 1,
+                "speed": "Sixty",
+                "comment": None,
             },
         ]
     }
@@ -1159,8 +1304,14 @@ async def test_get_block_resolves_by_fragment(mock_blocks):
     mcp = make_server()
     out = await call(mcp, "get_block", name="montagne b")
     assert out == {
-        "name": "Montagne B", "state": "OCCUPIED", "sensor": "RS42", "value": None,
-        "length": 1661.63, "curvature": 1, "speed": "Sixty", "comment": None,
+        "name": "Montagne B",
+        "state": "OCCUPIED",
+        "sensor": "RS42",
+        "value": None,
+        "length": 1661.63,
+        "curvature": 1,
+        "speed": "Sixty",
+        "comment": None,
     }
 
 
@@ -1173,7 +1324,6 @@ async def test_get_block_unknown_name_returns_error_not_exception(mock_blocks):
 async def test_power_off_all_confirms_every_system(monkeypatch):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
@@ -1185,13 +1335,30 @@ async def test_power_off_all_confirms_every_system(monkeypatch):
 
     def get_power(request):
         payload = [
-            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
-            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Ohara",
+                    "prefix": "O",
+                    "state": live_state["O"],
+                    "default": False,
+                },
+            },
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Raijin",
+                    "prefix": "R",
+                    "state": live_state["R"],
+                    "default": True,
+                },
+            },
         ]
         return Response(200, json=payload)
 
     def post_power(request):
         import json as _json
+
         body = _json.loads(request.content)
         live_state[body["prefix"]] = body["state"]
         return Response(200, json={})
@@ -1219,7 +1386,6 @@ async def test_power_off_all_reports_error_honestly(monkeypatch):
 async def test_power_on_all_confirms_every_system(monkeypatch):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
@@ -1231,13 +1397,30 @@ async def test_power_on_all_confirms_every_system(monkeypatch):
 
     def get_power(request):
         payload = [
-            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
-            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Ohara",
+                    "prefix": "O",
+                    "state": live_state["O"],
+                    "default": False,
+                },
+            },
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Raijin",
+                    "prefix": "R",
+                    "state": live_state["R"],
+                    "default": True,
+                },
+            },
         ]
         return Response(200, json=payload)
 
     def post_power(request):
         import json as _json
+
         body = _json.loads(request.content)
         live_state[body["prefix"]] = body["state"]
         return Response(200, json={})
@@ -1389,9 +1572,7 @@ async def test_exhibition_mode_forces_fixed_forward_speed_ramped(fake_jmri):
     mcp = make_server()
     await call(mcp, "enter_exhibition_mode")
 
-    out = await call(
-        mcp, "set_speed_ramped", address=3, speed_percent=90, direction="reverse"
-    )
+    out = await call(mcp, "set_speed_ramped", address=3, speed_percent=90, direction="reverse")
     assert out["address"] == 3
     assert out["speed_percent"] == 30.0
     assert out["direction"] == "forward"
@@ -1478,7 +1659,6 @@ async def test_exhibition_mode_blocks_set_power_turn_on(monkeypatch):
 async def test_exhibition_mode_still_allows_power_off_all(monkeypatch):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
@@ -1489,13 +1669,30 @@ async def test_exhibition_mode_still_allows_power_off_all(monkeypatch):
 
     def get_power(request):
         payload = [
-            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
-            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Ohara",
+                    "prefix": "O",
+                    "state": live_state["O"],
+                    "default": False,
+                },
+            },
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Raijin",
+                    "prefix": "R",
+                    "state": live_state["R"],
+                    "default": True,
+                },
+            },
         ]
         return Response(200, json=payload)
 
     def post_power(request):
         import json as _json
+
         body = _json.loads(request.content)
         live_state[body["prefix"]] = body["state"]
         return Response(200, json={})
@@ -1520,9 +1717,9 @@ def _mock_roster_for(monkeypatch, roster_fixture, power_fixture=None):
     fake_jmri's WebSocket-only fixture never answers.
     """
     import json as _json
+
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
     from jmri_core.testing.plugin import FIXTURES
 
@@ -1531,7 +1728,9 @@ def _mock_roster_for(monkeypatch, roster_fixture, power_fixture=None):
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     return router
 
@@ -1552,7 +1751,9 @@ async def test_set_loco_lights_applies_every_light_labeled_function(fake_jmri, r
     ]
 
 
-async def test_set_loco_lights_no_labeled_functions_returns_empty_not_error(fake_jmri, roster_fixture):
+async def test_set_loco_lights_no_labeled_functions_returns_empty_not_error(
+    fake_jmri, roster_fixture
+):
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
@@ -1641,7 +1842,9 @@ async def test_prepare_locomotive_reports_error_honestly(monkeypatch):
     assert "error" in out
 
 
-async def test_park_locomotive_ramps_down_faces_forward_lights_off_and_releases(fake_jmri, roster_fixture):
+async def test_park_locomotive_ramps_down_faces_forward_lights_off_and_releases(
+    fake_jmri, roster_fixture
+):
     router = _mock_roster_for(None, roster_fixture)
     try:
         mcp = make_server()
@@ -1703,7 +1906,9 @@ async def test_park_locomotive_flips_reverse_to_forward_at_rest(fake_jmri, roste
     assert out["direction"] == "forward"
 
 
-async def test_park_locomotive_never_acquired_still_turns_off_lights_and_releases(fake_jmri, roster_fixture):
+async def test_park_locomotive_never_acquired_still_turns_off_lights_and_releases(
+    fake_jmri, roster_fixture
+):
     """No prior acquire_throttle/set_speed for this address -- steps 1-2
     (ramp/direction) are skipped, but lights (which auto-acquire, like
     set_loco_lights always does) still run, and the resulting throttle is
@@ -1760,7 +1965,6 @@ async def test_park_all_locomotives_with_nothing_acquired(fake_jmri):
 async def test_set_all_turnouts_confirms_every_turnout(mock_power):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
@@ -1768,9 +1972,30 @@ async def test_set_all_turnouts_confirms_every_turnout(mock_power):
 
     def get_turnouts(request):
         payload = [
-            {"type": "turnout", "data": {"name": "IT100", "userName": "Layout Turnout A", "state": live_state["IT100"]}},
-            {"type": "turnout", "data": {"name": "IT101", "userName": "Layout Turnout BL", "state": live_state["IT101"]}},
-            {"type": "turnout", "data": {"name": "OT23", "userName": "A / Mountain A -> Platform A/B", "state": live_state["OT23"]}},
+            {
+                "type": "turnout",
+                "data": {
+                    "name": "IT100",
+                    "userName": "Layout Turnout A",
+                    "state": live_state["IT100"],
+                },
+            },
+            {
+                "type": "turnout",
+                "data": {
+                    "name": "IT101",
+                    "userName": "Layout Turnout BL",
+                    "state": live_state["IT101"],
+                },
+            },
+            {
+                "type": "turnout",
+                "data": {
+                    "name": "OT23",
+                    "userName": "A / Mountain A -> Platform A/B",
+                    "state": live_state["OT23"],
+                },
+            },
         ]
         return Response(200, json=payload)
 
@@ -1778,6 +2003,7 @@ async def test_set_all_turnouts_confirms_every_turnout(mock_power):
         def handler(request):
             live_state[name] = json.loads(request.content)["state"]
             return Response(200, json={})
+
         return handler
 
     with respx.mock(assert_all_called=False) as router:
@@ -1789,7 +2015,9 @@ async def test_set_all_turnouts_confirms_every_turnout(mock_power):
 
     assert out["failed"] == []
     assert {s["name"] for s in out["succeeded"]} == {
-        "Layout Turnout A", "Layout Turnout BL", "A / Mountain A -> Platform A/B",
+        "Layout Turnout A",
+        "Layout Turnout BL",
+        "A / Mountain A -> Platform A/B",
     }
     assert all(s["state"] == "THROWN" and s["confirmed"] for s in out["succeeded"])
 
@@ -1797,16 +2025,24 @@ async def test_set_all_turnouts_confirms_every_turnout(mock_power):
 async def test_set_all_turnouts_continues_after_one_failure(mock_power):
     import respx
     from httpx import ConnectError, Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{MOCK_JMRI_URL}/json/turnouts").mock(
-            return_value=Response(200, json=[
-                {"type": "turnout", "data": {"name": "IT100", "userName": "Layout Turnout A", "state": 2}},
-                {"type": "turnout", "data": {"name": "IT101", "userName": "Layout Turnout BL", "state": 2}},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "turnout",
+                        "data": {"name": "IT100", "userName": "Layout Turnout A", "state": 2},
+                    },
+                    {
+                        "type": "turnout",
+                        "data": {"name": "IT101", "userName": "Layout Turnout BL", "state": 2},
+                    },
+                ],
+            )
         )
         router.post(f"{MOCK_JMRI_URL}/json/turnout/IT100").mock(side_effect=ConnectError("refused"))
         router.post(f"{MOCK_JMRI_URL}/json/turnout/IT101").mock(return_value=Response(200, json={}))
@@ -1828,7 +2064,6 @@ async def test_set_all_turnouts_reports_error_honestly(monkeypatch):
 async def test_set_layout_lights_confirms_every_light(mock_power):
     import respx
     from httpx import Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
@@ -1836,9 +2071,18 @@ async def test_set_layout_lights_confirms_every_light(mock_power):
 
     def get_lights(request):
         payload = [
-            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
-            {"type": "light", "data": {"name": "IL2", "userName": "Street Lamps", "state": live_state["IL2"]}},
-            {"type": "light", "data": {"name": "IL3", "userName": None, "state": live_state["IL3"]}},
+            {
+                "type": "light",
+                "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]},
+            },
+            {
+                "type": "light",
+                "data": {"name": "IL2", "userName": "Street Lamps", "state": live_state["IL2"]},
+            },
+            {
+                "type": "light",
+                "data": {"name": "IL3", "userName": None, "state": live_state["IL3"]},
+            },
         ]
         return Response(200, json=payload)
 
@@ -1846,6 +2090,7 @@ async def test_set_layout_lights_confirms_every_light(mock_power):
         def handler(request):
             live_state[name] = json.loads(request.content)["state"]
             return Response(200, json={})
+
         return handler
 
     with respx.mock(assert_all_called=False) as router:
@@ -1863,16 +2108,24 @@ async def test_set_layout_lights_confirms_every_light(mock_power):
 async def test_set_layout_lights_continues_after_one_failure(mock_power):
     import respx
     from httpx import ConnectError, Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock(assert_all_called=False) as router:
         router.get(f"{MOCK_JMRI_URL}/json/lights").mock(
-            return_value=Response(200, json=[
-                {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": 4}},
-                {"type": "light", "data": {"name": "IL2", "userName": "Street Lamps", "state": 4}},
-            ])
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "light",
+                        "data": {"name": "IL1", "userName": "Depot Lighting", "state": 4},
+                    },
+                    {
+                        "type": "light",
+                        "data": {"name": "IL2", "userName": "Street Lamps", "state": 4},
+                    },
+                ],
+            )
         )
         router.post(f"{MOCK_JMRI_URL}/json/light/IL1").mock(side_effect=ConnectError("refused"))
         router.post(f"{MOCK_JMRI_URL}/json/light/IL2").mock(return_value=Response(200, json={}))
@@ -1892,20 +2145,32 @@ async def test_set_layout_lights_reports_error_honestly(monkeypatch):
 
 
 async def test_layout_status_reports_reachability_systems_locomotives_blocks_sensors(
-    fake_jmri, roster_fixture, version_fixture, power_fixture, blocks_fixture, sensors_fixture,
+    fake_jmri,
+    roster_fixture,
+    version_fixture,
+    power_fixture,
+    blocks_fixture,
+    sensors_fixture,
 ):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
-    router.get(f"{get_jmri_url()}/json/version").mock(return_value=Response(200, json=version_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
+    router.get(f"{get_jmri_url()}/json/version").mock(
+        return_value=Response(200, json=version_fixture)
+    )
     router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
-    router.get(f"{get_jmri_url()}/json/blocks").mock(return_value=Response(200, json=blocks_fixture))
-    router.get(f"{get_jmri_url()}/json/sensors").mock(return_value=Response(200, json=sensors_fixture))
+    router.get(f"{get_jmri_url()}/json/blocks").mock(
+        return_value=Response(200, json=blocks_fixture)
+    )
+    router.get(f"{get_jmri_url()}/json/sensors").mock(
+        return_value=Response(200, json=sensors_fixture)
+    )
     try:
         mcp = make_server()
         await call(mcp, "acquire_throttle", address=4)
@@ -1923,18 +2188,29 @@ async def test_layout_status_reports_reachability_systems_locomotives_blocks_sen
 
 
 async def test_layout_status_no_locomotives_acquired_yet(
-    fake_jmri, version_fixture, power_fixture, blocks_fixture, sensors_fixture,
+    fake_jmri,
+    version_fixture,
+    power_fixture,
+    blocks_fixture,
+    sensors_fixture,
 ):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     with respx.mock(assert_all_called=False) as router:
-        router.get(f"{get_jmri_url()}/json/version").mock(return_value=Response(200, json=version_fixture))
-        router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
-        router.get(f"{get_jmri_url()}/json/blocks").mock(return_value=Response(200, json=blocks_fixture))
-        router.get(f"{get_jmri_url()}/json/sensors").mock(return_value=Response(200, json=sensors_fixture))
+        router.get(f"{get_jmri_url()}/json/version").mock(
+            return_value=Response(200, json=version_fixture)
+        )
+        router.get(f"{get_jmri_url()}/json/power").mock(
+            return_value=Response(200, json=power_fixture)
+        )
+        router.get(f"{get_jmri_url()}/json/blocks").mock(
+            return_value=Response(200, json=blocks_fixture)
+        )
+        router.get(f"{get_jmri_url()}/json/sensors").mock(
+            return_value=Response(200, json=sensors_fixture)
+        )
         mcp = make_server()
         out = await call(mcp, "layout_status")
 
@@ -1944,7 +2220,6 @@ async def test_layout_status_no_locomotives_acquired_yet(
 async def test_layout_status_unreachable_reports_honestly():
     import respx
     from httpx import ConnectError
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
@@ -1959,19 +2234,26 @@ async def test_layout_status_unreachable_reports_honestly():
 
 
 async def test_layout_status_one_section_failing_does_not_block_others(
-    version_fixture, power_fixture, sensors_fixture,
+    version_fixture,
+    power_fixture,
+    sensors_fixture,
 ):
     import respx
     from httpx import ConnectError, Response
-
     from jmri_core.testing.plugin import MOCK_JMRI_URL
 
     mcp = make_server()
     with respx.mock(assert_all_called=False) as router:
-        router.get(f"{MOCK_JMRI_URL}/json/version").mock(return_value=Response(200, json=version_fixture))
-        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
+        router.get(f"{MOCK_JMRI_URL}/json/version").mock(
+            return_value=Response(200, json=version_fixture)
+        )
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(
+            return_value=Response(200, json=power_fixture)
+        )
         router.get(f"{MOCK_JMRI_URL}/json/blocks").mock(side_effect=ConnectError("refused"))
-        router.get(f"{MOCK_JMRI_URL}/json/sensors").mock(return_value=Response(200, json=sensors_fixture))
+        router.get(f"{MOCK_JMRI_URL}/json/sensors").mock(
+            return_value=Response(200, json=sensors_fixture)
+        )
         out = await call(mcp, "layout_status")
 
     assert out["reachable"] is True
@@ -2053,18 +2335,25 @@ async def test_release_all_locomotives_with_nothing_acquired(fake_jmri):
     assert out == {"released": []}
 
 
-async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fixture, power_fixture):
+async def test_secure_layout_stops_lights_off_and_releases(
+    fake_jmri, roster_fixture, power_fixture
+):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     live_state = {"IL1": 2, "IL2": 2}
 
     def get_lights(request):
         payload = [
-            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
-            {"type": "light", "data": {"name": "IL2", "userName": "Street Lamps", "state": live_state["IL2"]}},
+            {
+                "type": "light",
+                "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]},
+            },
+            {
+                "type": "light",
+                "data": {"name": "IL2", "userName": "Street Lamps", "state": live_state["IL2"]},
+            },
         ]
         return Response(200, json=payload)
 
@@ -2072,11 +2361,14 @@ async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fix
         def handler(request):
             live_state[name] = json.loads(request.content)["state"]
             return Response(200, json={})
+
         return handler
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
     router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light("IL1"))
@@ -2105,15 +2397,18 @@ async def test_secure_layout_stops_lights_off_and_releases(fake_jmri, roster_fix
     assert get_ws_client().all_throttle_states() == {}
 
 
-async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(fake_jmri, roster_fixture, power_fixture):
+async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(
+    fake_jmri, roster_fixture, power_fixture
+):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(return_value=Response(200, json=[]))
     try:
@@ -2130,17 +2425,28 @@ async def test_secure_layout_release_throttles_false_keeps_throttle_acquired(fak
     assert "addr4" in get_ws_client().all_throttle_states()
 
 
-async def test_secure_layout_nothing_acquired_still_turns_off_layout_lights(fake_jmri, power_fixture):
+async def test_secure_layout_nothing_acquired_still_turns_off_layout_lights(
+    fake_jmri, power_fixture
+):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     with respx.mock(assert_all_called=False) as router:
-        router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
-        router.get(f"{get_jmri_url()}/json/lights").mock(return_value=Response(200, json=[
-            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": 4}},
-        ]))
+        router.get(f"{get_jmri_url()}/json/power").mock(
+            return_value=Response(200, json=power_fixture)
+        )
+        router.get(f"{get_jmri_url()}/json/lights").mock(
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "light",
+                        "data": {"name": "IL1", "userName": "Depot Lighting", "state": 4},
+                    },
+                ],
+            )
+        )
         router.post(f"{get_jmri_url()}/json/light/IL1").mock(return_value=Response(200, json={}))
         mcp = make_server()
         out = await call(mcp, "secure_layout")
@@ -2149,18 +2455,29 @@ async def test_secure_layout_nothing_acquired_still_turns_off_layout_lights(fake
     assert out["layout_lights"]["succeeded"][0]["state"] == "OFF"
 
 
-async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roster_fixture, power_fixture):
+async def test_night_mode_turns_on_locomotive_and_layout_lights(
+    fake_jmri, roster_fixture, power_fixture
+):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     live_state = {"IL1": 4}
 
     def get_lights(request):
-        return Response(200, json=[
-            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
-        ])
+        return Response(
+            200,
+            json=[
+                {
+                    "type": "light",
+                    "data": {
+                        "name": "IL1",
+                        "userName": "Depot Lighting",
+                        "state": live_state["IL1"],
+                    },
+                },
+            ],
+        )
 
     def post_light(request):
         live_state["IL1"] = json.loads(request.content)["state"]
@@ -2168,7 +2485,9 @@ async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roste
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
     router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light)
@@ -2185,18 +2504,29 @@ async def test_night_mode_turns_on_locomotive_and_layout_lights(fake_jmri, roste
     assert out["layout_lights"]["succeeded"][0]["confirmed"] is True
 
 
-async def test_day_mode_turns_off_locomotive_and_layout_lights(fake_jmri, roster_fixture, power_fixture):
+async def test_day_mode_turns_off_locomotive_and_layout_lights(
+    fake_jmri, roster_fixture, power_fixture
+):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     live_state = {"IL1": 2}
 
     def get_lights(request):
-        return Response(200, json=[
-            {"type": "light", "data": {"name": "IL1", "userName": "Depot Lighting", "state": live_state["IL1"]}},
-        ])
+        return Response(
+            200,
+            json=[
+                {
+                    "type": "light",
+                    "data": {
+                        "name": "IL1",
+                        "userName": "Depot Lighting",
+                        "state": live_state["IL1"],
+                    },
+                },
+            ],
+        )
 
     def post_light(request):
         live_state["IL1"] = json.loads(request.content)["state"]
@@ -2204,7 +2534,9 @@ async def test_day_mode_turns_off_locomotive_and_layout_lights(fake_jmri, roster
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     router.get(f"{get_jmri_url()}/json/power").mock(return_value=Response(200, json=power_fixture))
     router.get(f"{get_jmri_url()}/json/lights").mock(side_effect=get_lights)
     router.post(f"{get_jmri_url()}/json/light/IL1").mock(side_effect=post_light)
@@ -2224,7 +2556,6 @@ async def test_day_mode_turns_off_locomotive_and_layout_lights(fake_jmri, roster
 async def test_night_mode_with_nothing_acquired_still_sets_layout_lights(fake_jmri):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     with respx.mock(assert_all_called=False) as router:
@@ -2242,8 +2573,24 @@ def _mock_power_router(router, get_jmri_url, live_state):
 
     def get_power(request):
         payload = [
-            {"type": "power", "data": {"name": "DCC++ Ohara", "prefix": "O", "state": live_state["O"], "default": False}},
-            {"type": "power", "data": {"name": "DCC++ Raijin", "prefix": "R", "state": live_state["R"], "default": True}},
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Ohara",
+                    "prefix": "O",
+                    "state": live_state["O"],
+                    "default": False,
+                },
+            },
+            {
+                "type": "power",
+                "data": {
+                    "name": "DCC++ Raijin",
+                    "prefix": "R",
+                    "state": live_state["R"],
+                    "default": True,
+                },
+            },
         ]
         return Response(200, json=payload)
 
@@ -2256,10 +2603,11 @@ def _mock_power_router(router, get_jmri_url, live_state):
     router.post(f"{get_jmri_url()}/json/power").mock(side_effect=post_power)
 
 
-async def test_start_session_powers_on_and_prepares_every_acquired_locomotive(fake_jmri, monkeypatch, roster_fixture):
+async def test_start_session_powers_on_and_prepares_every_acquired_locomotive(
+    fake_jmri, monkeypatch, roster_fixture
+):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
@@ -2267,7 +2615,9 @@ async def test_start_session_powers_on_and_prepares_every_acquired_locomotive(fa
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     _mock_power_router(router, get_jmri_url, live_state)
     try:
         mcp = make_server()
@@ -2293,8 +2643,6 @@ async def test_start_session_powers_on_and_prepares_every_acquired_locomotive(fa
 
 async def test_start_session_with_nothing_acquired_just_powers_on(fake_jmri, monkeypatch):
     import respx
-    from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
@@ -2316,10 +2664,11 @@ async def test_start_session_refused_in_exhibition_mode(fake_jmri, monkeypatch):
     assert "error" in out
 
 
-async def test_end_session_stops_lights_off_releases_then_powers_off(fake_jmri, monkeypatch, roster_fixture):
+async def test_end_session_stops_lights_off_releases_then_powers_off(
+    fake_jmri, monkeypatch, roster_fixture
+):
     import respx
     from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
@@ -2327,7 +2676,9 @@ async def test_end_session_stops_lights_off_releases_then_powers_off(fake_jmri, 
 
     router = respx.mock(assert_all_called=False)
     router.start()
-    router.get(f"{get_jmri_url()}/json/roster").mock(return_value=Response(200, json=roster_fixture))
+    router.get(f"{get_jmri_url()}/json/roster").mock(
+        return_value=Response(200, json=roster_fixture)
+    )
     _mock_power_router(router, get_jmri_url, live_state)
     try:
         mcp = make_server()
@@ -2354,8 +2705,6 @@ async def test_end_session_stops_lights_off_releases_then_powers_off(fake_jmri, 
 
 async def test_end_session_with_nothing_acquired_just_powers_off(fake_jmri, monkeypatch):
     import respx
-    from httpx import Response
-
     from jmri_core.config import get_jmri_url
 
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)

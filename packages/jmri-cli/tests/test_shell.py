@@ -15,8 +15,19 @@ involved for readline to hook into.
 
 import pytest
 
+from jmri_cli import completion as completion_module
 from jmri_cli import shell
 from jmri_cli.parser import build_parser
+
+
+@pytest.fixture(autouse=True)
+def isolated_completion_cache(monkeypatch, tmp_path):
+    """Point completion.py's CACHE_DIR at a tmp dir for every test in this
+    file, not just the entity-name-completion ones below - a stray leftover
+    real ~/.jmri-cli/completion_cache/ file must never leak into what a
+    prefix-match test here sees (mirrors test_cache.py's fixture of the
+    same name)."""
+    monkeypatch.setattr(completion_module, "CACHE_DIR", tmp_path / "completion_cache")
 
 
 def _scripted_lines(monkeypatch, lines):
@@ -622,3 +633,160 @@ def test_leaf_names_empty_for_a_leaf_command():
 def test_install_completer_noop_without_readline(monkeypatch):
     monkeypatch.setattr(shell, "readline", None)
     shell._install_completer(build_parser())  # must not raise
+
+
+# -- TAB completion of real JMRI entity names ----------------------------
+#
+# parser.py tags each name-bearing positional Action with a plain
+# `.completion_kind` string; these tests prove _make_completer actually
+# reads that tag and offers completion._names_for(kind)'s real values,
+# fetched from JMRI via the same mock_* fixtures test_completion.py uses.
+
+
+def test_completion_offers_system_name_on_power_on(monkeypatch, mock_power):
+    """Case-insensitive: an uppercase "D" typed by the user must still match
+    JMRI's own "DCC++ ..." names."""
+    results = _completions(monkeypatch, "power on D", "D")
+    assert any("DCC++" in r for r in results)
+
+
+def test_completion_is_case_insensitive_for_lowercase_prefix(monkeypatch, mock_power):
+    """The reverse case: a lowercase prefix must still match a capitalized
+    real name - the whole point of the fix (JMRI names are typically
+    capitalized, but users type lowercase without thinking about it)."""
+    results = _completions(monkeypatch, "power on d", "d")
+    assert any("DCC++" in r for r in results)
+
+
+def test_completion_quotes_names_containing_spaces(monkeypatch, mock_power):
+    """A completed name with a space (e.g. "DCC++ Zou") must come back
+    shell-quoted, so it round-trips through this same completer's own
+    shlex.split() as one token instead of splitting apart on the next TAB
+    or on submission."""
+    results = _completions(monkeypatch, "power on ", "")
+    assert any(r.startswith("'") and r.endswith("'") for r in results)
+
+
+def test_completion_unambiguous_quoted_match_gets_trailing_space(monkeypatch, mock_roster):
+    """The single-unambiguous-match trailing-space rule must still apply
+    after quoting, not just to bare unquoted words - proven with "Boite à
+    Sel" (a roster fixture entry with a space), unambiguous by its "Boi"
+    prefix alone."""
+    results = _completions(monkeypatch, "throttle speed Boi", "Boi")
+    assert results == ["'Boite à Sel' "]
+
+
+def test_completion_offers_roster_name_on_throttle_speed(monkeypatch, mock_roster):
+    results = _completions(monkeypatch, "throttle speed A", "A")
+    assert any(r.strip() == "Autorail" for r in results)
+
+
+def test_completion_offers_roster_name_on_top_level_shortcut(monkeypatch, mock_roster):
+    """Top-level shortcuts (`speed`, `acquire`, ...) are built in parser.py
+    by copying the `throttle <verb>` leaf's own Action objects wholesale
+    (_shortcut()), so they must inherit .completion_kind for free with no
+    separate wiring - this is the direct proof of that reuse."""
+    results = _completions(monkeypatch, "speed A", "A")
+    assert any(r.strip() == "Autorail" for r in results)
+
+
+def test_completion_offers_light_name(monkeypatch, mock_lights):
+    results = _completions(monkeypatch, "light on ", "")
+    assert len(results) > 0
+
+
+def test_completion_offers_light_username_not_system_name(monkeypatch, mock_lights):
+    """Tab must suggest a light's human userName ("Depot Lighting") - the
+    same name resolve_light() itself prefers when matching a typed query -
+    not just its raw JMRI system name ("IL1"), which nobody types."""
+    results = _completions(monkeypatch, "light on Depot", "Depot")
+    assert any("Depot Lighting" in r for r in results)
+
+
+def test_completion_offers_turnout_name(monkeypatch, mock_turnouts):
+    results = _completions(monkeypatch, "turnout find ", "")
+    assert len(results) > 0
+
+
+def test_completion_offers_sensor_name(monkeypatch, mock_sensors):
+    results = _completions(monkeypatch, "sensor status ", "")
+    assert len(results) > 0
+
+
+def test_completion_offers_block_name(monkeypatch, mock_blocks):
+    results = _completions(monkeypatch, "block status ", "")
+    assert len(results) > 0
+
+
+def test_completion_offers_signal_name_but_not_on_aspect_slot(monkeypatch, mock_signals):
+    """`signal set <name> <aspect>` must complete entity names for `name`
+    but never treat `aspect` as a name-bearing slot (parser.py deliberately
+    leaves that positional untagged)."""
+    name_results = _completions(monkeypatch, "signal set ", "")
+    assert len(name_results) > 0
+
+    aspect_results = _completions(monkeypatch, "signal set 'Entry Signal A' ", "")
+    assert {r.strip() for r in aspect_results} == {"-h", "--help"}
+
+
+def test_completion_repeated_tab_after_quoted_common_prefix_does_not_stack_quotes(
+    monkeypatch, mock_turnouts
+):
+    """Live-reported bug: "Layout Turnout A" and "Layout Turnout BL" share
+    the common prefix "Layout Turnout " (crossing a word boundary) - real
+    GNU readline itself (not this code) fills that shared prefix into the
+    buffer on the first TAB when several candidates match, leaving the
+    buffer as `turnout find 'Layout Turnout ` with an intentionally
+    UNCLOSED quote and no trailing space, since the match still isn't
+    unambiguous. Space is still a real completer delim (only "'"/'"'/"-"
+    were removed - see _install_completer), so readline's `text` for the
+    next TAB is "" (nothing since that last space), NOT the quote-prefixed
+    string this test originally (and wrongly) assumed - confirmed against a
+    real PTY session. Before the fix, complete() returned each FULL quoted
+    name as the replacement for that empty `text`; readline only replaces
+    the span it considers `text` (here, zero-width, right after the last
+    space), so it spliced the full quoted name in AFTER the existing
+    unclosed-quote prefix already on the buffer instead of extending it -
+    reproduced live via PTY as the quoted prefix appearing twice
+    ("'Layout Turnout 'Layout Turnout A' "). Simulates exactly that second
+    TAB press directly, the same way the rest of this file drives
+    complete()."""
+    results = _completions(monkeypatch, "turnout find 'Layout Turnout ", "")
+    assert set(results) == {"A'", "BL'", "--help", "-h"}
+    assert not any(r.startswith("'") for r in results)
+
+
+def test_completion_disambiguating_keystroke_after_quoted_common_prefix(monkeypatch, mock_turnouts):
+    """Continuing from the scenario above: after readline's own prefix fill
+    left the buffer at `turnout find 'Layout Turnout ` and the user types
+    "A" to disambiguate, `text` is just "A" (still only the fragment since
+    the last space). The single remaining match must close the quote and
+    add the trailing space, matching a real PTY session's final line
+    exactly: `turnout find 'Layout Turnout A' `."""
+    results = _completions(monkeypatch, "turnout find 'Layout Turnout A", "A")
+    assert results == ["A' "]
+
+
+def test_completion_multiword_match_preserves_candidate_casing(monkeypatch, mock_turnouts):
+    """Matching is case-insensitive, but the text spliced back in must use
+    the real candidate's casing, not whatever case the user typed - typing
+    lowercase "layout turnout b" must still complete to "Layout Turnout BL",
+    not echo the user's own lowercase back verbatim."""
+    results = _completions(monkeypatch, "turnout find 'layout turnout b", "b")
+    assert results == ["BL' "]
+
+
+def test_completion_lowercase_prefix_preserves_candidate_casing(monkeypatch, mock_power):
+    """Single-word counterpart of the multiword casing test above: typing
+    lowercase "d" against real name "DCC++ Zou" must complete to the real
+    casing, not "dCC++ Zou"."""
+    results = _completions(monkeypatch, "power on d", "d")
+    assert any(r.strip() == "'DCC++ Zou'" for r in results)
+
+
+def test_completion_no_extra_candidates_for_untagged_positional(monkeypatch):
+    """A positional with no .completion_kind (e.g. throttle speed's
+    percentage) must not gain extra candidates from some other kind - only
+    that leaf's own flags are offered, same as before this feature."""
+    results = _completions(monkeypatch, "throttle speed 3 ", "")
+    assert {r.strip() for r in results} == {"--rampup", "--rampdown", "--hold", "--help", "-h"}

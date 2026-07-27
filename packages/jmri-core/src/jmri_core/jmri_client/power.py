@@ -86,8 +86,7 @@ async def get_systems() -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise JmriError("unexpected_payload", endpoint=endpoints.POWER, payload=payload)
     systems = [_unwrap(entry) for entry in payload]
-    logger.info("Discovered %d power system(s): %s",
-                len(systems), [s.get("name") for s in systems])
+    logger.info("Discovered %d power system(s): %s", len(systems), [s.get("name") for s in systems])
     return systems
 
 
@@ -150,7 +149,8 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
         if await _self_recovers_from_unknown():
             logger.info(
                 "set_power(%s, True): landed in UNKNOWN, waiting %ss for JMRI's own recovery",
-                prefix, POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS,
+                prefix,
+                POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS,
             )
             await asyncio.sleep(POWER_UNKNOWN_SELF_RECOVERY_WAIT_SECONDS)
             systems = await get_systems()
@@ -163,7 +163,8 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
             logger.warning(
                 "set_power(%s, True): landed in UNKNOWN, recovering via OFF/wait/ON"
                 " (JMRI is older than %s, no self-recovery)",
-                prefix, POWER_UNKNOWN_JMRI_FIX_VERSION,
+                prefix,
+                POWER_UNKNOWN_JMRI_FIX_VERSION,
             )
             await _post_and_reread(prefix, POWER_OFF)
             await asyncio.sleep(POWER_UNKNOWN_RECOVERY_DELAY_SECONDS)
@@ -177,7 +178,10 @@ async def set_power(prefix: str, turn_on: bool) -> dict[str, Any]:
     if not confirmed:
         logger.warning(
             "set_power(%s, %s): requested state=%s but observed state=%s",
-            prefix, turn_on, desired, observed.get("state"),
+            prefix,
+            turn_on,
+            desired,
+            observed.get("state"),
         )
     return {**observed, "confirmed": confirmed, **extra}
 
@@ -404,14 +408,12 @@ def parse_signal_dcc_address(system_name: str | None) -> int | None:
     if open_paren == -1:
         return None
     try:
-        return int(system_name[open_paren + 1:-1])
+        return int(system_name[open_paren + 1 : -1])
     except ValueError:
         return None
 
 
-def resolve_system(
-    query: str | None, systems: list[dict[str, Any]]
-) -> dict[str, Any]:
+def resolve_system(query: str | None, systems: list[dict[str, Any]]) -> dict[str, Any]:
     """Match a user-supplied system name against discovered systems.
 
     Tolerant: case-insensitive, accepts the exact name, the connection

@@ -46,6 +46,31 @@ the shell. Every leaf subcommand's own `-h` shows a copy-pasteable example in
 its epilog — there's no separate `examples` command, the examples live where
 you're already looking.
 
+## Shell tab-completion (inside the interactive shell)
+
+Inside the interactive shell (bare `jmri-cli`, see below), pressing Tab
+completes not just command/flag names but also real system, locomotive,
+light, turnout, sensor, signal, and block names pulled from JMRI — e.g.
+`power on z<TAB>` at the `jmri-cli>` prompt completes to `power on 'DCC++
+Zou'` if that's a matching system name JMRI currently knows about. For
+lights/turnouts/sensors/signals/blocks, Tab offers the human-friendly label
+you set in JMRI (e.g. "Parc", "Depot Lighting") rather than JMRI's internal
+system name ("IL1") whenever one is set — the same name `light`/`turnout`/
+`sensor`/etc. commands already accept and resolve by fragment. Matching
+is case-insensitive (`z<TAB>` matches `DCC++ Zou` even though the real name
+is capitalized), and a name containing spaces is completed already
+shell-quoted so it stays one argument. No setup needed — this works out of
+the box in the shell prompt.
+
+Suggestions are backed by a short-lived local cache (see
+`~/.jmri-cli/completion_cache/` in the `cache` section below) rather than a
+live JMRI call on every keystroke — a name added to JMRI seconds ago may
+not appear until the cache expires (60s) or `jmri-cli cache clean
+--completions` is run; this never affects the actual command, only what
+Tab suggests. This is specific to the interactive shell's own `readline`-based
+completion — one-shot commands typed directly at your OS shell (bash/zsh)
+are not completed by `jmri-cli` itself.
+
 ## Design pattern: bare group = smart default, verb elevation
 
 Two rules apply consistently across every command group below:
@@ -232,40 +257,44 @@ TAB completion).
 
 ## `jmri-cli cache` / `cache info` / `cache clean`
 
-`jmri-cli` keeps two independent local files under `~/.jmri-cli/`, neither
-of which is a source of truth for anything JMRI-side — both are safe to
+`jmri-cli` keeps three independent local targets under `~/.jmri-cli/`, none
+of which is a source of truth for anything JMRI-side — all are safe to
 delete at any time; they just regenerate empty and refill from normal use:
 
-| File | Written by | Contents |
+| File/dir | Written by | Contents |
 | --- | --- | --- |
 | `~/.jmri-cli/throttle_state.json` | every `throttle speed`/`stop`/`forward`/`reverse`/`on`/`off`/etc | Last-known speed/direction/functions per DCC address this CLI has touched. Read by `throttle list` and the "Why `throttle` has a local cache" cache described above. |
 | `~/.jmri-cli/shell_history` | the interactive shell (see above) | Persisted readline command history, up to 1000 lines. |
+| `~/.jmri-cli/completion_cache/` | shell tab-completion (see "Shell tab-completion" above) | One short-TTL JSON file per entity kind (systems, roster, lights, turnouts, sensors, signals, blocks) with the name list last offered by Tab completion. |
 
 Neither `cache info` nor `cache clean` ever contacts JMRI — no WebSocket or
 HTTP call is made by either, so both work identically one-shot or typed at
 the shell prompt.
 
 **`cache info`** (also the bare-`jmri-cli cache` default) prints the full
-path of both files and whether each currently exists on disk:
+path of all three and whether each currently exists on disk:
 
 ```bash
 $ jmri-cli cache info
 throttle state: /home/user/.jmri-cli/throttle_state.json (exists)
 shell history: /home/user/.jmri-cli/shell_history (not present)
+tab-completion cache: /home/user/.jmri-cli/completion_cache (exists)
 ```
 
-**`cache clean`** deletes them. With no flags, both files are removed — the
+**`cache clean`** deletes them. With no flags, all three are removed — the
 common case, a full reset. `--state` clears only `throttle_state.json`;
-`--history` clears only `shell_history`; giving both flags together is the
-same as giving neither. The printed message explicitly lists the full path
-of every file actually deleted, so it's never ambiguous what changed on
-disk. A file that doesn't already exist is silently skipped (not an error):
+`--history` clears only `shell_history`; `--completions` clears only
+`completion_cache/`; combining flags scopes the clean to just those given,
+leaving the rest untouched. The printed message explicitly lists the full
+path of every file actually deleted, so it's never ambiguous what changed
+on disk. A file that doesn't already exist is silently skipped (not an error):
 
 ```bash
 $ jmri-cli cache clean
 Cleared:
   /home/user/.jmri-cli/throttle_state.json
   /home/user/.jmri-cli/shell_history
+  /home/user/.jmri-cli/completion_cache/system.json
 
 $ jmri-cli cache clean
 Nothing to clean — cache files don't exist.
@@ -273,12 +302,19 @@ Nothing to clean — cache files don't exist.
 $ jmri-cli cache clean --state
 Cleared:
   /home/user/.jmri-cli/throttle_state.json
+
+$ jmri-cli cache clean --completions
+Cleared:
+  /home/user/.jmri-cli/completion_cache/system.json
+  /home/user/.jmri-cli/completion_cache/roster.json
 ```
 
 Clearing `throttle_state.json` only affects what `jmri-cli throttle list`
 displays locally — it has no effect on JMRI or on any locomotive's actual
 state, moving or otherwise. Clearing `shell_history` only affects up/down
-arrow recall in future shell sessions.
+arrow recall in future shell sessions. Clearing `completion_cache/` only
+affects what Tab suggests next — the next completion attempt just triggers
+a fresh live read (see "Shell tab-completion" above).
 
 ## `jmri-cli status`
 

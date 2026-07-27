@@ -9,13 +9,13 @@ no `sensor set` subcommand.
 import argparse
 import sys
 
+from jmri_core import i18n
+from jmri_core.constants.cli import SENSOR_STATE_NAMES, SORT_INDICATOR
+from jmri_core.jmri_client import JmriError, get_sensors, resolve_sensor
 from tabulate import tabulate
 
-from jmri_core import i18n
 from jmri_cli._match import find_glob, find_regex
 from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
-from jmri_core.constants.cli import SORT_INDICATOR, SENSOR_STATE_NAMES
-from jmri_core.jmri_client import JmriError, get_sensors, resolve_sensor
 
 
 def _headers() -> list[str]:

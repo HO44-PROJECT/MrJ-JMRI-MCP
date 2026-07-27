@@ -1,5 +1,4 @@
 import pytest
-
 from jmri_core.constants.lighting import is_light_label
 
 

@@ -25,6 +25,7 @@ import argparse
 import functools
 
 from jmri_core import i18n
+
 from jmri_cli import block, cache, light, power, roster, sensor, session, signal, throttle, turnout
 
 
@@ -100,16 +101,26 @@ def _add_ramp_args(leaf: argparse.ArgumentParser, *, rampup: bool, seconds: bool
     """
     if rampup:
         leaf.add_argument(
-            "--rampup", type=float, default=None, metavar="SECONDS",
+            "--rampup",
+            type=float,
+            default=None,
+            metavar="SECONDS",
             help=i18n.t("help.arg.ramp_up"),
         )
     leaf.add_argument(
-        "--rampdown", type=float, default=None, metavar="SECONDS",
+        "--rampdown",
+        type=float,
+        default=None,
+        metavar="SECONDS",
         help=i18n.t("help.arg.ramp_down"),
     )
     if seconds:
         leaf.add_argument(
-            "--hold", type=float, default=None, metavar="SECONDS", dest="seconds",
+            "--hold",
+            type=float,
+            default=None,
+            metavar="SECONDS",
+            dest="seconds",
             help=i18n.t("help.arg.hold_seconds"),
         )
 
@@ -133,7 +144,9 @@ def _group(subparsers, name: str, *, default_func=None):
     return group_cmd, group_sub
 
 
-def _sort_siblings(subparsers, sort_fields, *, func, example_prefix: str, pattern_help: str | None = None) -> None:
+def _sort_siblings(
+    subparsers, sort_fields, *, func, example_prefix: str, pattern_help: str | None = None
+) -> None:
     """Add one `by*` sibling leaf per key in a domain module's `SORT_FIELDS`.
 
     `jmri-cli <group> by<column>` runs the exact same command function as
@@ -172,7 +185,9 @@ def _sort_siblings(subparsers, sort_fields, *, func, example_prefix: str, patter
             leaf.add_argument("pattern", help=pattern_help)
 
 
-def _find_pattern_leaf(subparsers, name: str, *, help: str, example: str, func, sort_fields) -> None:
+def _find_pattern_leaf(
+    subparsers, name: str, *, help: str, example: str, func, sort_fields
+) -> None:
     """Add a findr/findg-style leaf that also accepts an optional `by*` sort word.
 
     `jmri-cli <group> findr '^B_1'` still works with no sort word (defaults
@@ -200,7 +215,9 @@ def _find_pattern_leaf(subparsers, name: str, *, help: str, example: str, func, 
             list valid `by*` words in the help text.
     """
     find_cmd = subparsers.add_parser(
-        name, help=help, description=help,
+        name,
+        help=help,
+        description=help,
         epilog=f"example:\n  {example}\n  {example.rsplit(' ', 1)[0]} byid {example.rsplit(' ', 1)[1]}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -208,7 +225,9 @@ def _find_pattern_leaf(subparsers, name: str, *, help: str, example: str, func, 
     pattern_help = i18n.t("help.arg.regex_pattern" if name == "findr" else "help.arg.glob_pattern")
     sort_words = "/".join(sort_fields)
     find_cmd.add_argument(
-        "pattern_tokens", nargs="+", metavar="[SORT] PATTERN",
+        "pattern_tokens",
+        nargs="+",
+        metavar="[SORT] PATTERN",
         help=f"{pattern_help}; optionally preceded by a sort word ({sort_words})",
     )
 
@@ -229,63 +248,93 @@ def build_parser() -> argparse.ArgumentParser:
     power_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        power_sub, "status", help=i18n.t("help.power.status"),
-        example="jmri-cli power status", func=power.power_status,
+        power_sub,
+        "status",
+        help=i18n.t("help.power.status"),
+        example="jmri-cli power status",
+        func=power.power_status,
     )
     _sort_siblings(
-        power_sub, power.SORT_FIELDS, func=power.power_status,
+        power_sub,
+        power.SORT_FIELDS,
+        func=power.power_status,
         example_prefix="jmri-cli power",
     )
 
     on_ = _leaf(
-        power_sub, "on", help=i18n.t("help.power.on"),
-        example="jmri-cli power on ohara", func=power.power_on,
+        power_sub,
+        "on",
+        help=i18n.t("help.power.on"),
+        example="jmri-cli power on ohara",
+        func=power.power_on,
     )
-    on_.add_argument("system", nargs="?", default=None,
-                      help=i18n.t("help.arg.system_ref_or_every"))
+    on_.add_argument(
+        "system", nargs="?", default=None, help=i18n.t("help.arg.system_ref_or_every")
+    ).completion_kind = "system"
 
     off_ = _leaf(
-        power_sub, "off",
+        power_sub,
+        "off",
         help=i18n.t("help.power.off"),
-        example="jmri-cli power off", func=power.power_off,
+        example="jmri-cli power off",
+        func=power.power_off,
     )
-    off_.add_argument("system", nargs="?", default=None,
-                       help=i18n.t("help.arg.system_ref_or_every"))
+    off_.add_argument(
+        "system", nargs="?", default=None, help=i18n.t("help.arg.system_ref_or_every")
+    ).completion_kind = "system"
 
     get_ = _leaf(
-        power_sub, "get", help=i18n.t("help.power.get"),
-        example="jmri-cli power get ohara", func=power.power_get,
+        power_sub,
+        "get",
+        help=i18n.t("help.power.get"),
+        example="jmri-cli power get ohara",
+        func=power.power_get,
     )
-    get_.add_argument("system", nargs="?", default=None,
-                       help=i18n.t("help.arg.system_ref_or_default"))
+    get_.add_argument(
+        "system", nargs="?", default=None, help=i18n.t("help.arg.system_ref_or_default")
+    ).completion_kind = "system"
 
     power_find_cmd = _leaf(
-        power_sub, "find", help=i18n.t("help.power.find"),
-        example="jmri-cli power find ohara", func=power.power_find,
+        power_sub,
+        "find",
+        help=i18n.t("help.power.find"),
+        example="jmri-cli power find ohara",
+        func=power.power_find,
     )
-    power_find_cmd.add_argument("system", nargs="?", default=None,
-                                 help=i18n.t("help.arg.system_ref_or_default"))
+    power_find_cmd.add_argument(
+        "system", nargs="?", default=None, help=i18n.t("help.arg.system_ref_or_default")
+    ).completion_kind = "system"
 
     power_findr_cmd = _leaf(
-        power_sub, "findr", help=i18n.t("help.power.findr"),
-        example="jmri-cli power findr '^DCC'", func=power.power_findr,
+        power_sub,
+        "findr",
+        help=i18n.t("help.power.findr"),
+        example="jmri-cli power findr '^DCC'",
+        func=power.power_findr,
     )
     power_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     power_findg_cmd = _leaf(
-        power_sub, "findg", help=i18n.t("help.power.findg"),
-        example="jmri-cli power findg 'DCC*'", func=power.power_findg,
+        power_sub,
+        "findg",
+        help=i18n.t("help.power.findg"),
+        example="jmri-cli power findg 'DCC*'",
+        func=power.power_findg,
     )
     power_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     _leaf(
-        power_sub, "default", help=i18n.t("help.power.default"),
-        example="jmri-cli power default", func=power.power_default,
+        power_sub,
+        "default",
+        help=i18n.t("help.power.default"),
+        example="jmri-cli power default",
+        func=power.power_default,
     )
 
     status_help = i18n.t("help.group.status")
     status_cmd = subparsers.add_parser(
-        "status", help=status_help,
+        "status",
+        help=status_help,
         description=status_help,
         epilog="example:\n  jmri-cli status",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -295,7 +344,8 @@ def build_parser() -> argparse.ArgumentParser:
     # -- session-start / session-end: composite commands (issue #49) -----
     session_start_help = i18n.t("help.group.session-start")
     session_start_cmd = subparsers.add_parser(
-        "session-start", help=session_start_help,
+        "session-start",
+        help=session_start_help,
         description=session_start_help,
         epilog="example:\n  jmri-cli session-start",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -304,7 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     session_end_help = i18n.t("help.group.session-end")
     session_end_cmd = subparsers.add_parser(
-        "session-end", help=session_end_help,
+        "session-end",
+        help=session_end_help,
         description=session_end_help,
         epilog="example:\n  jmri-cli session-end",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -317,21 +368,34 @@ def build_parser() -> argparse.ArgumentParser:
     cache_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        cache_sub, "info", help=i18n.t("help.cache.info"),
-        example="jmri-cli cache info", func=cache.cache_info,
+        cache_sub,
+        "info",
+        help=i18n.t("help.cache.info"),
+        example="jmri-cli cache info",
+        func=cache.cache_info,
     )
 
     cache_clean_cmd = _leaf(
-        cache_sub, "clean", help=i18n.t("help.cache.clean"),
-        example="jmri-cli cache clean", func=cache.cache_clean,
+        cache_sub,
+        "clean",
+        help=i18n.t("help.cache.clean"),
+        example="jmri-cli cache clean",
+        func=cache.cache_clean,
     )
     cache_clean_cmd.add_argument(
-        "--state", action="store_true",
+        "--state",
+        action="store_true",
         help=i18n.t("help.cache.clean_state_only"),
     )
     cache_clean_cmd.add_argument(
-        "--history", action="store_true",
+        "--history",
+        action="store_true",
         help=i18n.t("help.cache.clean_history_only"),
+    )
+    cache_clean_cmd.add_argument(
+        "--completions",
+        action="store_true",
+        help=i18n.t("help.cache.clean_completions_only"),
     )
 
     # -- roster: bare = list -----------------------------------------
@@ -340,37 +404,58 @@ def build_parser() -> argparse.ArgumentParser:
     roster_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        roster_sub, "list", help=i18n.t("help.roster.list"),
-        example="jmri-cli roster list", func=roster.roster_list,
+        roster_sub,
+        "list",
+        help=i18n.t("help.roster.list"),
+        example="jmri-cli roster list",
+        func=roster.roster_list,
     )
     _sort_siblings(
-        roster_sub, roster.SORT_FIELDS, func=roster.roster_list,
+        roster_sub,
+        roster.SORT_FIELDS,
+        func=roster.roster_list,
         example_prefix="jmri-cli roster",
     )
 
     roster_find_cmd = _leaf(
-        roster_sub, "find", help=i18n.t("help.roster.find"),
-        example="jmri-cli roster find autorail", func=roster.roster_find,
+        roster_sub,
+        "find",
+        help=i18n.t("help.roster.find"),
+        example="jmri-cli roster find autorail",
+        func=roster.roster_find,
     )
-    roster_find_cmd.add_argument("name", help=i18n.t("help.arg.loco_ref"))
+    roster_find_cmd.add_argument(
+        "name", help=i18n.t("help.arg.loco_ref")
+    ).completion_kind = "roster"
 
     _find_pattern_leaf(
-        roster_sub, "findr", help=i18n.t("help.roster.findr"),
-        example="jmri-cli roster findr '^auto'", func=roster.roster_findr,
+        roster_sub,
+        "findr",
+        help=i18n.t("help.roster.findr"),
+        example="jmri-cli roster findr '^auto'",
+        func=roster.roster_findr,
         sort_fields=roster.SORT_FIELDS,
     )
 
     _find_pattern_leaf(
-        roster_sub, "findg", help=i18n.t("help.roster.findg"),
-        example="jmri-cli roster findg 'boite*'", func=roster.roster_findg,
+        roster_sub,
+        "findg",
+        help=i18n.t("help.roster.findg"),
+        example="jmri-cli roster findg 'boite*'",
+        func=roster.roster_findg,
         sort_fields=roster.SORT_FIELDS,
     )
 
     roster_functions_cmd = _leaf(
-        roster_sub, "functions", help=i18n.t("help.arg.function_labels"),
-        example="jmri-cli roster functions autorail", func=roster.roster_functions,
+        roster_sub,
+        "functions",
+        help=i18n.t("help.arg.function_labels"),
+        example="jmri-cli roster functions autorail",
+        func=roster.roster_functions,
     )
-    roster_functions_cmd.add_argument("name", help=i18n.t("help.arg.loco_ref"))
+    roster_functions_cmd.add_argument(
+        "name", help=i18n.t("help.arg.loco_ref")
+    ).completion_kind = "roster"
 
     # -- throttle: bare = list acquired (from local cache) ------------
     throttle_cmd, throttle_sub = _group(subparsers, "throttle", default_func=throttle.throttle_list)
@@ -378,51 +463,80 @@ def build_parser() -> argparse.ArgumentParser:
     throttle_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        throttle_sub, "list", help=i18n.t("help.throttle.list"),
-        example="jmri-cli throttle list", func=throttle.throttle_list,
+        throttle_sub,
+        "list",
+        help=i18n.t("help.throttle.list"),
+        example="jmri-cli throttle list",
+        func=throttle.throttle_list,
     )
 
     throttle_find_cmd = _leaf(
-        throttle_sub, "find", help=i18n.t("help.throttle.find"),
-        example="jmri-cli throttle find autorail", func=throttle.throttle_find,
+        throttle_sub,
+        "find",
+        help=i18n.t("help.throttle.find"),
+        example="jmri-cli throttle find autorail",
+        func=throttle.throttle_find,
     )
-    throttle_find_cmd.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    throttle_find_cmd.add_argument(
+        "loco", help=i18n.t("help.arg.loco_ref")
+    ).completion_kind = "roster"
 
     throttle_findr_cmd = _leaf(
-        throttle_sub, "findr", help=i18n.t("help.throttle.findr"),
-        example="jmri-cli throttle findr '^auto'", func=throttle.throttle_findr,
+        throttle_sub,
+        "findr",
+        help=i18n.t("help.throttle.findr"),
+        example="jmri-cli throttle findr '^auto'",
+        func=throttle.throttle_findr,
     )
     throttle_findr_cmd.add_argument("pattern", help=i18n.t("help.arg.regex_pattern"))
 
     throttle_findg_cmd = _leaf(
-        throttle_sub, "findg", help=i18n.t("help.throttle.findg"),
-        example="jmri-cli throttle findg 'Auto*'", func=throttle.throttle_findg,
+        throttle_sub,
+        "findg",
+        help=i18n.t("help.throttle.findg"),
+        example="jmri-cli throttle findg 'Auto*'",
+        func=throttle.throttle_findg,
     )
     throttle_findg_cmd.add_argument("pattern", help=i18n.t("help.arg.glob_pattern"))
 
     acquire = _leaf(
-        throttle_sub, "acquire", help=i18n.t("help.throttle.acquire"),
-        example="jmri-cli throttle acquire 3", func=throttle.throttle_acquire,
+        throttle_sub,
+        "acquire",
+        help=i18n.t("help.throttle.acquire"),
+        example="jmri-cli throttle acquire 3",
+        func=throttle.throttle_acquire,
     )
-    acquire.add_argument("loco", nargs="?", default=None,
-                          help=i18n.t("help.throttle.acquire_loco"))
-    acquire.add_argument("--prefix", default=None,
-                          help=i18n.t("help.throttle.acquire_prefix"))
+    acquire.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.acquire_loco")
+    ).completion_kind = "roster"
+    acquire.add_argument("--prefix", default=None, help=i18n.t("help.throttle.acquire_prefix"))
 
     release = _leaf(
-        throttle_sub, "release", help=i18n.t("help.throttle.release"),
-        example="jmri-cli throttle release 3", func=throttle.throttle_release,
+        throttle_sub,
+        "release",
+        help=i18n.t("help.throttle.release"),
+        example="jmri-cli throttle release 3",
+        func=throttle.throttle_release,
     )
-    release.add_argument("loco", nargs="?", default=None,
-                          help=i18n.t("help.throttle.release_loco"))
+    release.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.release_loco")
+    ).completion_kind = "roster"
 
     speed = _leaf(
-        throttle_sub, "speed", help=i18n.t("help.throttle.speed"),
-        example="jmri-cli throttle speed 3 40", func=throttle.throttle_speed,
+        throttle_sub,
+        "speed",
+        help=i18n.t("help.throttle.speed"),
+        example="jmri-cli throttle speed 3 40",
+        func=throttle.throttle_speed,
     )
-    speed.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
-    speed.add_argument("speed_percent", type=float, nargs="?", default=None,
-                        help=i18n.t("help.throttle.speed_percent"))
+    speed.add_argument("loco", help=i18n.t("help.arg.loco_ref")).completion_kind = "roster"
+    speed.add_argument(
+        "speed_percent",
+        type=float,
+        nargs="?",
+        default=None,
+        help=i18n.t("help.throttle.speed_percent"),
+    )
     _add_ramp_args(speed, rampup=True, seconds=True)
     speed.epilog = (
         "in the interactive shell only, two friendlier sentence forms are also\n"
@@ -437,37 +551,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     stop_cmd = _leaf(
-        throttle_sub, "stop",
+        throttle_sub,
+        "stop",
         help=i18n.t("help.throttle.stop"),
-        example="jmri-cli throttle stop", func=throttle.throttle_stop,
+        example="jmri-cli throttle stop",
+        func=throttle.throttle_stop,
     )
-    stop_cmd.add_argument("loco", nargs="?", default=None,
-                           help=i18n.t("help.throttle.stop_loco"))
+    stop_cmd.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.stop_loco")
+    ).completion_kind = "roster"
     _add_ramp_args(stop_cmd, rampup=False, seconds=False)
-    stop_cmd.epilog = (
-        "example:\n"
-        "  jmri-cli throttle stop\n"
-        "  jmri-cli throttle stop 3 --rampdown 5"
-    )
+    stop_cmd.epilog = "example:\n  jmri-cli throttle stop\n  jmri-cli throttle stop 3 --rampdown 5"
 
     estop = _leaf(
-        throttle_sub, "estop", help=i18n.t("help.throttle.estop"),
-        example="jmri-cli throttle estop 3", func=throttle.throttle_estop,
+        throttle_sub,
+        "estop",
+        help=i18n.t("help.throttle.estop"),
+        example="jmri-cli throttle estop 3",
+        func=throttle.throttle_estop,
     )
-    estop.add_argument("loco", nargs="?", default=None,
-                        help=i18n.t("help.throttle.estop_loco"))
-    estop.epilog = (
-        "example:\n"
-        "  jmri-cli throttle estop\n"
-        "  jmri-cli throttle estop 3"
-    )
+    estop.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.estop_loco")
+    ).completion_kind = "roster"
+    estop.epilog = "example:\n  jmri-cli throttle estop\n  jmri-cli throttle estop 3"
 
     forward = _leaf(
-        throttle_sub, "forward", help=i18n.t("help.throttle.forward"),
-        example="jmri-cli throttle forward 3", func=functools.partial(throttle.throttle_direction, forward=True),
+        throttle_sub,
+        "forward",
+        help=i18n.t("help.throttle.forward"),
+        example="jmri-cli throttle forward 3",
+        func=functools.partial(throttle.throttle_direction, forward=True),
     )
-    forward.add_argument("loco", nargs="?", default=None,
-                          help=i18n.t("help.throttle.direction_loco"))
+    forward.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.direction_loco")
+    ).completion_kind = "roster"
     _add_ramp_args(forward, rampup=True, seconds=True)
     forward.epilog = (
         "example:\n"
@@ -477,11 +594,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     reverse = _leaf(
-        throttle_sub, "reverse", help=i18n.t("help.throttle.reverse"),
-        example="jmri-cli throttle reverse 3", func=functools.partial(throttle.throttle_direction, forward=False),
+        throttle_sub,
+        "reverse",
+        help=i18n.t("help.throttle.reverse"),
+        example="jmri-cli throttle reverse 3",
+        func=functools.partial(throttle.throttle_direction, forward=False),
     )
-    reverse.add_argument("loco", nargs="?", default=None,
-                          help=i18n.t("help.throttle.direction_loco"))
+    reverse.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.direction_loco")
+    ).completion_kind = "roster"
     _add_ramp_args(reverse, rampup=True, seconds=True)
     reverse.epilog = (
         "example:\n"
@@ -491,81 +612,108 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     on_fn = _leaf(
-        throttle_sub, "on",
+        throttle_sub,
+        "on",
         help=i18n.t("help.throttle.on"),
-        example="jmri-cli throttle on 3 1", func=throttle.throttle_on,
+        example="jmri-cli throttle on 3 1",
+        func=throttle.throttle_on,
     )
-    on_fn.add_argument("loco", nargs="?", default=None,
-                        help=i18n.t("help.throttle.function_loco"))
-    on_fn.add_argument("function", nargs="?", default=None,
-                        help=i18n.t("help.arg.function_ref_or_every"))
-    on_fn.add_argument("--lights-only", action="store_true",
-                        help=i18n.t("help.throttle.lights_only"))
+    on_fn.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.function_loco")
+    ).completion_kind = "roster"
+    on_fn.add_argument(
+        "function", nargs="?", default=None, help=i18n.t("help.arg.function_ref_or_every")
+    )
+    on_fn.add_argument(
+        "--lights-only", action="store_true", help=i18n.t("help.throttle.lights_only")
+    )
     on_fn.epilog = (
-        "example:\n"
-        "  jmri-cli throttle on 3 1\n"
-        "  jmri-cli throttle on 3\n"
-        "  jmri-cli throttle on"
+        "example:\n  jmri-cli throttle on 3 1\n  jmri-cli throttle on 3\n  jmri-cli throttle on"
     )
 
     off_fn = _leaf(
-        throttle_sub, "off",
+        throttle_sub,
+        "off",
         help=i18n.t("help.throttle.off"),
-        example="jmri-cli throttle off 3 1", func=throttle.throttle_off,
+        example="jmri-cli throttle off 3 1",
+        func=throttle.throttle_off,
     )
-    off_fn.add_argument("loco", nargs="?", default=None,
-                         help=i18n.t("help.throttle.function_loco"))
-    off_fn.add_argument("function", nargs="?", default=None,
-                         help=i18n.t("help.arg.function_ref_or_every"))
-    off_fn.add_argument("--lights-only", action="store_true",
-                         help=i18n.t("help.throttle.lights_only"))
+    off_fn.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.function_loco")
+    ).completion_kind = "roster"
+    off_fn.add_argument(
+        "function", nargs="?", default=None, help=i18n.t("help.arg.function_ref_or_every")
+    )
+    off_fn.add_argument(
+        "--lights-only", action="store_true", help=i18n.t("help.throttle.lights_only")
+    )
     off_fn.epilog = (
-        "example:\n"
-        "  jmri-cli throttle off 3 1\n"
-        "  jmri-cli throttle off 3\n"
-        "  jmri-cli throttle off"
+        "example:\n  jmri-cli throttle off 3 1\n  jmri-cli throttle off 3\n  jmri-cli throttle off"
     )
 
     engine_start_cmd = _leaf(
-        throttle_sub, "engine-start", help=i18n.t("help.throttle.engine_start"),
-        example="jmri-cli throttle engine-start 3", func=throttle.throttle_engine_start,
+        throttle_sub,
+        "engine-start",
+        help=i18n.t("help.throttle.engine_start"),
+        example="jmri-cli throttle engine-start 3",
+        func=throttle.throttle_engine_start,
     )
-    engine_start_cmd.add_argument("loco", nargs="?", default=None,
-                                   help=i18n.t("help.throttle.engine_start_loco"))
-    engine_start_cmd.add_argument("--prefix", default=None,
-                                   help=i18n.t("help.throttle.acquire_prefix"))
+    engine_start_cmd.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.engine_start_loco")
+    ).completion_kind = "roster"
+    engine_start_cmd.add_argument(
+        "--prefix", default=None, help=i18n.t("help.throttle.acquire_prefix")
+    )
 
     engine_stop_cmd = _leaf(
-        throttle_sub, "engine-stop", help=i18n.t("help.throttle.engine_stop"),
-        example="jmri-cli throttle engine-stop", func=throttle.throttle_engine_stop,
+        throttle_sub,
+        "engine-stop",
+        help=i18n.t("help.throttle.engine_stop"),
+        example="jmri-cli throttle engine-stop",
+        func=throttle.throttle_engine_stop,
     )
-    engine_stop_cmd.add_argument("loco", nargs="?", default=None,
-                                  help=i18n.t("help.throttle.engine_stop_loco"))
+    engine_stop_cmd.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.engine_stop_loco")
+    ).completion_kind = "roster"
 
     function_cmd = _leaf(
-        throttle_sub, "function",
+        throttle_sub,
+        "function",
         help=i18n.t("help.throttle.function"),
-        example="jmri-cli throttle function 3", func=throttle.throttle_function,
+        example="jmri-cli throttle function 3",
+        func=throttle.throttle_function,
     )
-    function_cmd.add_argument("loco", help=i18n.t("help.arg.loco_ref"))
+    function_cmd.add_argument("loco", help=i18n.t("help.arg.loco_ref")).completion_kind = "roster"
 
     wait_cmd = _leaf(
-        throttle_sub, "wait", help=i18n.t("help.throttle.wait"),
-        example="jmri-cli throttle wait 3", func=throttle.throttle_wait,
+        throttle_sub,
+        "wait",
+        help=i18n.t("help.throttle.wait"),
+        example="jmri-cli throttle wait 3",
+        func=throttle.throttle_wait,
     )
-    wait_cmd.add_argument("loco", nargs="?", default=None,
-                           help=i18n.t("help.throttle.wait_loco"))
+    wait_cmd.add_argument(
+        "loco", nargs="?", default=None, help=i18n.t("help.throttle.wait_loco")
+    ).completion_kind = "roster"
 
     sniff = _leaf(
-        throttle_sub, "sniff", help=i18n.t("help.throttle.sniff"),
-        example="jmri-cli throttle sniff -a 3 -a 7", func=throttle.throttle_sniff,
+        throttle_sub,
+        "sniff",
+        help=i18n.t("help.throttle.sniff"),
+        example="jmri-cli throttle sniff -a 3 -a 7",
+        func=throttle.throttle_sniff,
     )
     sniff.add_argument(
-        "-a", "--address", type=int, action="append", default=None,
+        "-a",
+        "--address",
+        type=int,
+        action="append",
+        default=None,
         help=i18n.t("help.throttle.sniff_address"),
     )
     sniff.add_argument(
-        "--show-pong", action="store_true",
+        "--show-pong",
+        action="store_true",
         help=i18n.t("help.throttle.sniff_show_pong"),
     )
 
@@ -591,45 +739,69 @@ def build_parser() -> argparse.ArgumentParser:
     light_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        light_sub, "list", help=i18n.t("help.light.list"),
-        example="jmri-cli light list", func=light.light_list,
+        light_sub,
+        "list",
+        help=i18n.t("help.light.list"),
+        example="jmri-cli light list",
+        func=light.light_list,
     )
     _sort_siblings(
-        light_sub, light.SORT_FIELDS, func=light.light_list,
+        light_sub,
+        light.SORT_FIELDS,
+        func=light.light_list,
         example_prefix="jmri-cli light",
     )
 
     light_find_cmd = _leaf(
-        light_sub, "find", help=i18n.t("help.light.find"),
-        example='jmri-cli light find "Depot Lighting"', func=light.light_find,
+        light_sub,
+        "find",
+        help=i18n.t("help.light.find"),
+        example='jmri-cli light find "Depot Lighting"',
+        func=light.light_find,
     )
-    light_find_cmd.add_argument("name", help=i18n.t("help.light.find_name"))
+    light_find_cmd.add_argument(
+        "name", help=i18n.t("help.light.find_name")
+    ).completion_kind = "light"
 
     _find_pattern_leaf(
-        light_sub, "findr", help=i18n.t("help.light.findr"),
-        example="jmri-cli light findr '^Depot'", func=light.light_findr,
+        light_sub,
+        "findr",
+        help=i18n.t("help.light.findr"),
+        example="jmri-cli light findr '^Depot'",
+        func=light.light_findr,
         sort_fields=light.SORT_FIELDS,
     )
 
     _find_pattern_leaf(
-        light_sub, "findg", help=i18n.t("help.light.findg"),
-        example="jmri-cli light findg 'Depot*'", func=light.light_findg,
+        light_sub,
+        "findg",
+        help=i18n.t("help.light.findg"),
+        example="jmri-cli light findg 'Depot*'",
+        func=light.light_findg,
         sort_fields=light.SORT_FIELDS,
     )
 
     light_on_cmd = _leaf(
-        light_sub, "on", help=i18n.t("help.light.on"),
-        example='jmri-cli light on "Depot Lighting"', func=light.light_on,
+        light_sub,
+        "on",
+        help=i18n.t("help.light.on"),
+        example='jmri-cli light on "Depot Lighting"',
+        func=light.light_on,
     )
-    light_on_cmd.add_argument("name", nargs="?", default=None,
-                               help=i18n.t("help.arg.light_ref_or_every"))
+    light_on_cmd.add_argument(
+        "name", nargs="?", default=None, help=i18n.t("help.arg.light_ref_or_every")
+    ).completion_kind = "light"
 
     light_off_cmd = _leaf(
-        light_sub, "off", help=i18n.t("help.light.off"),
-        example='jmri-cli light off "Depot Lighting"', func=light.light_off,
+        light_sub,
+        "off",
+        help=i18n.t("help.light.off"),
+        example='jmri-cli light off "Depot Lighting"',
+        func=light.light_off,
     )
-    light_off_cmd.add_argument("name", nargs="?", default=None,
-                                help=i18n.t("help.arg.light_ref_or_every"))
+    light_off_cmd.add_argument(
+        "name", nargs="?", default=None, help=i18n.t("help.arg.light_ref_or_every")
+    ).completion_kind = "light"
 
     # -- turnout: bare = list; close/throw take an optional fuzzy target
     turnout_cmd, turnout_sub = _group(subparsers, "turnout", default_func=turnout.turnout_list)
@@ -637,45 +809,69 @@ def build_parser() -> argparse.ArgumentParser:
     turnout_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        turnout_sub, "list", help=i18n.t("help.turnout.list"),
-        example="jmri-cli turnout list", func=turnout.turnout_list,
+        turnout_sub,
+        "list",
+        help=i18n.t("help.turnout.list"),
+        example="jmri-cli turnout list",
+        func=turnout.turnout_list,
     )
     _sort_siblings(
-        turnout_sub, turnout.SORT_FIELDS, func=turnout.turnout_list,
+        turnout_sub,
+        turnout.SORT_FIELDS,
+        func=turnout.turnout_list,
         example_prefix="jmri-cli turnout",
     )
 
     turnout_find_cmd = _leaf(
-        turnout_sub, "find", help=i18n.t("help.turnout.find"),
-        example="jmri-cli turnout find IT100", func=turnout.turnout_find,
+        turnout_sub,
+        "find",
+        help=i18n.t("help.turnout.find"),
+        example="jmri-cli turnout find IT100",
+        func=turnout.turnout_find,
     )
-    turnout_find_cmd.add_argument("name", help=i18n.t("help.turnout.find_name"))
+    turnout_find_cmd.add_argument(
+        "name", help=i18n.t("help.turnout.find_name")
+    ).completion_kind = "turnout"
 
     _find_pattern_leaf(
-        turnout_sub, "findr", help=i18n.t("help.turnout.findr"),
-        example="jmri-cli turnout findr '^Mountain'", func=turnout.turnout_findr,
+        turnout_sub,
+        "findr",
+        help=i18n.t("help.turnout.findr"),
+        example="jmri-cli turnout findr '^Mountain'",
+        func=turnout.turnout_findr,
         sort_fields=turnout.SORT_FIELDS,
     )
 
     _find_pattern_leaf(
-        turnout_sub, "findg", help=i18n.t("help.turnout.findg"),
-        example="jmri-cli turnout findg 'Layout*'", func=turnout.turnout_findg,
+        turnout_sub,
+        "findg",
+        help=i18n.t("help.turnout.findg"),
+        example="jmri-cli turnout findg 'Layout*'",
+        func=turnout.turnout_findg,
         sort_fields=turnout.SORT_FIELDS,
     )
 
     turnout_close_cmd = _leaf(
-        turnout_sub, "close", help=i18n.t("help.turnout.close"),
-        example='jmri-cli turnout close "Layout Turnout A"', func=turnout.turnout_closed,
+        turnout_sub,
+        "close",
+        help=i18n.t("help.turnout.close"),
+        example='jmri-cli turnout close "Layout Turnout A"',
+        func=turnout.turnout_closed,
     )
-    turnout_close_cmd.add_argument("name", nargs="?", default=None,
-                                    help=i18n.t("help.arg.turnout_ref_or_every"))
+    turnout_close_cmd.add_argument(
+        "name", nargs="?", default=None, help=i18n.t("help.arg.turnout_ref_or_every")
+    ).completion_kind = "turnout"
 
     turnout_throw_cmd = _leaf(
-        turnout_sub, "throw", help=i18n.t("help.turnout.throw"),
-        example='jmri-cli turnout throw "Layout Turnout A"', func=turnout.turnout_thrown,
+        turnout_sub,
+        "throw",
+        help=i18n.t("help.turnout.throw"),
+        example='jmri-cli turnout throw "Layout Turnout A"',
+        func=turnout.turnout_thrown,
     )
-    turnout_throw_cmd.add_argument("name", nargs="?", default=None,
-                                    help=i18n.t("help.arg.turnout_ref_or_every"))
+    turnout_throw_cmd.add_argument(
+        "name", nargs="?", default=None, help=i18n.t("help.arg.turnout_ref_or_every")
+    ).completion_kind = "turnout"
 
     # -- sensor: bare = list; read-only ---------------------------------
     sensor_cmd, sensor_sub = _group(subparsers, "sensor", default_func=sensor.sensor_list)
@@ -683,35 +879,56 @@ def build_parser() -> argparse.ArgumentParser:
     sensor_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        sensor_sub, "list", help=i18n.t("help.sensor.list"),
-        example="jmri-cli sensor list", func=sensor.sensor_list,
+        sensor_sub,
+        "list",
+        help=i18n.t("help.sensor.list"),
+        example="jmri-cli sensor list",
+        func=sensor.sensor_list,
     )
     _sort_siblings(
-        sensor_sub, sensor.SORT_FIELDS, func=sensor.sensor_list,
+        sensor_sub,
+        sensor.SORT_FIELDS,
+        func=sensor.sensor_list,
         example_prefix="jmri-cli sensor",
     )
 
     sensor_status_cmd = _leaf(
-        sensor_sub, "status", help=i18n.t("help.sensor.status"),
-        example='jmri-cli sensor status "Montagne B"', func=sensor.sensor_status,
+        sensor_sub,
+        "status",
+        help=i18n.t("help.sensor.status"),
+        example='jmri-cli sensor status "Montagne B"',
+        func=sensor.sensor_status,
     )
-    sensor_status_cmd.add_argument("name", help=i18n.t("help.arg.sensor_ref"))
+    sensor_status_cmd.add_argument(
+        "name", help=i18n.t("help.arg.sensor_ref")
+    ).completion_kind = "sensor"
 
     sensor_find_cmd = _leaf(
-        sensor_sub, "find", help=i18n.t("help.sensor.find"),
-        example='jmri-cli sensor find "Montagne B"', func=sensor.sensor_find,
+        sensor_sub,
+        "find",
+        help=i18n.t("help.sensor.find"),
+        example='jmri-cli sensor find "Montagne B"',
+        func=sensor.sensor_find,
     )
-    sensor_find_cmd.add_argument("name", help=i18n.t("help.arg.sensor_ref"))
+    sensor_find_cmd.add_argument(
+        "name", help=i18n.t("help.arg.sensor_ref")
+    ).completion_kind = "sensor"
 
     _find_pattern_leaf(
-        sensor_sub, "findr", help=i18n.t("help.sensor.findr"),
-        example="jmri-cli sensor findr '^Montagne'", func=sensor.sensor_findr,
+        sensor_sub,
+        "findr",
+        help=i18n.t("help.sensor.findr"),
+        example="jmri-cli sensor findr '^Montagne'",
+        func=sensor.sensor_findr,
         sort_fields=sensor.SORT_FIELDS,
     )
 
     _find_pattern_leaf(
-        sensor_sub, "findg", help=i18n.t("help.sensor.findg"),
-        example="jmri-cli sensor findg 'Montagne*'", func=sensor.sensor_findg,
+        sensor_sub,
+        "findg",
+        help=i18n.t("help.sensor.findg"),
+        example="jmri-cli sensor findg 'Montagne*'",
+        func=sensor.sensor_findg,
         sort_fields=sensor.SORT_FIELDS,
     )
 
@@ -721,35 +938,54 @@ def build_parser() -> argparse.ArgumentParser:
     block_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        block_sub, "list", help=i18n.t("help.block.list"),
-        example="jmri-cli block list", func=block.block_list,
+        block_sub,
+        "list",
+        help=i18n.t("help.block.list"),
+        example="jmri-cli block list",
+        func=block.block_list,
     )
     _sort_siblings(
-        block_sub, block.SORT_FIELDS, func=block.block_list,
+        block_sub,
+        block.SORT_FIELDS,
+        func=block.block_list,
         example_prefix="jmri-cli block",
     )
 
     block_status_cmd = _leaf(
-        block_sub, "status", help=i18n.t("help.block.status"),
-        example='jmri-cli block status "B_1_Montagne A"', func=block.block_status,
+        block_sub,
+        "status",
+        help=i18n.t("help.block.status"),
+        example='jmri-cli block status "B_1_Montagne A"',
+        func=block.block_status,
     )
-    block_status_cmd.add_argument("name", help=i18n.t("help.arg.block_ref"))
+    block_status_cmd.add_argument(
+        "name", help=i18n.t("help.arg.block_ref")
+    ).completion_kind = "block"
 
     block_find_cmd = _leaf(
-        block_sub, "find", help=i18n.t("help.block.find"),
-        example='jmri-cli block find "B_1_Montagne A"', func=block.block_find,
+        block_sub,
+        "find",
+        help=i18n.t("help.block.find"),
+        example='jmri-cli block find "B_1_Montagne A"',
+        func=block.block_find,
     )
-    block_find_cmd.add_argument("name", help=i18n.t("help.arg.block_ref"))
+    block_find_cmd.add_argument("name", help=i18n.t("help.arg.block_ref")).completion_kind = "block"
 
     _find_pattern_leaf(
-        block_sub, "findr", help=i18n.t("help.block.findr"),
-        example="jmri-cli block findr '^B_1'", func=block.block_findr,
+        block_sub,
+        "findr",
+        help=i18n.t("help.block.findr"),
+        example="jmri-cli block findr '^B_1'",
+        func=block.block_findr,
         sort_fields=block.SORT_FIELDS,
     )
 
     _find_pattern_leaf(
-        block_sub, "findg", help=i18n.t("help.block.findg"),
-        example="jmri-cli block findg 'B_1*'", func=block.block_findg,
+        block_sub,
+        "findg",
+        help=i18n.t("help.block.findg"),
+        example="jmri-cli block findg 'B_1*'",
+        func=block.block_findg,
         sort_fields=block.SORT_FIELDS,
     )
 
@@ -759,43 +995,69 @@ def build_parser() -> argparse.ArgumentParser:
     signal_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
 
     _leaf(
-        signal_sub, "list", help=i18n.t("help.signal.list"),
-        example="jmri-cli signal list", func=signal.signal_list,
+        signal_sub,
+        "list",
+        help=i18n.t("help.signal.list"),
+        example="jmri-cli signal list",
+        func=signal.signal_list,
     )
     _sort_siblings(
-        signal_sub, signal.SORT_FIELDS, func=signal.signal_list,
+        signal_sub,
+        signal.SORT_FIELDS,
+        func=signal.signal_list,
         example_prefix="jmri-cli signal",
     )
 
     signal_status_cmd = _leaf(
-        signal_sub, "status", help=i18n.t("help.signal.status"),
-        example='jmri-cli signal status "Entry Signal A"', func=signal.signal_status,
+        signal_sub,
+        "status",
+        help=i18n.t("help.signal.status"),
+        example='jmri-cli signal status "Entry Signal A"',
+        func=signal.signal_status,
     )
-    signal_status_cmd.add_argument("name", help=i18n.t("help.arg.signal_ref"))
+    signal_status_cmd.add_argument(
+        "name", help=i18n.t("help.arg.signal_ref")
+    ).completion_kind = "signal"
 
     signal_find_cmd = _leaf(
-        signal_sub, "find", help=i18n.t("help.signal.find"),
-        example='jmri-cli signal find "Entry Signal A"', func=signal.signal_find,
+        signal_sub,
+        "find",
+        help=i18n.t("help.signal.find"),
+        example='jmri-cli signal find "Entry Signal A"',
+        func=signal.signal_find,
     )
-    signal_find_cmd.add_argument("name", help=i18n.t("help.arg.signal_ref"))
+    signal_find_cmd.add_argument(
+        "name", help=i18n.t("help.arg.signal_ref")
+    ).completion_kind = "signal"
 
     _find_pattern_leaf(
-        signal_sub, "findr", help=i18n.t("help.signal.findr"),
-        example="jmri-cli signal findr '^Entry'", func=signal.signal_findr,
+        signal_sub,
+        "findr",
+        help=i18n.t("help.signal.findr"),
+        example="jmri-cli signal findr '^Entry'",
+        func=signal.signal_findr,
         sort_fields=signal.SORT_FIELDS,
     )
 
     _find_pattern_leaf(
-        signal_sub, "findg", help=i18n.t("help.signal.findg"),
-        example="jmri-cli signal findg 'Entry*'", func=signal.signal_findg,
+        signal_sub,
+        "findg",
+        help=i18n.t("help.signal.findg"),
+        example="jmri-cli signal findg 'Entry*'",
+        func=signal.signal_findg,
         sort_fields=signal.SORT_FIELDS,
     )
 
     signal_set_cmd = _leaf(
-        signal_sub, "set", help=i18n.t("help.signal.set"),
-        example='jmri-cli signal set "Entry Signal A" Hp1', func=signal.signal_set,
+        signal_sub,
+        "set",
+        help=i18n.t("help.signal.set"),
+        example='jmri-cli signal set "Entry Signal A" Hp1',
+        func=signal.signal_set,
     )
-    signal_set_cmd.add_argument("name", help=i18n.t("help.arg.signal_ref"))
+    signal_set_cmd.add_argument(
+        "name", help=i18n.t("help.arg.signal_ref")
+    ).completion_kind = "signal"
     signal_set_cmd.add_argument("aspect", help=i18n.t("help.signal.set_aspect"))
 
     return parser

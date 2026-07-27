@@ -8,15 +8,15 @@ jmri_core.jmri_client.signal's module docstring for why.
 import argparse
 import sys
 
-from tabulate import tabulate
-
 from jmri_core import i18n
-from jmri_cli._match import find_glob, find_regex
-from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR
 from jmri_core.jmri_client import JmriError, get_signals, parse_signal_dcc_address, resolve_signal
 from jmri_core.jmri_client import set_signal as _set_signal
+from tabulate import tabulate
+
 from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
+from jmri_cli._match import find_glob, find_regex
+from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 
 
 def _headers() -> list[str]:

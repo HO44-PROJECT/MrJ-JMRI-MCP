@@ -10,16 +10,16 @@ about which direction is which).
 import argparse
 import sys
 
-from tabulate import tabulate
-
 from jmri_core import i18n
-from jmri_cli._match import find_glob, find_regex
-from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR, TURNOUT_STATE_NAMES
 from jmri_core.jmri_client import JmriError, get_turnouts, parse_dcc_address, resolve_turnout
 from jmri_core.jmri_client import set_turnout as _set_turnout
 from jmri_core.jmri_client.turnout import TURNOUT_CLOSED, TURNOUT_THROWN
+from tabulate import tabulate
+
 from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
+from jmri_cli._match import find_glob, find_regex
+from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 
 
 def _headers() -> list[str]:
@@ -218,7 +218,10 @@ async def _turnout_set(args: argparse.Namespace, *, thrown: bool) -> int:
     if not all_confirmed:
         if unconfirmed_sensorless:
             print(i18n.t("cli.turnout_no_feedback_note"), file=sys.stderr)
-        print(i18n.t("cli.not_every_entity_confirmed", kind="turnout", state=state_name), file=sys.stderr)
+        print(
+            i18n.t("cli.not_every_entity_confirmed", kind="turnout", state=state_name),
+            file=sys.stderr,
+        )
         return 1
     return 0
 

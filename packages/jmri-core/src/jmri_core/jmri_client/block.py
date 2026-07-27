@@ -41,8 +41,11 @@ async def get_blocks() -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise JmriError("unexpected_payload", endpoint=endpoints.BLOCKS, payload=payload)
     blocks = [_unwrap(entry) for entry in payload]
-    logger.info("Discovered %d block(s): %s",
-                len(blocks), [b.get("userName") or b.get("name") for b in blocks])
+    logger.info(
+        "Discovered %d block(s): %s",
+        len(blocks),
+        [b.get("userName") or b.get("name") for b in blocks],
+    )
     return blocks
 
 
@@ -63,17 +66,17 @@ def resolve_block(query: str, blocks: list[dict[str, Any]]) -> dict[str, Any]:
     labels = [str(b.get("userName") or b.get("name", "")) for b in blocks]
 
     exact = [
-        b for b in blocks
-        if str(b.get("name", "")).casefold() == q
-        or str(b.get("userName") or "").casefold() == q
+        b
+        for b in blocks
+        if str(b.get("name", "")).casefold() == q or str(b.get("userName") or "").casefold() == q
     ]
     if len(exact) == 1:
         return exact[0]
 
     partial = [
-        b for b in blocks
-        if q in str(b.get("userName") or "").casefold()
-        or q in str(b.get("name", "")).casefold()
+        b
+        for b in blocks
+        if q in str(b.get("userName") or "").casefold() or q in str(b.get("name", "")).casefold()
     ]
     if len(partial) == 1:
         return partial[0]

@@ -6,11 +6,7 @@ Talks to jmri_client.py directly (one-shot HTTP, no MCP/JSON-RPC involved).
 import argparse
 import sys
 
-from tabulate import tabulate
-
 from jmri_core import i18n
-from jmri_cli._match import find_glob, find_regex
-from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import SORT_INDICATOR
 from jmri_core.jmri_client import (
     JmriError,
@@ -20,6 +16,10 @@ from jmri_core.jmri_client import (
     get_systems,
     resolve_roster_entry,
 )
+from tabulate import tabulate
+
+from jmri_cli._match import find_glob, find_regex
+from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 
 
 def _headers() -> list[str]:
@@ -66,7 +66,7 @@ async def _default_system_prefix(names_by_prefix: dict[str, str]) -> str | None:
 def _dcc_system_display(
     dcc_system: str | None, names_by_prefix: dict[str, str], default_prefix: str | None
 ) -> str:
-    """"T" -> "taya (accessories)" when the system name is known, else the
+    """ "T" -> "taya (accessories)" when the system name is known, else the
     bare prefix. An unset dcc_system (no DccSystem roster attribute) falls
     back to JMRI's own default system's prefix/name — a locomotive with no
     attribute set is still actually driven through *some* system, namely
@@ -142,7 +142,9 @@ async def roster_list(args: argparse.Namespace) -> int:
         print(i18n.t("cli.roster_empty"))
         return 0
     sort_by = getattr(args, "sort_by", None) or "byname"
-    rows = sort_rows([_row(e, names_by_prefix, default_prefix) for e in roster], SORT_FIELDS, sort_by)
+    rows = sort_rows(
+        [_row(e, names_by_prefix, default_prefix) for e in roster], SORT_FIELDS, sort_by
+    )
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0
@@ -170,7 +172,9 @@ async def _roster_find_pattern(args: argparse.Namespace, *, regex: bool) -> int:
         print(i18n.t("cli.no_roster_entries_match", pattern=pattern))
         return 0
     sort_by = sort_by or "byname"
-    rows = sort_rows([_row(e, names_by_prefix, default_prefix) for e in matches], SORT_FIELDS, sort_by)
+    rows = sort_rows(
+        [_row(e, names_by_prefix, default_prefix) for e in matches], SORT_FIELDS, sort_by
+    )
     headers = mark_sorted_header(_headers(), SORT_FIELDS, sort_by, SORT_INDICATOR)
     print(tabulate(rows, headers=headers))
     return 0

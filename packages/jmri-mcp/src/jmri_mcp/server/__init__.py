@@ -8,12 +8,11 @@ import asyncio
 import logging
 import sys
 
+from jmri_core.config import get_jmri_url
+from jmri_core.jmri_ws import get_ws_client
 from mcp.server.fastmcp import FastMCP
 
-from jmri_mcp import __version__
-from jmri_core.config import get_jmri_url
-from jmri_mcp import tools
-from jmri_core.jmri_ws import get_ws_client
+from jmri_mcp import __version__, tools
 from jmri_mcp.tools._common import background_tasks
 
 logging.basicConfig(

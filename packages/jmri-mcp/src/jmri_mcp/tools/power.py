@@ -10,6 +10,7 @@ from jmri_core import i18n, jmri_client
 from jmri_core.jmri_client import JmriError, get_systems, get_version, resolve_system
 from jmri_core.jmri_client import power_off_all as _power_off_all
 from jmri_core.jmri_client import power_on_all as _power_on_all
+
 from jmri_mcp.tools._common import compact_power
 from jmri_mcp.tools.mode import is_exhibition_mode
 

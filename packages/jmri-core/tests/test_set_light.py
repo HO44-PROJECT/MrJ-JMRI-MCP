@@ -1,7 +1,6 @@
 import pytest
 import respx
 from httpx import Response
-
 from jmri_core.jmri_client import LIGHT_OFF, LIGHT_ON, JmriError, set_light
 from jmri_core.testing.plugin import MOCK_JMRI_URL
 

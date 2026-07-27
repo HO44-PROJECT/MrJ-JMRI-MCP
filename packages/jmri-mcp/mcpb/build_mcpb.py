@@ -1,18 +1,12 @@
-from pathlib import Path
 import argparse
 import shutil
 import tempfile
 import tomllib
 import zipfile
-
+from pathlib import Path
 
 parser = argparse.ArgumentParser(description="Build MCPB bundle")
-parser.add_argument(
-    "--out-dir",
-    type=Path,
-    default=Path("dist"),
-    help="Output directory"
-)
+parser.add_argument("--out-dir", type=Path, default=Path("dist"), help="Output directory")
 
 args = parser.parse_args()
 
@@ -31,19 +25,14 @@ with open(PYPROJECT, "rb") as f:
     project = tomllib.load(f)["project"]
 
 version = str(project["version"])
-jmri_core_pin = next(
-    dep for dep in project["dependencies"] if dep.startswith("jmri-core")
-)
+jmri_core_pin = next(dep for dep in project["dependencies"] if dep.startswith("jmri-core"))
 mcp_pin = next(dep for dep in project["dependencies"] if dep.startswith("mcp"))
 
 
 # Générer le manifest en mémoire
 template_content = TEMPLATE.read_text(encoding="utf-8")
 
-manifest_content = template_content.replace(
-    "{{VERSION}}",
-    version
-)
+manifest_content = template_content.replace("{{VERSION}}", version)
 
 
 # pyproject.toml bundlé dans le zip : projet autonome que `uv` (côté hôte,

@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-
 from jmri_core.jmri_ws import JmriError, JmriWsClient
 from jmri_core.testing.plugin import WS_HEARTBEAT_MS as HEARTBEAT_MS
 
@@ -29,6 +28,7 @@ async def test_request_raises_jmri_error_on_error_reply(fake_jmri):
 
 async def test_request_times_out_with_no_reply(fake_jmri, monkeypatch):
     import jmri_core.jmri_ws as ws_module
+
     monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
     client = JmriWsClient()
     with pytest.raises(JmriError, match="Timed out"):
@@ -150,6 +150,7 @@ async def test_set_speed_noop_skips_request_without_hanging(fake_jmri, monkeypat
     # matches the current speed. Drop the request timeout so the test
     # would fail fast (instead of hanging ~5s) if set_speed still sent it.
     import jmri_core.jmri_ws as ws_module
+
     monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()
@@ -189,6 +190,7 @@ async def test_set_direction_on_acquired_throttle(fake_jmri):
 
 async def test_set_direction_noop_skips_request_without_hanging(fake_jmri, monkeypatch):
     import jmri_core.jmri_ws as ws_module
+
     monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()
@@ -226,6 +228,7 @@ async def test_set_function_on_acquired_throttle(fake_jmri):
 
 async def test_set_function_noop_skips_request_without_hanging(fake_jmri, monkeypatch):
     import jmri_core.jmri_ws as ws_module
+
     monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()
@@ -277,6 +280,7 @@ async def test_emergency_stop_all_with_no_throttles_is_a_noop(fake_jmri):
 
 async def test_emergency_stop_all_skips_already_stopped_without_hanging(fake_jmri, monkeypatch):
     import jmri_core.jmri_ws as ws_module
+
     monkeypatch.setattr(ws_module, "WS_REQUEST_TIMEOUT_SECONDS", 0.3)
 
     client = JmriWsClient()

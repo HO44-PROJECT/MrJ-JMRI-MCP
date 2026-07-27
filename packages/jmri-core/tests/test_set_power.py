@@ -1,12 +1,16 @@
 import respx
 from httpx import Response
-
 from jmri_core.jmri_client import POWER_OFF, POWER_ON, POWER_UNKNOWN, set_power
 from jmri_core.testing.plugin import MOCK_JMRI_URL
 
 
 def _power_payload(prefix: str, state: int, name: str = "DCC++ Ohara", default=False):
-    return [{"type": "power", "data": {"name": name, "prefix": prefix, "state": state, "default": default}}]
+    return [
+        {
+            "type": "power",
+            "data": {"name": name, "prefix": prefix, "state": state, "default": default},
+        }
+    ]
 
 
 def _version_payload(version: str):
@@ -103,10 +107,10 @@ async def test_set_power_recovers_from_unknown_after_on_old_jmri(monkeypatch):
         )
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(
             side_effect=[
-                Response(200, json=_power_payload("R", POWER_OFF)),      # pre-check
+                Response(200, json=_power_payload("R", POWER_OFF)),  # pre-check
                 Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # post-ON re-read: UNKNOWN
-                Response(200, json=_power_payload("R", POWER_OFF)),      # post-recovery-OFF re-read
-                Response(200, json=_power_payload("R", POWER_ON)),       # post-recovery-ON re-read
+                Response(200, json=_power_payload("R", POWER_OFF)),  # post-recovery-OFF re-read
+                Response(200, json=_power_payload("R", POWER_ON)),  # post-recovery-ON re-read
             ]
         )
         result = await set_power("R", turn_on=True)
@@ -133,9 +137,9 @@ async def test_set_power_unknown_recovery_failure_reported_honestly(monkeypatch)
         router.post(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json={}))
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(
             side_effect=[
-                Response(200, json=_power_payload("R", POWER_OFF)),      # pre-check
+                Response(200, json=_power_payload("R", POWER_OFF)),  # pre-check
                 Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # post-ON re-read: UNKNOWN
-                Response(200, json=_power_payload("R", POWER_OFF)),      # post-recovery-OFF re-read
+                Response(200, json=_power_payload("R", POWER_OFF)),  # post-recovery-OFF re-read
                 Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # retry still UNKNOWN
             ]
         )
@@ -159,9 +163,9 @@ async def test_set_power_self_recovers_from_unknown_on_fixed_jmri(monkeypatch):
         )
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(
             side_effect=[
-                Response(200, json=_power_payload("R", POWER_OFF)),      # pre-check
+                Response(200, json=_power_payload("R", POWER_OFF)),  # pre-check
                 Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # post-ON re-read: UNKNOWN
-                Response(200, json=_power_payload("R", POWER_ON)),       # self-recovery re-read
+                Response(200, json=_power_payload("R", POWER_ON)),  # self-recovery re-read
             ]
         )
         result = await set_power("R", turn_on=True)
@@ -206,7 +210,7 @@ async def test_set_power_no_recovery_when_turning_off(monkeypatch):
         )
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(
             side_effect=[
-                Response(200, json=_power_payload("R", POWER_ON)),       # pre-check
+                Response(200, json=_power_payload("R", POWER_ON)),  # pre-check
                 Response(200, json=_power_payload("R", POWER_UNKNOWN)),  # post-OFF re-read: UNKNOWN
             ]
         )

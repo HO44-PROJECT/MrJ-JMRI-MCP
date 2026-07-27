@@ -56,7 +56,10 @@ def test_server_instructions_disambiguate_power_from_motion_stop():
 
 def test_server_instructions_cover_bulk_lighting_and_turnout_tools():
     for tool_name in (
-        "set_all_turnouts", "set_layout_lights", "set_loco_lights", "set_all_locos_lights",
+        "set_all_turnouts",
+        "set_layout_lights",
+        "set_loco_lights",
+        "set_all_locos_lights",
     ):
         assert tool_name in _SERVER_INSTRUCTIONS
 
@@ -83,6 +86,10 @@ def test_server_instructions_explain_started_status_is_not_a_failure():
 
 def test_server_instructions_cover_meta_tools():
     for tool_name in (
-        "layout_status", "secure_layout", "release_all_locomotives", "night_mode", "day_mode",
+        "layout_status",
+        "secure_layout",
+        "release_all_locomotives",
+        "night_mode",
+        "day_mode",
     ):
         assert tool_name in _SERVER_INSTRUCTIONS

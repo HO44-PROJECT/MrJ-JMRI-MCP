@@ -67,6 +67,11 @@ Package layout:
                   sensor).
     parser.py     build_parser(): wires all of the above into one CLI, incl.
                   the bare-group-default and verb-elevation patterns.
+    completion.py Name-list fetching (system/locomotive/light/turnout/
+                  sensor/signal/block), backed by a short-lived on-disk
+                  cache under ~/.jmri-cli/completion_cache/ - powers TAB
+                  completion of these names inside shell.py's interactive
+                  prompt.
 """
 
 import asyncio

@@ -36,8 +36,11 @@ async def get_sensors() -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise JmriError("unexpected_payload", endpoint=endpoints.SENSORS, payload=payload)
     sensors = [_unwrap(entry) for entry in payload]
-    logger.info("Discovered %d sensor(s): %s",
-                len(sensors), [s.get("userName") or s.get("name") for s in sensors])
+    logger.info(
+        "Discovered %d sensor(s): %s",
+        len(sensors),
+        [s.get("userName") or s.get("name") for s in sensors],
+    )
     return sensors
 
 
@@ -58,17 +61,17 @@ def resolve_sensor(query: str, sensors: list[dict[str, Any]]) -> dict[str, Any]:
     labels = [str(s.get("userName") or s.get("name", "")) for s in sensors]
 
     exact = [
-        s for s in sensors
-        if str(s.get("name", "")).casefold() == q
-        or str(s.get("userName") or "").casefold() == q
+        s
+        for s in sensors
+        if str(s.get("name", "")).casefold() == q or str(s.get("userName") or "").casefold() == q
     ]
     if len(exact) == 1:
         return exact[0]
 
     partial = [
-        s for s in sensors
-        if q in str(s.get("userName") or "").casefold()
-        or q in str(s.get("name", "")).casefold()
+        s
+        for s in sensors
+        if q in str(s.get("userName") or "").casefold() or q in str(s.get("name", "")).casefold()
     ]
     if len(partial) == 1:
         return partial[0]

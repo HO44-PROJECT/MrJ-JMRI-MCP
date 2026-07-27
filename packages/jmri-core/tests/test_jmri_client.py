@@ -3,7 +3,6 @@ import re
 import pytest
 import respx
 from httpx import ConnectError, Response
-
 from jmri_core.jmri_client import (
     JmriError,
     default_system_prefix,
@@ -403,8 +402,20 @@ def test_resolve_block_partial_system_id_fragment_matches():
 # --- resolve_signal: pure function, no I/O ---
 
 SIGNALS = [
-    {"name": "ZF$dsm:DB-HV-1969:block(31)", "userName": "Entry Signal A", "aspect": "Hp1", "lit": True, "held": False},
-    {"name": "ZF$dsm:DB-HV-1969:block(45)", "userName": None, "aspect": "Hp0", "lit": True, "held": False},
+    {
+        "name": "ZF$dsm:DB-HV-1969:block(31)",
+        "userName": "Entry Signal A",
+        "aspect": "Hp1",
+        "lit": True,
+        "held": False,
+    },
+    {
+        "name": "ZF$dsm:DB-HV-1969:block(45)",
+        "userName": None,
+        "aspect": "Hp0",
+        "lit": True,
+        "held": False,
+    },
 ]
 
 
@@ -458,22 +469,43 @@ async def test_get_roster_compacts_fixture_entries(mock_roster, roster_fixture):
     roster = await get_roster()
     assert roster == [
         {
-            "name": "141R", "address": 2, "road": "Mikado 141 R",
-            "road_number": "141 R 1246, dépôt de Miramas", "manufacturer": "Jouef",
-            "model": "8273", "owner": "SNCF", "date_modified": "2024-01-20T13:18:40.774+00:00",
-            "groups": ["test"], "dcc_system": None, "max_speed_percent": 100,
+            "name": "141R",
+            "address": 2,
+            "road": "Mikado 141 R",
+            "road_number": "141 R 1246, dépôt de Miramas",
+            "manufacturer": "Jouef",
+            "model": "8273",
+            "owner": "SNCF",
+            "date_modified": "2024-01-20T13:18:40.774+00:00",
+            "groups": ["test"],
+            "dcc_system": None,
+            "max_speed_percent": 100,
         },
         {
-            "name": "Autorail", "address": 4, "road": "Railcar",
-            "road_number": "", "manufacturer": "", "model": "4185A",
-            "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-            "groups": [], "dcc_system": None, "max_speed_percent": 100,
+            "name": "Autorail",
+            "address": 4,
+            "road": "Railcar",
+            "road_number": "",
+            "manufacturer": "",
+            "model": "4185A",
+            "owner": "",
+            "date_modified": "2024-01-20T13:18:40.774+00:00",
+            "groups": [],
+            "dcc_system": None,
+            "max_speed_percent": 100,
         },
         {
-            "name": "Boite à Sel", "address": 8, "road": "",
-            "road_number": "", "manufacturer": "", "model": "",
-            "owner": "", "date_modified": "2024-01-20T13:18:40.774+00:00",
-            "groups": [], "dcc_system": None, "max_speed_percent": 100,
+            "name": "Boite à Sel",
+            "address": 8,
+            "road": "",
+            "road_number": "",
+            "manufacturer": "",
+            "model": "",
+            "owner": "",
+            "date_modified": "2024-01-20T13:18:40.774+00:00",
+            "groups": [],
+            "dcc_system": None,
+            "max_speed_percent": 100,
         },
     ]
 
@@ -488,17 +520,29 @@ async def test_get_roster_raises_on_connection_failure():
 async def test_get_roster_skips_entries_with_unusable_address():
     bad = [
         {"type": "rosterEntry", "data": {"name": "Ghost", "address": "not-a-number"}},
-        {"type": "rosterEntry", "data": {"name": "141R", "address": "2", "road": "Mikado", "model": "8273"}},
+        {
+            "type": "rosterEntry",
+            "data": {"name": "141R", "address": "2", "road": "Mikado", "model": "8273"},
+        },
     ]
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=bad))
         roster = await get_roster()
-    assert roster == [{
-        "name": "141R", "address": 2, "road": "Mikado",
-        "road_number": "", "manufacturer": "", "model": "8273",
-        "owner": "", "date_modified": "", "groups": [], "dcc_system": None,
-        "max_speed_percent": 100,
-    }]
+    assert roster == [
+        {
+            "name": "141R",
+            "address": 2,
+            "road": "Mikado",
+            "road_number": "",
+            "manufacturer": "",
+            "model": "8273",
+            "owner": "",
+            "date_modified": "",
+            "groups": [],
+            "dcc_system": None,
+            "max_speed_percent": 100,
+        }
+    ]
 
 
 async def test_get_roster_accepts_bare_data():
@@ -506,12 +550,21 @@ async def test_get_roster_accepts_bare_data():
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=bare))
         roster = await get_roster()
-    assert roster == [{
-        "name": "141R", "address": 2, "road": "Mikado",
-        "road_number": "", "manufacturer": "", "model": "8273",
-        "owner": "", "date_modified": "", "groups": [], "dcc_system": None,
-        "max_speed_percent": 100,
-    }]
+    assert roster == [
+        {
+            "name": "141R",
+            "address": 2,
+            "road": "Mikado",
+            "road_number": "",
+            "manufacturer": "",
+            "model": "8273",
+            "owner": "",
+            "date_modified": "",
+            "groups": [],
+            "dcc_system": None,
+            "max_speed_percent": 100,
+        }
+    ]
 
 
 async def test_get_roster_raises_on_non_list_non_dict_payload():
@@ -522,12 +575,19 @@ async def test_get_roster_raises_on_non_list_non_dict_payload():
 
 
 async def test_get_roster_reads_dcc_system_attribute():
-    entries = [{"type": "rosterEntry", "data": {
-        "name": "Cars", "address": "5", "attributes": [
-            {"name": "DccSystem", "value": "T"},
-            {"name": "LastOperated", "value": "2026-07-16T06:30:14.205+00:00"},
-        ],
-    }}]
+    entries = [
+        {
+            "type": "rosterEntry",
+            "data": {
+                "name": "Cars",
+                "address": "5",
+                "attributes": [
+                    {"name": "DccSystem", "value": "T"},
+                    {"name": "LastOperated", "value": "2026-07-16T06:30:14.205+00:00"},
+                ],
+            },
+        }
+    ]
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
         roster = await get_roster()
@@ -535,11 +595,18 @@ async def test_get_roster_reads_dcc_system_attribute():
 
 
 async def test_get_roster_dcc_system_none_when_attribute_absent():
-    entries = [{"type": "rosterEntry", "data": {
-        "name": "Cars", "address": "5", "attributes": [
-            {"name": "LastOperated", "value": "2026-07-16T06:30:14.205+00:00"},
-        ],
-    }}]
+    entries = [
+        {
+            "type": "rosterEntry",
+            "data": {
+                "name": "Cars",
+                "address": "5",
+                "attributes": [
+                    {"name": "LastOperated", "value": "2026-07-16T06:30:14.205+00:00"},
+                ],
+            },
+        }
+    ]
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
         roster = await get_roster()
@@ -558,11 +625,18 @@ async def test_get_roster_dcc_system_none_when_no_attributes_field():
 
 
 async def test_resolve_dcc_prefix_returns_dcc_system_when_set():
-    entries = [{"type": "rosterEntry", "data": {
-        "name": "Cars", "address": "5", "attributes": [
-            {"name": "DccSystem", "value": "T"},
-        ],
-    }}]
+    entries = [
+        {
+            "type": "rosterEntry",
+            "data": {
+                "name": "Cars",
+                "address": "5",
+                "attributes": [
+                    {"name": "DccSystem", "value": "T"},
+                ],
+            },
+        }
+    ]
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
         prefix = await resolve_dcc_prefix(5)
@@ -596,9 +670,16 @@ async def test_resolve_dcc_prefix_raises_on_connection_failure():
 
 
 async def test_resolve_max_speed_percent_returns_configured_limit():
-    entries = [{"type": "rosterEntry", "data": {
-        "name": "Cars", "address": "5", "maxSpeedPct": 20,
-    }}]
+    entries = [
+        {
+            "type": "rosterEntry",
+            "data": {
+                "name": "Cars",
+                "address": "5",
+                "maxSpeedPct": 20,
+            },
+        }
+    ]
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/roster").mock(return_value=Response(200, json=entries))
         limit = await resolve_max_speed_percent(5)

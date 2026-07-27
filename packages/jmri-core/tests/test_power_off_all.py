@@ -2,7 +2,6 @@ import json
 
 import respx
 from httpx import Response
-
 from jmri_core.jmri_client import POWER_OFF, POWER_ON, power_off_all, power_on_all
 from jmri_core.testing.plugin import MOCK_JMRI_URL
 
@@ -10,7 +9,10 @@ from jmri_core.testing.plugin import MOCK_JMRI_URL
 def _systems_payload(states: dict[str, int]) -> list[dict]:
     prefixes = {"O": "DCC++ Ohara", "Z": "DCC++ Zou", "R": "DCC++ Raijin"}
     return [
-        {"type": "power", "data": {"name": prefixes[p], "prefix": p, "state": s, "default": p == "R"}}
+        {
+            "type": "power",
+            "data": {"name": prefixes[p], "prefix": p, "state": s, "default": p == "R"},
+        }
         for p, s in states.items()
     ]
 
@@ -95,7 +97,9 @@ async def test_power_off_all_with_single_system(monkeypatch):
 
 async def test_power_on_all_confirms_every_system(monkeypatch):
     monkeypatch.setattr("jmri_core.jmri_client.power.POWER_POST_RECHECK_DELAY_SECONDS", 0)
-    get_side_effect, post_side_effect = _make_router({"O": POWER_OFF, "Z": POWER_OFF, "R": POWER_OFF})
+    get_side_effect, post_side_effect = _make_router(
+        {"O": POWER_OFF, "Z": POWER_OFF, "R": POWER_OFF}
+    )
 
     with respx.mock() as router:
         router.get(f"{MOCK_JMRI_URL}/json/power").mock(side_effect=get_side_effect)

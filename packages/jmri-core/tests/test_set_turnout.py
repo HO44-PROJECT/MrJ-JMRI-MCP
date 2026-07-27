@@ -1,7 +1,6 @@
 import pytest
 import respx
 from httpx import Response
-
 from jmri_core.jmri_client import TURNOUT_CLOSED, TURNOUT_THROWN, JmriError, set_turnout
 from jmri_core.testing.plugin import MOCK_JMRI_URL
 

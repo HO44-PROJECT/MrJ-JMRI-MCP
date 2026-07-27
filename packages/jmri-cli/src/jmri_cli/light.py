@@ -9,16 +9,16 @@ function (see `jmri-cli throttle on/off` for that).
 import argparse
 import sys
 
-from tabulate import tabulate
-
 from jmri_core import i18n
-from jmri_cli._match import find_glob, find_regex
-from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
-from jmri_core.constants.cli import SORT_INDICATOR, LIGHT_STATE_NAMES
+from jmri_core.constants.cli import LIGHT_STATE_NAMES, SORT_INDICATOR
 from jmri_core.jmri_client import JmriError, get_lights, parse_dcc_address, resolve_light
 from jmri_core.jmri_client import set_light as _set_light
-from jmri_core.jmri_client.light import LIGHT_ON, LIGHT_OFF
+from jmri_core.jmri_client.light import LIGHT_OFF, LIGHT_ON
+from tabulate import tabulate
+
 from jmri_cli._dcc_system import dcc_system_display, system_names_by_prefix
+from jmri_cli._match import find_glob, find_regex
+from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 
 
 def _headers() -> list[str]:
@@ -203,7 +203,10 @@ async def _light_set(args: argparse.Namespace, *, turn_on: bool) -> int:
 
     print(tabulate(rows, headers=_headers()))
     if not all_confirmed:
-        print(i18n.t("cli.not_every_entity_confirmed", kind="light", state=state_name), file=sys.stderr)
+        print(
+            i18n.t("cli.not_every_entity_confirmed", kind="light", state=state_name),
+            file=sys.stderr,
+        )
         return 1
     return 0
 

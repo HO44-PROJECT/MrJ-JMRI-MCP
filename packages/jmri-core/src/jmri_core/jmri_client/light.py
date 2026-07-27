@@ -33,8 +33,11 @@ async def get_lights() -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise JmriError("unexpected_payload", endpoint=endpoints.LIGHTS, payload=payload)
     lights = [_unwrap(entry) for entry in payload]
-    logger.info("Discovered %d light(s): %s",
-                len(lights), [lt.get("userName") or lt.get("name") for lt in lights])
+    logger.info(
+        "Discovered %d light(s): %s",
+        len(lights),
+        [lt.get("userName") or lt.get("name") for lt in lights],
+    )
     return lights
 
 
@@ -65,7 +68,10 @@ async def set_light(name: str, turn_on: bool) -> dict[str, Any]:
     if not confirmed:
         logger.warning(
             "set_light(%s, %s): requested state=%s but observed state=%s",
-            name, turn_on, desired, observed.get("state"),
+            name,
+            turn_on,
+            desired,
+            observed.get("state"),
         )
     return {**observed, "confirmed": confirmed}
 
@@ -89,17 +95,17 @@ def resolve_light(query: str, lights: list[dict[str, Any]]) -> dict[str, Any]:
     labels = [str(lt.get("userName") or lt.get("name", "")) for lt in lights]
 
     exact = [
-        lt for lt in lights
-        if str(lt.get("name", "")).casefold() == q
-        or str(lt.get("userName") or "").casefold() == q
+        lt
+        for lt in lights
+        if str(lt.get("name", "")).casefold() == q or str(lt.get("userName") or "").casefold() == q
     ]
     if len(exact) == 1:
         return exact[0]
 
     partial = [
-        lt for lt in lights
-        if q in str(lt.get("userName") or "").casefold()
-        or q in str(lt.get("name", "")).casefold()
+        lt
+        for lt in lights
+        if q in str(lt.get("userName") or "").casefold() or q in str(lt.get("name", "")).casefold()
     ]
     if len(partial) == 1:
         return partial[0]

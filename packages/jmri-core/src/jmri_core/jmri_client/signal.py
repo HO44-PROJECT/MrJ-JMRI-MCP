@@ -58,8 +58,11 @@ async def get_signals() -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         raise JmriError("unexpected_payload", endpoint=endpoints.SIGNAL_MASTS, payload=payload)
     signals = [_unwrap(entry) for entry in payload]
-    logger.info("Discovered %d signal mast(s): %s",
-                len(signals), [s.get("userName") or s.get("name") for s in signals])
+    logger.info(
+        "Discovered %d signal mast(s): %s",
+        len(signals),
+        [s.get("userName") or s.get("name") for s in signals],
+    )
     return signals
 
 
@@ -96,7 +99,10 @@ async def set_signal(name: str, aspect: str) -> dict[str, Any]:
     if not confirmed:
         logger.warning(
             "set_signal(%s, %s): requested aspect=%s but observed aspect=%s",
-            name, aspect, aspect, observed.get("aspect"),
+            name,
+            aspect,
+            aspect,
+            observed.get("aspect"),
         )
     return {**observed, "confirmed": confirmed}
 
@@ -119,17 +125,17 @@ def resolve_signal(query: str, signals: list[dict[str, Any]]) -> dict[str, Any]:
     labels = [str(s.get("userName") or s.get("name", "")) for s in signals]
 
     exact = [
-        s for s in signals
-        if str(s.get("name", "")).casefold() == q
-        or str(s.get("userName") or "").casefold() == q
+        s
+        for s in signals
+        if str(s.get("name", "")).casefold() == q or str(s.get("userName") or "").casefold() == q
     ]
     if len(exact) == 1:
         return exact[0]
 
     partial = [
-        s for s in signals
-        if q in str(s.get("userName") or "").casefold()
-        or q in str(s.get("name", "")).casefold()
+        s
+        for s in signals
+        if q in str(s.get("userName") or "").casefold() or q in str(s.get("name", "")).casefold()
     ]
     if len(partial) == 1:
         return partial[0]

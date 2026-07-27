@@ -22,7 +22,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from jmri_core.jmri_client import get_systems, resolve_system, set_power
 
 pytestmark = pytest.mark.live
@@ -105,9 +104,7 @@ async def test_resolves_default_system():
     assert default.get("default") is True or len(systems) == 1
 
 
-async def test_set_power_round_trip_restores_original_state(
-    write_test_system, min_toggle_interval
-):
+async def test_set_power_round_trip_restores_original_state(write_test_system, min_toggle_interval):
     """Toggle the configured test system and leave it as we found it.
 
     Real DCC++ hardware drives a physical relay: rapid on/off cycling is

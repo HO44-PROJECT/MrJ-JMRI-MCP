@@ -137,9 +137,10 @@
         },
         "cache": {
             "info": "Afficher le chemin et l'état sur disque de chaque fichier de cache local",
-            "clean": "Supprimer les fichiers de cache locaux de jmri-cli (état des locomotives et/ou historique du shell)",
-            "clean_state_only": "Ne vider que l'état de vitesse/direction/fonctions en cache par adresse, sans toucher à l'historique du shell",
-            "clean_history_only": "Ne vider que l'historique des commandes du shell, sans toucher à l'état des locomotives en cache"
+            "clean": "Supprimer les fichiers de cache locaux de jmri-cli (état des locomotives, historique du shell, et/ou cache de complétion)",
+            "clean_state_only": "Ne vider que l'état de vitesse/direction/fonctions en cache par adresse, sans toucher au reste",
+            "clean_history_only": "Ne vider que l'historique des commandes du shell, sans toucher au reste",
+            "clean_completions_only": "Ne vider que les listes de noms mises en cache pour la complétion du shell, sans toucher au reste"
         },
         "power": {
             "status": "Afficher l'état d'alimentation de tous les systèmes",
@@ -315,6 +316,7 @@
         "session_end_partial_failure": "ATTENTION : session-end a rencontré au moins un échec — vérifiez la sortie ci-dessus (une locomotive ou un système n'a peut-être pas confirmé son arrêt/extinction)",
         "cache_target_state": "état des locomotives",
         "cache_target_history": "historique du shell",
+        "cache_target_completion": "cache de complétion",
         "cache_exists": "présent",
         "cache_missing": "absent",
         "cache_info_line": "{label} : {path} ({exists})",

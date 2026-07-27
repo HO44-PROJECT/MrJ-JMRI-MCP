@@ -79,6 +79,22 @@ unambiguous match, so complete() appends one itself whenever exactly one
 candidate remains - otherwise the next character typed lands glued to
 the tail of the just-completed word (confirmed live: "throttle spe"+TAB
 produced "throttle speed3" instead of "throttle speed 3" without this).
+
+Once the tree-walk lands on a leaf (e.g. `power on`, `throttle speed`),
+the word being typed can also be a positional value rather than a flag -
+a system name, a locomotive name, a light/turnout/sensor/signal/block
+name. parser.py tags each such positional's own `Action` object with a
+plain `.completion_kind = "<kind>"` string attribute (e.g. "system",
+"roster") when it's built; `_positional_completion_kind` figures out
+which positional slot the cursor is currently on (by counting how many
+non-flag tokens have already been typed under this leaf) and looks up
+that slot's `Action` to read the tag off it, if any. completion.py's
+`_names_for(kind)` then supplies the real candidate names, fetched live
+from JMRI and cached - see that module's docstring for why a synchronous
+cached lookup is required here (a readline completer must be a plain,
+fast, non-raising callable). A positional with no `.completion_kind`
+(e.g. a percentage, an aspect string) simply contributes nothing, same
+as today.
 """
 
 import argparse
@@ -93,14 +109,21 @@ except ImportError:
     readline = None
 
 from jmri_core import i18n
-from jmri_cli._common import HISTORY_FILE, HISTORY_MAX_LINES, background_holds, cli_throttle_id, is_ws_func
-from jmri_cli.banner import banner
 from jmri_core.constants.cli import SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
+from jmri_core.jmri_ws import JmriError, JmriWsClient
+from jmri_core.jmri_ws.ramp import ramp_speed
+
+from jmri_cli import completion
+from jmri_cli._common import (
+    HISTORY_FILE,
+    HISTORY_MAX_LINES,
+    background_holds,
+    cli_throttle_id,
+    is_ws_func,
+)
+from jmri_cli.banner import banner
 from jmri_cli.parser import build_parser
 from jmri_cli.throttle import _release_one, throttle_direction, throttle_speed
-from jmri_core.jmri_ws import JmriError
-from jmri_core.jmri_ws import JmriWsClient
-from jmri_core.jmri_ws.ramp import ramp_speed
 
 _PROMPT = "jmri-cli> "
 _EXIT_WORDS = {"exit", "quit"}
@@ -125,8 +148,31 @@ def _save_history() -> None:
         readline.write_history_file(HISTORY_FILE)
 
 
-_GROUP_NAMES = ["cache", "light", "power", "roster", "sensor", "session-end", "session-start", "signal", "status", "throttle", "turnout"]
-_SHORTCUT_NAMES = ["acquire", "release", "speed", "move", "stop", "estop", "forward", "reverse", "engine-start", "engine-stop"]
+_GROUP_NAMES = [
+    "cache",
+    "light",
+    "power",
+    "roster",
+    "sensor",
+    "session-end",
+    "session-start",
+    "signal",
+    "status",
+    "throttle",
+    "turnout",
+]
+_SHORTCUT_NAMES = [
+    "acquire",
+    "release",
+    "speed",
+    "move",
+    "stop",
+    "estop",
+    "forward",
+    "reverse",
+    "engine-start",
+    "engine-stop",
+]
 
 
 def _subparsers_action(parser) -> argparse._SubParsersAction | None:
@@ -163,6 +209,31 @@ def _option_strings(parser) -> list[str]:
     return sorted(names)
 
 
+def _positionals(parser) -> list[argparse.Action]:
+    """Every positional Action directly on `parser` (skipping the
+    subparsers action itself, which _subparsers_action already handles
+    separately) - in declaration order, matching how argparse consumes
+    them off the command line.
+    """
+    return [
+        action
+        for action in parser._get_positional_actions()
+        if not isinstance(action, argparse._SubParsersAction)
+    ]
+
+
+def _positional_completion_kind(node, consumed_count: int) -> str | None:
+    """The `.completion_kind` tag (see parser.py) of the positional Action
+    at slot `consumed_count` under leaf `node`, or None if that slot has
+    no positionals left / isn't tagged (e.g. `signal set`'s second
+    positional, the aspect, is deliberately left untagged).
+    """
+    positionals = _positionals(node)
+    if consumed_count >= len(positionals):
+        return None
+    return getattr(positionals[consumed_count], "completion_kind", None)
+
+
 def _make_completer(parser):
     """Build a readline completer function closed over `parser`.
 
@@ -183,15 +254,58 @@ def _make_completer(parser):
 
     def complete(text: str, state: int) -> str | None:
         buffer = readline.get_line_buffer()[: readline.get_endidx()]
+        unterminated_quote = False
         try:
             tokens = shlex.split(buffer)
         except ValueError:
-            tokens = buffer.split()
+            # An in-progress multi-word name that GNU readline itself has
+            # partially filled in (its own longest-common-prefix behavior
+            # when several candidates share a prefix, e.g. two names both
+            # starting "Layout Turnout ") leaves an intentionally unclosed
+            # quote in the buffer - normal mid-edit state, not a bad line.
+            # Appending the matching close quote lets shlex still see it as
+            # ONE token for the tree-walk below; falling back to a bare
+            # .split() instead (the previous behavior) split it into
+            # several, over-counting positionals_consumed and knocking the
+            # tree-walk off the leaf whose positional was actually being
+            # typed - live-reported as completion silently offering only
+            # --flags after the first TAB of a multi-candidate quoted name.
+            tokens = None
+            for quote_char in ("'", '"'):
+                if buffer.count(quote_char) % 2:
+                    with contextlib.suppress(ValueError):
+                        tokens = shlex.split(buffer + quote_char)
+                        unterminated_quote = True
+                    break
+            if tokens is None:
+                tokens = buffer.split()
         # If the buffer doesn't end in whitespace, the last token is the
-        # word being completed, not yet a completed command component.
-        typed_tokens = tokens if buffer.endswith((" ", "\t")) or not tokens else tokens[:-1]
+        # word being completed, not yet a completed command component. An
+        # unterminated quote forces the same conclusion regardless of
+        # trailing whitespace: the space(s) after "Layout Turnout" above are
+        # themselves still INSIDE the quoted word being typed, not a real
+        # separator marking that word as finished.
+        still_typing_last_token = unterminated_quote or not (
+            buffer.endswith((" ", "\t")) or not tokens
+        )
+        typed_tokens = tokens[:-1] if still_typing_last_token else tokens
+        # The value typed so far for the word currently being completed,
+        # shlex-unquoted - e.g. "Layout Turnout A", not just "A". Needed
+        # because GNU readline's own `text` argument is only the fragment
+        # since the last space (a real delimiter, unlike "-"/quotes above),
+        # so for a multi-word name it only ever holds the last word typed,
+        # not everything since the value started. Matching candidates
+        # against `text` alone would make "Layout Turnout A" un-completable
+        # past its first word - "A" doesn't prefix-match "Layout Turnout A".
+        in_progress_value = tokens[-1] if still_typing_last_token and tokens else ""
 
         node = parser
+        # Counts non-flag tokens seen after the tree-walk has already
+        # reached a true leaf (no further subparser to descend into) -
+        # this is how many of that leaf's own positionals (loco, system,
+        # light name, ...) are already typed, so the next one can be
+        # identified and completed by kind.
+        positionals_consumed = 0
         for token in typed_tokens:
             # Only positional subcommand tokens walk the tree - a --flag
             # (or a value consumed by one) mid-line doesn't change which
@@ -199,13 +313,32 @@ def _make_completer(parser):
             if token.startswith("-"):
                 continue
             action = _subparsers_action(node)
-            if action is None or token not in action.choices:
+            if action is None:
+                # Already at a leaf: this and every remaining non-flag
+                # token is one of the leaf's own positional values, not a
+                # subcommand name - keep counting instead of stopping at
+                # the first one.
+                positionals_consumed += 1
+                continue
+            if token not in action.choices:
                 break
             node = action.choices[token]
 
+        # "'"/'"' are pulled out of completer_delims by _install_completer
+        # (see there for why), so once this completer has inserted a quote,
+        # readline's own `text` for the NEXT TAB includes that leading quote
+        # too - it's now just an ordinary word character as far as
+        # readline's word-boundary logic is concerned. Only relevant to
+        # flag/subcommand candidates below (never quoted, so a leading quote
+        # in `text` there could never legitimately match anything);
+        # entity-name candidates are matched against in_progress_value
+        # instead, which is already shlex-unquoted.
+        flag_text = text[1:] if text[:1] in ("'", '"') else text
+
+        entity_matches: list[str] = []
         if node is parser:
             candidates = top_level
-        elif text.startswith("-"):
+        elif flag_text.startswith("-"):
             candidates = _option_strings(node)
         else:
             # A leaf's subcommand names (usually none - _leaf_names is []
@@ -213,7 +346,64 @@ def _make_completer(parser):
             # at a leaf still needs its --flags offered (e.g. "speed 3 40"
             # then bare TAB), not just once the user has already typed "-".
             candidates = {*_leaf_names(node), *_option_strings(node)}
-        matches = sorted(name for name in candidates if name.startswith(text))
+            kind = _positional_completion_kind(node, positionals_consumed)
+            if kind is not None:
+                # Matched against in_progress_value (the whole value typed
+                # so far for this positional, already shlex-unquoted - see
+                # above) rather than text/flag_text: readline's own `text`
+                # is only the fragment since the last space, which would
+                # make a multi-word name uncompletable past its first word
+                # ("A" alone doesn't prefix-match "Layout Turnout A").
+                value_lower = in_progress_value.lower()
+                entity_matches = sorted(
+                    name
+                    for name in completion._names_for(kind)
+                    if name.lower().startswith(value_lower)
+                )
+        flag_text_lower = flag_text.lower()
+        flag_matches = sorted(
+            name for name in candidates if name.lower().startswith(flag_text_lower)
+        )
+        # readline only ever replaces the span it considers `text` (from
+        # begidx to endidx) with whatever this function returns - it does
+        # NOT re-splice a full replacement value starting earlier in the
+        # buffer. flag/subcommand words never contain spaces, so `text`
+        # already covers everything typed of them and returning the bare
+        # name (matched above) is correct as-is. A multi-word entity name
+        # is different: in_progress_value (matched against, above) can
+        # span several of readline's own "words" (space is still a real
+        # delimiter - only quotes/"-" were removed from completer_delims),
+        # so `text` only covers its LAST word. Blindly returning the full
+        # quoted name here would make readline splice it in starting at
+        # `text`'s own start position, duplicating everything already typed
+        # before it (live-reproduced via a real PTY: buffer ended up as
+        # "'Layout Turnout 'Layout Turnout A' ", the quoted prefix appearing
+        # twice). The fix: return only the replacement for `text`'s own
+        # span (the last len(text) chars of in_progress_value, corrected to
+        # the candidate's real casing since matching is case-insensitive)
+        # plus whatever of the name still follows in_progress_value - never
+        # the literal `text` echoed back verbatim, which would freeze in
+        # whatever case the user happened to type (e.g. completing "d" -> a
+        # candidate "DCC++ Zou" must come back "DCC++ Zou", not "dCC++
+        # Zou").
+        entity_completions = []
+        for name in entity_matches:
+            already_typed = name[: len(in_progress_value)][len(in_progress_value) - len(text) :]
+            tail = name[len(in_progress_value) :]
+            if unterminated_quote:
+                # An opening quote for this value already sits earlier in
+                # the buffer (ours from a previous completion, or
+                # readline's own longest-common-prefix fill) - never add
+                # another, just close it.
+                entity_completions.append(already_typed + tail + "'")
+            elif shlex.quote(name) == name:
+                # No shell-special characters (e.g. "Autorail", "Parc") -
+                # quoting would be needless noise the existing test suite
+                # explicitly checks for (bare word, no surrounding quotes).
+                entity_completions.append(already_typed + tail)
+            else:
+                entity_completions.append("'" + already_typed + tail + "'")
+        matches = entity_completions + flag_matches
         # GNU readline doesn't reliably auto-append a trailing space after
         # an unambiguous single-match completion (observed empirically,
         # not just in theory - readline_delims tweaks alone don't fix it),
@@ -239,7 +429,26 @@ def _install_completer(parser) -> None:
     # "-" (leaving the rest of the defaults untouched) makes "--rampup" one
     # complete word, matching how it's actually typed and how the rest of
     # this completer already reasons about it via shlex tokens.
-    readline.set_completer_delims(readline.get_completer_delims().replace("-", ""))
+    #
+    # Quotes ("'" and '"') are dropped for the same kind of reason, found by
+    # live testing: a multi-word JMRI name ("Quai des Fleurs") gets quoted
+    # by complete() below so it round-trips through shlex, but with the
+    # default delims readline treats the quote character itself as a word
+    # boundary - so once a completion has inserted an opening quote (either
+    # readline's own longest-common-prefix fill for several candidates, or
+    # this completer's own quoted match), the NEXT TAB press sees `text`
+    # starting fresh right after that quote, with no memory that a quote
+    # came before it. That silently reproduced the parser.py-level bug this
+    # module already works around for "-": here it showed up as runs of
+    # doubled/tripled leading quotes on repeated TABs against a name typed
+    # incrementally (reported live: "light on Q<TAB><TAB>" against a
+    # multi-candidate prefix like "Quai ..." ended up as "light on ''Quai").
+    # Removing quotes from completer_delims makes a quoted word one token to
+    # readline too, matching how the rest of this completer already reasons
+    # about it - complete() strips/reapplies the leading quote itself (see
+    # flag_text there) since `text` then legitimately includes it.
+    delims = readline.get_completer_delims().replace("-", "").replace("'", "").replace('"', "")
+    readline.set_completer_delims(delims)
     readline.parse_and_bind("tab: complete")
 
 
@@ -330,7 +539,12 @@ async def _confirm_exit(client: JmriWsClient) -> bool:
                     client, throttle_id, current, 0.0, SHELL_EXIT_RAMPDOWN_DEFAULT_SECONDS
                 )
             except JmriError as exc:
-                print(i18n.t("cli.throttle_error_stopping_address", address=address, message=str(exc)), file=sys.stderr)
+                print(
+                    i18n.t(
+                        "cli.throttle_error_stopping_address", address=address, message=str(exc)
+                    ),
+                    file=sys.stderr,
+                )
     else:
         print(i18n.t("cli.shell_exit_no_stop"), file=sys.stderr)
     return True
@@ -350,11 +564,13 @@ async def _release_held_throttles(client: JmriWsClient) -> None:
     the shell is exactly as safe as typing `release` for every held
     address before leaving.
     """
-    addresses = sorted({
-        info["address"]
-        for info in client.all_throttle_states().values()
-        if info.get("address") is not None
-    })
+    addresses = sorted(
+        {
+            info["address"]
+            for info in client.all_throttle_states().values()
+            if info.get("address") is not None
+        }
+    )
     for address in addresses:
         await _release_one(address, client=client)
 
@@ -431,8 +647,11 @@ def _parse_speed_sentence(tokens: list[str]) -> argparse.Namespace | None:
             return None
 
     return argparse.Namespace(
-        loco=loco, speed_percent=speed_percent,
-        rampup=rampup, rampdown=rampdown, seconds=seconds,
+        loco=loco,
+        speed_percent=speed_percent,
+        rampup=rampup,
+        rampdown=rampdown,
+        seconds=seconds,
         direction=direction,
     )
 
@@ -472,7 +691,10 @@ async def _dispatch_speed_sentence(ns: argparse.Namespace, client: JmriWsClient)
     """
     if ns.direction is not None:
         direction_ns = argparse.Namespace(
-            loco=ns.loco, rampup=ns.rampup, rampdown=ns.rampdown, seconds=None,
+            loco=ns.loco,
+            rampup=ns.rampup,
+            rampdown=ns.rampdown,
+            seconds=None,
         )
         await throttle_direction(direction_ns, forward=(ns.direction == "forward"), client=client)
     await throttle_speed(ns, client=client)

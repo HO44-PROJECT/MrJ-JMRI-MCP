@@ -137,9 +137,10 @@
         },
         "cache": {
             "info": "Show the path and on-disk status of each local cache file",
-            "clean": "Delete jmri-cli's local cache files (throttle state and/or shell history)",
-            "clean_state_only": "Only clear the cached throttle state (last-known speed/direction/functions per address), leave shell history alone",
-            "clean_history_only": "Only clear the shell command history, leave the cached throttle state alone"
+            "clean": "Delete jmri-cli's local cache files (throttle state, shell history, and/or tab-completion cache)",
+            "clean_state_only": "Only clear the cached throttle state (last-known speed/direction/functions per address), leave the rest alone",
+            "clean_history_only": "Only clear the shell command history, leave the rest alone",
+            "clean_completions_only": "Only clear the cached name lists used for shell tab-completion, leave the rest alone"
         },
         "power": {
             "status": "Show power state of every system",
@@ -315,6 +316,7 @@
         "session_end_partial_failure": "WARNING: session-end had at least one failure — check the output above (some locomotive or system may not have confirmed stopped/off)",
         "cache_target_state": "throttle state",
         "cache_target_history": "shell history",
+        "cache_target_completion": "tab-completion cache",
         "cache_exists": "exists",
         "cache_missing": "not present",
         "cache_info_line": "{label}: {path} ({exists})",

@@ -38,12 +38,7 @@ import datetime
 import json
 import sys
 
-from tabulate import tabulate
-
 from jmri_core import i18n
-from jmri_cli import state as _state
-from jmri_cli._common import cli_throttle_id, run_hold_in_background, wait_for_holds
-from jmri_cli._match import find_glob, find_regex
 from jmri_core.constants.cli import (
     IDLE_POLL_SECONDS,
     MAX_FUNCTION_NUMBER,
@@ -71,6 +66,12 @@ from jmri_core.jmri_client import (
 )
 from jmri_core.jmri_ws import JmriWsClient
 from jmri_core.jmri_ws.ramp import execute_speed_change as _execute_speed_change
+from tabulate import tabulate
+
+from jmri_cli import state as _state
+from jmri_cli._common import cli_throttle_id, run_hold_in_background, wait_for_holds
+from jmri_cli._match import find_glob, find_regex
+
 
 async def _resolve_address(loco: str) -> int:
     """Resolve a CLI-typed locomotive reference to a DCC address.
@@ -120,7 +121,7 @@ def _direction_name(forward: bool) -> str:
 
 
 async def _system_suffix(prefix: str | None) -> str:
-    """" system=<name>" when `prefix` differs from JMRI's default command
+    """ " system=<name>" when `prefix` differs from JMRI's default command
     station, else "" — the shared "only mention it when it's unusual" rule
     for acquire/speed/etc. messages (a single-station layout, the common
     case, should never see this noise). Never raises: a failed default-
@@ -182,20 +183,27 @@ def _background_hold(address: int, change) -> None:
     otherwise only surface via asyncio's default background-task
     exception logging instead of a clean CLI-style message.
     """
+
     async def _run() -> None:
         try:
             data = await change
         except asyncio.CancelledError:
             return
         except JmriError as exc:
-            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                file=sys.stderr,
+            )
             return
         speed = data.get("speed")
         forward = data.get("forward")
-        _state.update_address(address, **{
-            **({"speed": speed} if speed is not None else {}),
-            **({"forward": forward} if forward is not None else {}),
-        })
+        _state.update_address(
+            address,
+            **{
+                **({"speed": speed} if speed is not None else {}),
+                **({"forward": forward} if forward is not None else {}),
+            },
+        )
 
     run_hold_in_background(address, _run())
 
@@ -268,7 +276,9 @@ async def throttle_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cache_row(address: int, *, name: str = "-", dcc_system: str = "-", info: dict | None = None) -> list:
+def _cache_row(
+    address: int, *, name: str = "-", dcc_system: str = "-", info: dict | None = None
+) -> list:
     """Build one throttle_list-style row for `address` from state.py's local cache.
 
     Args:
@@ -364,7 +374,9 @@ async def _throttle_find_pattern(args: argparse.Namespace, *, regex: bool) -> in
     for e in sorted(matches, key=lambda e: _roster_label(e).casefold()):
         dcc_system = e.get("dcc_system") or default_prefix
         dcc_system_display = (names_by_prefix.get(dcc_system) or dcc_system) if dcc_system else "-"
-        rows.append(_cache_row(e["address"], name=_roster_label(e) or "-", dcc_system=dcc_system_display))
+        rows.append(
+            _cache_row(e["address"], name=_roster_label(e) or "-", dcc_system=dcc_system_display)
+        )
     print(tabulate(rows, headers=_throttle_headers()))
     return 0
 
@@ -406,12 +418,16 @@ async def _acquire_one(address: int, prefix: str | None, *, client: JmriWsClient
         data = await client.acquire_throttle(cli_throttle_id(address), address, resolved_prefix)
         system_suffix = await _system_suffix(resolved_prefix)
     except JmriError as exc:
-        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        print(
+            i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr
+        )
         return False
 
     _state.update_address(address, speed=data.get("speed"), forward=data.get("forward"))
-    print(f"address={address} speed={data.get('speed')} "
-          f"forward={data.get('forward')} (acquired){system_suffix}")
+    print(
+        f"address={address} speed={data.get('speed')} "
+        f"forward={data.get('forward')} (acquired){system_suffix}"
+    )
     return True
 
 
@@ -498,7 +514,9 @@ async def _release_one(address: int, *, client: JmriWsClient) -> bool:
         # function-set (issue #59). bulk=True so a loco with no labeled
         # functions at all doesn't turn "nothing to turn off" into a release
         # failure.
-        await _set_functions_one(address, None, state=False, lights_only=False, client=client, bulk=True)
+        await _set_functions_one(
+            address, None, state=False, lights_only=False, client=client, bulk=True
+        )
 
         remaining = client.throttle_state(throttle_id) or {}
         active_functions = sorted(n for n, on in remaining.get("functions", {}).items() if on)
@@ -560,11 +578,13 @@ async def throttle_release(args: argparse.Namespace, *, client: JmriWsClient | N
         if client is None:
             print(i18n.t("cli.throttle_no_locos_touched"))
             return 0
-        addresses = sorted({
-            info["address"]
-            for info in client.all_throttle_states().values()
-            if info.get("address") is not None
-        })
+        addresses = sorted(
+            {
+                info["address"]
+                for info in client.all_throttle_states().values()
+                if info.get("address") is not None
+            }
+        )
         if not addresses:
             print(i18n.t("cli.throttle_no_locos_touched"))
             return 0
@@ -692,33 +712,49 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
                     target_forward = not info.get(FIELD_FORWARD, True)
                 else:
                     target_forward = None
-                target_fraction = max(
-                    MIN_SPEED_PERCENT, min(MAX_SPEED_PERCENT, abs(args.speed_percent))
-                ) / 100.0
+                target_fraction = (
+                    max(MIN_SPEED_PERCENT, min(MAX_SPEED_PERCENT, abs(args.speed_percent))) / 100.0
+                )
                 scaled_target_fraction = target_fraction * scale
 
                 if not one_shot and args.seconds is not None:
                     _background_hold(
                         address,
                         _execute_speed_change(
-                            c, throttle_id,
-                            target_forward=target_forward, target_fraction=scaled_target_fraction,
-                            rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
+                            c,
+                            throttle_id,
+                            target_forward=target_forward,
+                            target_fraction=scaled_target_fraction,
+                            rampup=args.rampup,
+                            rampdown=args.rampdown,
+                            hold_seconds=args.seconds,
                         ),
                     )
-                    forward = target_forward if target_forward is not None else acquired.get("forward")
-                    _state.update_address(
-                        address, speed=scaled_target_fraction, **({"forward": forward} if forward is not None else {})
+                    forward = (
+                        target_forward if target_forward is not None else acquired.get("forward")
                     )
-                    direction_suffix = f" direction={_direction_name(forward)}" if forward is not None else ""
+                    _state.update_address(
+                        address,
+                        speed=scaled_target_fraction,
+                        **({"forward": forward} if forward is not None else {}),
+                    )
+                    direction_suffix = (
+                        f" direction={_direction_name(forward)}" if forward is not None else ""
+                    )
                     hold_suffix = i18n.t("cli.throttle_hold_started_suffix", seconds=args.seconds)
-                    print(f"address={address} speed={target_fraction * 100:.0f}%{direction_suffix}{hold_suffix}{system_suffix}")
+                    print(
+                        f"address={address} speed={target_fraction * 100:.0f}%{direction_suffix}{hold_suffix}{system_suffix}"
+                    )
                     return 0
 
                 data = await _execute_speed_change(
-                    c, throttle_id,
-                    target_forward=target_forward, target_fraction=scaled_target_fraction,
-                    rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
+                    c,
+                    throttle_id,
+                    target_forward=target_forward,
+                    target_fraction=scaled_target_fraction,
+                    rampup=args.rampup,
+                    rampdown=args.rampdown,
+                    hold_seconds=args.seconds,
                 )
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
@@ -726,9 +762,13 @@ async def throttle_speed(args: argparse.Namespace, *, client: JmriWsClient | Non
 
     speed = data.get("speed", acquired.get("speed"))
     forward = data.get("forward")
-    _state.update_address(address, speed=speed, **({"forward": forward} if forward is not None else {}))
+    _state.update_address(
+        address, speed=speed, **({"forward": forward} if forward is not None else {})
+    )
     direction_suffix = f" direction={_direction_name(forward)}" if forward is not None else ""
-    print(f"address={address} speed={(speed or 0) / scale * 100:.0f}%{direction_suffix}{system_suffix}")
+    print(
+        f"address={address} speed={(speed or 0) / scale * 100:.0f}%{direction_suffix}{system_suffix}"
+    )
     return 0
 
 
@@ -813,15 +853,22 @@ async def throttle_stop(args: argparse.Namespace, *, client: JmriWsClient | None
                     prefix = await _resolve_prefix(address)
                     await c.acquire_throttle(throttle_id, address, prefix)
                     data = await _execute_speed_change(
-                        c, throttle_id,
-                        target_forward=None, target_fraction=0.0,
-                        rampup=None, rampdown=args.rampdown, hold_seconds=None,
+                        c,
+                        throttle_id,
+                        target_forward=None,
+                        target_fraction=0.0,
+                        rampup=None,
+                        rampdown=args.rampdown,
+                        hold_seconds=None,
                     )
                     speed = data.get("speed", 0.0)
                     _state.update_address(address, speed=speed)
                     print(f"address={address} stopped")
                 except JmriError as exc:
-                    print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+                    print(
+                        i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                        file=sys.stderr,
+                    )
                     ok = False
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
@@ -875,7 +922,10 @@ async def throttle_estop(args: argparse.Namespace, *, client: JmriWsClient | Non
                     _state.update_address(address, speed=-1.0)
                     print(f"address={address} emergency-stopped")
                 except JmriError as exc:
-                    print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+                    print(
+                        i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                        file=sys.stderr,
+                    )
                     ok = False
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
@@ -907,9 +957,13 @@ async def _direction_one(
             _background_hold(
                 address,
                 _execute_speed_change(
-                    client, throttle_id,
-                    target_forward=forward, target_fraction=current_fraction,
-                    rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
+                    client,
+                    throttle_id,
+                    target_forward=forward,
+                    target_fraction=current_fraction,
+                    rampup=args.rampup,
+                    rampdown=args.rampdown,
+                    hold_seconds=args.seconds,
                 ),
             )
             _state.update_address(address, forward=forward, speed=current_fraction)
@@ -918,17 +972,25 @@ async def _direction_one(
             return 0
 
         data = await _execute_speed_change(
-            client, throttle_id,
-            target_forward=forward, target_fraction=current_fraction,
-            rampup=args.rampup, rampdown=args.rampdown, hold_seconds=args.seconds,
+            client,
+            throttle_id,
+            target_forward=forward,
+            target_fraction=current_fraction,
+            rampup=args.rampup,
+            rampdown=args.rampdown,
+            hold_seconds=args.seconds,
         )
     except JmriError as exc:
-        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        print(
+            i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr
+        )
         return 1
 
     reported = data.get("forward", forward)
     speed = data.get("speed")
-    _state.update_address(address, forward=reported, **({"speed": speed} if speed is not None else {}))
+    _state.update_address(
+        address, forward=reported, **({"speed": speed} if speed is not None else {})
+    )
     print(f"address={address} direction={_direction_name(reported)}")
     return 0
 
@@ -1004,7 +1066,9 @@ async def throttle_direction(
     try:
         async with _client_scope(client) as c:
             for address in addresses:
-                code = await _direction_one(address, args, forward=forward, one_shot=one_shot, client=c)
+                code = await _direction_one(
+                    address, args, forward=forward, one_shot=one_shot, client=c
+                )
                 worst = max(worst, code)
     except JmriError as exc:
         print(i18n.error(exc), file=sys.stderr)
@@ -1033,7 +1097,10 @@ async def _resolve_function_numbers(
         n = int(function.strip())
         if not (MIN_FUNCTION_NUMBER <= n <= MAX_FUNCTION_NUMBER):
             raise JmriError(
-                "invalid_function_number_range", min=MIN_FUNCTION_NUMBER, max=MAX_FUNCTION_NUMBER, n=n
+                "invalid_function_number_range",
+                min=MIN_FUNCTION_NUMBER,
+                max=MAX_FUNCTION_NUMBER,
+                n=n,
             )
         return [n]
 
@@ -1059,7 +1126,13 @@ async def _resolve_function_numbers(
 
 
 async def _set_functions_one(
-    address: int, function: str | None, *, state: bool, lights_only: bool, client: JmriWsClient, bulk: bool = False
+    address: int,
+    function: str | None,
+    *,
+    state: bool,
+    lights_only: bool,
+    client: JmriWsClient,
+    bulk: bool = False,
 ) -> bool:
     """Resolve and set one or more functions for one address. Returns True on full success.
 
@@ -1070,12 +1143,16 @@ async def _set_functions_one(
     in that context, unlike naming that same locomotive explicitly.
     """
     try:
-        function_numbers = await _resolve_function_numbers(address, function, lights_only=lights_only)
+        function_numbers = await _resolve_function_numbers(
+            address, function, lights_only=lights_only
+        )
     except JmriError as exc:
         if bulk and exc.code == "no_light_labeled_functions":
             print(i18n.t("cli.no_light_labeled_functions", name=exc.kwargs.get("name", address)))
             return True
-        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        print(
+            i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr
+        )
         return False
 
     ok = True
@@ -1083,7 +1160,9 @@ async def _set_functions_one(
         prefix = await _resolve_prefix(address)
         await client.acquire_throttle(cli_throttle_id(address), address, prefix)
     except JmriError as exc:
-        print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+        print(
+            i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr
+        )
         return False
     for n in function_numbers:
         try:
@@ -1092,7 +1171,9 @@ async def _set_functions_one(
             _state.update_address(address, functions={n: reported})
             print(f"address={address} F{n}={'on' if reported else 'off'}")
         except JmriError as exc:
-            print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr
+            )
             ok = False
     return ok
 
@@ -1127,7 +1208,12 @@ async def _throttle_set_functions(
         async with _client_scope(client) as c:
             for address in addresses:
                 if not await _set_functions_one(
-                    address, args.function, state=state, lights_only=lights_only, client=c, bulk=bulk
+                    address,
+                    args.function,
+                    state=state,
+                    lights_only=lights_only,
+                    client=c,
+                    bulk=bulk,
                 ):
                     ok = False
             if client is None:
@@ -1233,7 +1319,10 @@ async def _engine_start_one(address: int, prefix: str | None, *, client: JmriWsC
         if exc.code == "no_light_labeled_functions":
             function_numbers = []
         else:
-            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                file=sys.stderr,
+            )
             return False
 
     _state.update_address(address, speed=data.get("speed"), forward=True)
@@ -1241,7 +1330,9 @@ async def _engine_start_one(address: int, prefix: str | None, *, client: JmriWsC
     return True
 
 
-async def throttle_engine_start(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+async def throttle_engine_start(
+    args: argparse.Namespace, *, client: JmriWsClient | None = None
+) -> int:
     """Wake up one loco, or every touched loco if none is given: acquire, face forward, lights on.
 
     The CLI equivalent of the MCP server's prepare_locomotive tool. Does NOT
@@ -1326,12 +1417,19 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
         rampdown = current_fraction * STOP_LOCOMOTIVE_RAMPDOWN_SECONDS_AT_FULL_SPEED
         try:
             await _execute_speed_change(
-                c, throttle_id,
-                target_forward=True, target_fraction=0.0,
-                rampup=0.0, rampdown=rampdown, hold_seconds=None,
+                c,
+                throttle_id,
+                target_forward=True,
+                target_fraction=0.0,
+                rampup=0.0,
+                rampdown=rampdown,
+                hold_seconds=None,
             )
         except JmriError as exc:
-            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                file=sys.stderr,
+            )
             ok = False
 
     try:
@@ -1339,7 +1437,10 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
     except JmriError as exc:
         function_numbers = []
         if exc.code != "no_light_labeled_functions":
-            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                file=sys.stderr,
+            )
             ok = False
 
     lights_ok = True
@@ -1348,7 +1449,10 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
             prefix = await _resolve_prefix(address)
             await c.acquire_throttle(throttle_id, address, prefix)
         except JmriError as exc:
-            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                file=sys.stderr,
+            )
             ok = False
             lights_ok = False
             function_numbers = []
@@ -1356,7 +1460,9 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
         try:
             await c.set_function(throttle_id, n, False)
         except JmriError as exc:
-            print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr
+            )
             ok = False
             lights_ok = False
 
@@ -1372,7 +1478,9 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
         try:
             await c.set_function(throttle_id, n, False)
         except JmriError as exc:
-            print(i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_function", function=n, message=str(exc)), file=sys.stderr
+            )
             ok = False
             lights_ok = False
 
@@ -1384,7 +1492,10 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
         await c.release_throttle(throttle_id)
     except JmriError as exc:
         if not lights_ok:
-            print(i18n.t("cli.throttle_error_address", address=address, message=str(exc)), file=sys.stderr)
+            print(
+                i18n.t("cli.throttle_error_address", address=address, message=str(exc)),
+                file=sys.stderr,
+            )
             ok = False
 
     _state.update_address(address, speed=0.0, forward=True)
@@ -1392,7 +1503,9 @@ async def _engine_stop_one(address: int, *, client: JmriWsClient) -> bool:
     return ok
 
 
-async def throttle_engine_stop(args: argparse.Namespace, *, client: JmriWsClient | None = None) -> int:
+async def throttle_engine_stop(
+    args: argparse.Namespace, *, client: JmriWsClient | None = None
+) -> int:
     """Put one loco to rest, or every touched loco if none is given: ramp down, forward, lights off, release.
 
     The CLI equivalent of the MCP server's park_locomotive/
@@ -1547,10 +1660,17 @@ async def throttle_sniff(args: argparse.Namespace) -> int:
         for address in args.address or []:
             try:
                 prefix = await _resolve_prefix(address)
-                await client.acquire_throttle(f"{SNIFF_THROTTLE_ID_PREFIX}{address}", address, prefix)
+                await client.acquire_throttle(
+                    f"{SNIFF_THROTTLE_ID_PREFIX}{address}", address, prefix
+                )
                 print(i18n.t("cli.sniff_acquired_for_observation", address=address))
             except JmriError as exc:
-                print(i18n.t("cli.throttle_warning_could_not_acquire", address=address, message=str(exc)), file=sys.stderr)
+                print(
+                    i18n.t(
+                        "cli.throttle_warning_could_not_acquire", address=address, message=str(exc)
+                    ),
+                    file=sys.stderr,
+                )
 
         print(i18n.t("cli.sniff_listening"), file=sys.stderr)
         while True:

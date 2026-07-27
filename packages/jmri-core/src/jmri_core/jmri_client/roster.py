@@ -93,33 +93,34 @@ async def get_roster() -> list[dict[str, Any]]:
         try:
             address = int(e["address"])
         except (KeyError, TypeError, ValueError):
-            logger.warning("Roster entry %r has unusable address %r, skipping",
-                           e.get("name"), e.get("address"))
+            logger.warning(
+                "Roster entry %r has unusable address %r, skipping", e.get("name"), e.get("address")
+            )
             continue
         dcc_system = None
         for attr in e.get("attributes") or []:
             if attr.get("name") == "DccSystem":
                 dcc_system = attr.get("value") or None
                 break
-        compact.append({
-            "name": e.get("name", ""),
-            "address": address,
-            "road": e.get("road", ""),
-            "road_number": e.get("number", ""),
-            "manufacturer": e.get("mfg", ""),
-            "model": e.get("model", ""),
-            "owner": e.get("owner", ""),
-            "date_modified": e.get("dateModified", ""),
-            "groups": e.get("rosterGroups", []),
-            "dcc_system": dcc_system,
-            "max_speed_percent": e.get("maxSpeedPct", 100),
-        })
+        compact.append(
+            {
+                "name": e.get("name", ""),
+                "address": address,
+                "road": e.get("road", ""),
+                "road_number": e.get("number", ""),
+                "manufacturer": e.get("mfg", ""),
+                "model": e.get("model", ""),
+                "owner": e.get("owner", ""),
+                "date_modified": e.get("dateModified", ""),
+                "groups": e.get("rosterGroups", []),
+                "dcc_system": dcc_system,
+                "max_speed_percent": e.get("maxSpeedPct", 100),
+            }
+        )
     return compact
 
 
-def resolve_roster_entry(
-    query: str, roster: list[dict[str, Any]]
-) -> dict[str, Any]:
+def resolve_roster_entry(query: str, roster: list[dict[str, Any]]) -> dict[str, Any]:
     """Match a user-supplied locomotive name or DCC address against the roster.
 
     Tolerant like resolve_system: case/accent-insensitive ("autorail",

@@ -80,3 +80,17 @@ RELEASE_FUNCTION_SETTLE_DELAY_SECONDS = 0.5
 # visibly a moving train, slow enough to stay safe unsupervised in a public
 # demo. See jmri_mcp.tools.mode / tools.throttle for where this is applied.
 EXHIBITION_SPEED_PERCENT = 30.0
+
+# jmri-cli shell tab-completion (completion.py): how long a cached name list
+# (systems/roster/lights/turnouts/sensors/signals/blocks) is trusted before
+# a completer tries a fresh live read again. Short enough that a locomotive
+# added to the roster minutes ago shows up in the same terminal session
+# without an explicit `cache clean`, long enough that repeated Tab presses
+# while typing one command don't each trigger their own HTTP round-trip.
+COMPLETION_CACHE_TTL_SECONDS = 60.0
+
+# Max time a completer will wait on a live JMRI read before falling back to
+# whatever's already cached (or an empty list). A completer runs
+# synchronously the instant the user presses Tab -- it must never hang
+# noticeably even if JMRI is slow or unreachable.
+COMPLETION_TIMEOUT_SECONDS = 1.0

@@ -9,13 +9,13 @@ so there is no `block set` subcommand.
 import argparse
 import sys
 
-from tabulate import tabulate
-
 from jmri_core import i18n
-from jmri_cli._match import find_glob, find_regex
-from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 from jmri_core.constants.cli import BLOCK_STATE_NAMES, SORT_INDICATOR
 from jmri_core.jmri_client import JmriError, get_blocks, resolve_block
+from tabulate import tabulate
+
+from jmri_cli._match import find_glob, find_regex
+from jmri_cli._sort import mark_sorted_header, sort_rows, split_find_tokens
 
 
 def _headers() -> list[str]:

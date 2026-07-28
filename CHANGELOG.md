@@ -7,6 +7,44 @@ and this project follows [Semantic Versioning](https://semver.org/). All
 three packages (`jmri-core`, `jmri-cli`, `jmri-mcp`) are versioned and
 released together, in lockstep, from this one repo.
 
+## [1.1.0] - 2026-07-28
+
+### Added
+
+- Interactive shell TAB completion for real entity names (#70): system,
+  roster (locomotive), light, turnout, sensor, signal, and block names are
+  now completed live from JMRI inside `jmri-cli`'s shell prompt, preferring
+  each entity's human `userName` (e.g. "Parc") over its raw JMRI system
+  name ("IL1") — the same name the `resolve_*` matchers already accept.
+  Backed by a short-TTL local cache (`~/.jmri-cli/completion_cache/`) so a
+  completion session doesn't hit JMRI on every keystroke. See "Shell
+  tab-completion" in `docs/cli.md`.
+- GitHub Actions CI: the mocked test suite now runs automatically on every
+  push/PR.
+- `set_power`'s UNKNOWN-state recovery is now version-aware (JMRI/JMRI#15279,
+  fixed upstream by JMRI/JMRI#15287): JMRI 5.17.1+ self-recovers a
+  redundant-power-command UNKNOWN flip within seconds and honors any
+  command sent during that window, so the old forced OFF/wait/ON cycle is
+  now skipped on fixed JMRI versions and only used as a workaround on older
+  ones.
+
+### Fixed
+
+- A real, live-reported bug in the new TAB completion: repeated TAB presses
+  on an ambiguous multi-word name (e.g. "Quai des Fleurs") stacked quote
+  characters into garbage output instead of completing normally. Root
+  cause was GNU readline's own `text` completion argument only ever
+  covering the last word since a space — multi-word entity values needed
+  matching against the whole in-progress value, with the replacement
+  string trimmed to just readline's own text span (and the real
+  candidate's casing preserved rather than echoing back the case the user
+  typed).
+- `jmri_core`/`jmri_mcp`'s `__version__` still read `1.0.0rc1` after the
+  1.0.0 release even though every `pyproject.toml` had been bumped —
+  `jmri_mcp`'s is actively reported to MCP clients as the server version,
+  so this was user-visible, not just cosmetic.
+- `.mcpb` bundle icon refreshed.
+
 ## [1.0.0] - 2026-07-22
 
 First stable release: every planned M1-M5 feature (power, throttle, roster,

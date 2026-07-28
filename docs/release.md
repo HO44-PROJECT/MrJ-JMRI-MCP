@@ -49,6 +49,12 @@ Each package's version is declared in two places that must match:
 version (`jmri-core==X.Y.Z`) — bump that pin too when `jmri-core`'s version
 changes, even if `jmri-cli`/`jmri-mcp`'s own version doesn't.
 
+Then regenerate the lockfile so it matches:
+
+```bash
+uv lock
+```
+
 ## Build
 
 ```bash

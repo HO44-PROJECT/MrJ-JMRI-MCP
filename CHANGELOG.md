@@ -7,6 +7,27 @@ and this project follows [Semantic Versioning](https://semver.org/). All
 three packages (`jmri-core`, `jmri-cli`, `jmri-mcp`) are versioned and
 released together, in lockstep, from this one repo.
 
+## [1.2.0] - 2026-08-01
+
+### Added
+
+- Signal mast aspect-vocabulary discovery (#71): `get_signal_aspects()` /
+  `list_signal_aspects` read a mast's valid aspect names (e.g. "Hp0"/"Hp1")
+  directly from JMRI's own XML-served appearance table, so `set_signal` can
+  be called with a spelling/case confirmed correct instead of guessed.
+  `signal_off` MCP tool + `jmri-cli signal off` added as a dedicated verb
+  for darkening a mast — "unlit"/"off" is a lit-state toggle, not a member
+  of the aspect vocabulary itself, so it's excluded from
+  `list_signal_aspects`'s returned list rather than conflated with real
+  aspects. `jmri-cli signal list --with-aspects` adds an aspects column.
+
+### Fixed
+
+- Two pre-existing tests had drifted from `set_signal()`'s actual behavior:
+  they expected a POST body without `"lit": "true"`, but `set_signal()`
+  already always re-asserts it alongside a real aspect (so a mast left
+  unlit by a prior `signal_off` call is relit by any normal aspect set).
+
 ## [1.1.0] - 2026-07-28
 
 ### Added

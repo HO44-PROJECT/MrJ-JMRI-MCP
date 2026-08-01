@@ -93,8 +93,10 @@ that slot's `Action` to read the tag off it, if any. completion.py's
 from JMRI and cached - see that module's docstring for why a synchronous
 cached lookup is required here (a readline completer must be a plain,
 fast, non-raising callable). A positional with no `.completion_kind`
-(e.g. a percentage, an aspect string) simply contributes nothing, same
-as today.
+(e.g. a percentage) simply contributes nothing. One kind,
+"signal_aspect" (`signal set`'s aspect positional), is context-dependent
+instead - see completion.py's `_names_for_signal_aspect` and the
+special-case branch below.
 """
 
 import argparse
@@ -225,8 +227,10 @@ def _positionals(parser) -> list[argparse.Action]:
 def _positional_completion_kind(node, consumed_count: int) -> str | None:
     """The `.completion_kind` tag (see parser.py) of the positional Action
     at slot `consumed_count` under leaf `node`, or None if that slot has
-    no positionals left / isn't tagged (e.g. `signal set`'s second
-    positional, the aspect, is deliberately left untagged).
+    no positionals left / isn't tagged (e.g. a percentage). `signal set`'s
+    second positional, the aspect, is tagged "signal_aspect" - a
+    context-dependent kind resolved specially in `_make_completer` below,
+    not via `completion._names_for` like every other kind.
     """
     positionals = _positionals(node)
     if consumed_count >= len(positionals):
@@ -355,10 +359,20 @@ def _make_completer(parser):
                 # make a multi-word name uncompletable past its first word
                 # ("A" alone doesn't prefix-match "Layout Turnout A").
                 value_lower = in_progress_value.lower()
+                if kind == "signal_aspect":
+                    # Unlike every other kind (a flat, context-free list),
+                    # valid aspects depend on which mast was already typed
+                    # as this leaf's OWN positional 0 - not looked up by
+                    # _names_for, which has no notion of "the value typed
+                    # for a different positional on this same line".
+                    mast_name = (
+                        typed_tokens[-positionals_consumed] if positionals_consumed >= 1 else ""
+                    )
+                    names = completion._names_for_signal_aspect(mast_name)
+                else:
+                    names = completion._names_for(kind)
                 entity_matches = sorted(
-                    name
-                    for name in completion._names_for(kind)
-                    if name.lower().startswith(value_lower)
+                    name for name in names if name.lower().startswith(value_lower)
                 )
         flag_text_lower = flag_text.lower()
         flag_matches = sorted(

@@ -31,15 +31,46 @@ data.path(STATE) (STATE == "state") to get the requested aspect name, a
 naming quirk of the signalMast JSON service worth calling out since it's
 easy to guess wrong (verified against JMRI 5.4.0's actual server source
 after a POST with an "aspect" key was silently accepted but never applied).
+
+The "lit" field has an even sharper quirk: JsonSignalMastHttpService.doPost()
+guards it with `data.path(LIT).isTextual()` - it only acts on "lit" if the
+JSON value is a STRING ("true"/"false"), not a JSON boolean. A POST with a
+real boolean (`{"lit": false}`) passes `isTextual() == false`, so the whole
+branch is skipped and JMRI silently keeps the mast lit - no error, no
+indication anything was ignored, confirmed live against a real DCC Signal
+Mast Decoder mast (curl with `"lit": false` did nothing; `"lit": "false"`
+worked). This module always posts "lit" as a JSON string for that reason.
+
+get_signal_aspects() fills the one remaining gap: JMRI's JSON API never
+exposes a mast's *valid* aspect vocabulary anywhere (confirmed by reading
+JsonSignalMastHttpService's doGet()/doPost() source - the response schema
+is closed over name/userName/comment/properties/aspect/lit/held/state, and
+a rejected POST's error message only echoes back what was sent, never what
+would have been accepted). That vocabulary exists server-side only as XML
+under JMRI's own xml/signals/<SignalSystem>/appearance-<mastType>.xml -
+and JMRI's web server happens to serve its whole xml/ install directory
+statically at the same host:port as the JSON API (confirmed live: GET
+.../xml/signals/DB-HV-1969/appearance-block.xml -> 200, no extra config).
+The signal system and mast type needed to build that URL are themselves
+parsed from the mast's own JMRI system name (e.g.
+"TF$dsm:DB-HV-1969:block(103)" -> system "DB-HV-1969", type "block") -
+verified live against the maintainer's full roster of masts, the pattern
+held for all of them. Still zero hardcoded aspect/system data: everything
+here is derived from a mast name JMRI already gave us, plus a live XML
+fetch.
 """
 
 import logging
+import re
+import xml.etree.ElementTree as ET
 from typing import Any
 
 from jmri_core.constants import endpoints
-from jmri_core.jmri_client._http import JmriError, _get_json, _post_json, _unwrap
+from jmri_core.jmri_client._http import JmriError, _get_json, _get_text, _post_json, _unwrap
 
 logger = logging.getLogger("jmri_core.client")
+
+_MAST_NAME_RE = re.compile(r"\$dsm:([^:]+):(\w+)\(")
 
 
 async def get_signals() -> list[dict[str, Any]]:
@@ -66,6 +97,56 @@ async def get_signals() -> list[dict[str, Any]]:
     return signals
 
 
+_UNLIT_ASPECTS = {"unlit", "off"}
+
+
+async def get_signal_aspects(name: str) -> list[str]:
+    """Return the valid aspect names for one signal mast, parsed live from JMRI's own XML.
+
+    Args:
+        name: The mast's JMRI system name (e.g.
+            "TF$dsm:DB-HV-1969:block(103)"), as returned by
+            get_signals()/resolve_signal() - not the user-facing label.
+
+    JMRI's JSON API has no field anywhere for a mast's valid aspects (see
+    module docstring), so this parses the signal system and mast type out
+    of the mast's own system name (the "DB-HV-1969" and "block" in the
+    example above) and fetches JMRI's web server's static copy of
+    xml/signals/<system>/appearance-<type>.xml, which lists exactly the
+    aspects usable by that mast type (a real subset of the signal system's
+    full vocabulary - e.g. a "block" mast may support only Hp0/Hp1 while
+    the full DB-HV-1969 system defines many more).
+
+    Does NOT include "unlit"/"off": whether a mast can be unlit is a
+    separate per-mast PanelPro checkbox ("This Mast can be unlit"), not
+    part of the signal system's aspect vocabulary, and not derivable from
+    JMRI's JSON API or its xml/signals/ system definitions (confirmed
+    live: a mast with the checkbox unset still accepts set_signal's
+    "unlit" - JMRI's own "lit" field has no such restriction - so this
+    can't be inferred from behavior either). Use "signal off <name>" /
+    set_signal(name, "off") directly if you want to darken a mast; JMRI
+    itself is the only honest source for whether that's meaningful for a
+    given mast.
+
+    Raises JmriError("aspects_not_derivable") if the mast's name doesn't
+    match JMRI's usual "$dsm:<system>:<type>(<address>)" pattern (e.g. a
+    manually renamed mast) - callers should fall back to JMRI's own
+    server-side validation on set_signal() rather than guess.
+    """
+    match = _MAST_NAME_RE.search(name)
+    if not match:
+        raise JmriError("aspects_not_derivable", name=name)
+    signal_system, mast_type = match.group(1), match.group(2)
+
+    xml_text = await _get_text(
+        endpoints.SIGNAL_MAST_APPEARANCE.format(signal_system=signal_system, mast_type=mast_type)
+    )
+    root = ET.fromstring(xml_text)
+    aspects = [el.text.strip() for el in root.iter("aspectname") if el.text and el.text.strip()]
+    logger.info("Discovered %d valid aspect(s) for %s: %s", len(aspects), name, aspects)
+    return aspects
+
+
 async def set_signal(name: str, aspect: str) -> dict[str, Any]:
     """Set one signal mast's aspect by its JMRI system name, then report the observed state.
 
@@ -79,7 +160,17 @@ async def set_signal(name: str, aspect: str) -> dict[str, Any]:
             vocabulary isn't available over the JSON API (see module
             docstring). JMRI validates it server-side instead: an unknown
             aspect name raises a JmriError rather than silently failing to
-            confirm.
+            confirm. Special-cased (case-insensitive): "unlit"/"off" mean
+            "make this mast dark" rather than a real aspect name - JMRI
+            models that as a separate "lit" field, not an aspect, so this
+            posts {"lit": "false"} instead of {"state": aspect} and
+            confirms against the mast's observed "lit" state instead of
+            "aspect". A normal aspect request always re-asserts
+            {"lit": "true"} alongside {"state": aspect}, so setting any
+            real aspect also relights a mast previously left unlit -
+            JMRI does not do this on its own (confirmed live: a "state"-only
+            POST with no "lit" key leaves a previously-unlit mast dark even
+            though the aspect itself did change server-side).
 
     Re-reads via get_signals() after the POST and reports "confirmed"
     honestly, same contract as set_power()/set_turnout()/set_light() - a
@@ -87,7 +178,19 @@ async def set_signal(name: str, aspect: str) -> dict[str, Any]:
     still fail to reach a *valid* requested aspect even though the POST
     itself succeeded.
     """
-    await _post_json(endpoints.SIGNAL_MAST.format(name=name), {"name": name, "state": aspect})
+    unlit = aspect.strip().casefold() in _UNLIT_ASPECTS
+    if unlit:
+        # "lit" must be a JSON string, not a boolean - see module docstring.
+        await _post_json(endpoints.SIGNAL_MAST.format(name=name), {"name": name, "lit": "false"})
+    else:
+        # Always re-assert lit:"true" alongside the aspect: JMRI does not
+        # auto-relight a mast just because a new aspect was requested (a
+        # mast left unlit by a prior "unlit"/"off" call stays unlit even
+        # after a normal aspect POST with no "lit" key) - confirmed live.
+        await _post_json(
+            endpoints.SIGNAL_MAST.format(name=name),
+            {"name": name, "state": aspect, "lit": "true"},
+        )
 
     signals = await get_signals()
     matches = [s for s in signals if s.get("name") == name]
@@ -95,14 +198,18 @@ async def set_signal(name: str, aspect: str) -> dict[str, Any]:
         raise JmriError("vanished_after_post", kind="signal mast", name=name)
     observed = matches[0]
 
-    confirmed = observed.get("aspect") == aspect
+    if unlit:
+        confirmed = not bool(observed.get("lit"))
+    else:
+        confirmed = observed.get("aspect") == aspect
     if not confirmed:
         logger.warning(
-            "set_signal(%s, %s): requested aspect=%s but observed aspect=%s",
+            "set_signal(%s, %s): requested aspect=%s but observed aspect=%s lit=%s",
             name,
             aspect,
             aspect,
             observed.get("aspect"),
+            observed.get("lit"),
         )
     return {**observed, "confirmed": confirmed}
 

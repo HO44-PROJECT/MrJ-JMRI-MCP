@@ -7,7 +7,7 @@ parity plus scripting-only flags (`--hold`/`--rampup`/`--rampdown`/etc.), see
 [cli.md](cli.md). For design rationale behind any of these tools, see
 [architecture.md](architecture.md).
 
-**50 tools**, across 10 domains:
+**52 tools**, across 10 domains:
 
 | Domain | Count |
 |---|---|
@@ -16,7 +16,7 @@ parity plus scripting-only flags (`--hold`/`--rampup`/`--rampdown`/etc.), see
 | Layout lights | 4 |
 | Turnouts | 4 |
 | Roster | 3 |
-| Signals | 3 |
+| Signals | 5 |
 | Mode | 5 |
 | Sensors | 2 |
 | Blocks | 2 |
@@ -83,13 +83,15 @@ JMRI Light objects (decor/building lights) — not a locomotive's own lights, se
 | `find_locomotive` | `(name: str) -> dict` | Resolve a locomotive's spoken/typed name to its DCC address. |
 | `get_locomotive_functions` | `(name: str) -> dict` | List a locomotive's named decoder functions (e.g. "F2": "Rear lights"). |
 
-## Signals (3)
+## Signals (5)
 
 | Tool | Signature | Description |
 |---|---|---|
 | `list_signals` | `() -> dict` | List every signal mast known to JMRI, with its current aspect. |
 | `get_signal` | `(name: str) -> dict` | Get the current aspect of one signal mast. |
 | `set_signal` | `(name: str, aspect: str) -> dict` | Set a signal mast's aspect, and report the aspect actually observed. |
+| `signal_off` | `(name: str) -> dict` | Darken a signal mast: shortcut for `set_signal(name, "off")`. |
+| `list_signal_aspects` | `(name: str) -> dict` | List the valid aspect names for one signal mast, so you can pick an exact spelling before calling `set_signal`. |
 
 ## Mode (5)
 

@@ -71,6 +71,12 @@ Tab suggests. This is specific to the interactive shell's own `readline`-based
 completion — one-shot commands typed directly at your OS shell (bash/zsh)
 are not completed by `jmri-cli` itself.
 
+`signal set <name> <TAB>` is a special case: unlike every other completion
+kind above (a flat, context-free list), the aspect positional's candidates
+depend on which mast was already typed earlier on the same line — Tab looks
+up that specific mast's own valid aspects (same data as `signal aspects
+<name>`, cached per mast name) rather than one shared list for every mast.
+
 ## Design pattern: bare group = smart default, verb elevation
 
 Two rules apply consistently across every command group below:
@@ -1607,6 +1613,23 @@ the mast, resolved from its system name's leading prefix character (`Z`
 above) — `-` for a JMRI-internal mast with no power connection, same rule
 as `turnout`/`light`.
 
+### `--with-aspects`: add a "Valid aspects" column
+
+`jmri-cli signal list --with-aspects` (also works on bare `jmri-cli signal
+--with-aspects`) adds one extra column listing each mast's full valid-aspect
+vocabulary — the same list `signal aspects <name>` prints, fetched live and
+concurrently for every mast (one extra HTTP request per mast, so this is
+slower than the plain table; omit the flag for the fast default). A mast
+whose aspects can't be derived (see `signal aspects` below) shows `?` in
+this column instead of failing the whole command.
+
+```bash
+$ jmri-cli signal list --with-aspects
+System ID                     Signal ▼   Aspect  Comment          DCC system    Valid aspects
+-----------------------------------------------------------------------------------------------
+TF$dsm:DB-HV-1969:block(103)  LostDemoSignal  Hp0  Just a demo...  taya (accessories)  Hp0, Hp1
+```
+
 ### Sorting: `jmri-cli signal by<column>`
 
 Every column is sortable via a `by<column>` sibling subcommand (same
@@ -1680,6 +1703,48 @@ sending the wrong JSON field (`"aspect"` instead of the `"state"` key
 JMRI's server actually reads), not a hardware issue. See
 [architecture.md](architecture.md#signal-masts-list_signals--get_signal--set_signal-26)
 for the full diagnosis.
+
+## `jmri-cli signal aspects <name>`
+
+Print the valid aspect names for one signal mast, one per line — resolves
+`<name>` the same tolerant way as `signal status`. No side effects.
+
+JMRI's JSON API never exposes a mast's valid-aspect vocabulary (see
+[architecture.md](architecture.md#signal-masts-list_signals--get_signal--set_signal-26)
+for how this is derived instead: JMRI's web server statically serves its own
+`xml/signals/<system>/appearance-<type>.xml`, parsed from the mast's own
+JMRI system name). This is also what feeds `signal set`'s aspect
+Tab-completion in the interactive shell — see
+[Shell tab-completion](#shell-tab-completion-inside-the-interactive-shell) above.
+
+Does **not** include `unlit`/`off` — whether a mast can be unlit is a
+separate per-mast "This Mast can be unlit" checkbox in PanelPro, not part of
+the signal system's aspect vocabulary and not derivable from JMRI's API (see
+`signal off` below).
+
+```bash
+$ jmri-cli signal aspects LostDemoSignal
+Hp0
+Hp1
+```
+
+## `jmri-cli signal off <name>`
+
+Darken a signal mast — shortcut for `jmri-cli signal set <name> off`.
+Resolves `<name>` the same tolerant way as `signal status`. **Writes to
+JMRI** (real hardware if DCC-driven), same re-read/confirm contract as
+`signal set`.
+
+Whether this is meaningful for a given mast depends on that mast's own
+"This Mast can be unlit" setting in PanelPro — JMRI accepts the `lit` flag
+on **any** mast regardless of that setting (confirmed live), so a confirmed
+exit code 0 here does not by itself guarantee the mast was configured to be
+unlit-capable.
+
+```bash
+$ jmri-cli signal off LostDemoSignal
+name=LostDemoSignal system_id=TF$dsm:DB-HV-1969:block(103) aspect=OFF comment=Just a demo signal in the middle of the layout dcc_system=taya (accessories) address=103
+```
 
 ## No CLI for executor mode
 

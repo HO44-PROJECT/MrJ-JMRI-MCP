@@ -66,6 +66,7 @@ from jmri_core.jmri_client.sensor import (
     resolve_sensor,
 )
 from jmri_core.jmri_client.signal import (
+    get_signal_aspects,
     get_signals,
     resolve_signal,
     set_signal,
@@ -97,6 +98,7 @@ __all__ = [
     "get_roster",
     "get_roster_function_labels",
     "get_sensors",
+    "get_signal_aspects",
     "get_signals",
     "get_systems",
     "get_turnouts",

@@ -1217,7 +1217,9 @@ async def test_set_signal_sets_aspect_and_confirms(mock_power):
     # Regression guard: JMRI's JsonSignalMastHttpService.doPost() reads the
     # "state" field, not "aspect" - sending the wrong key is silently
     # ignored server-side (200 response, no error, aspect never changes).
-    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0"}]
+    # Also always re-asserts lit:"true" alongside a real aspect, so a mast
+    # left unlit by a prior "off" call is relit by any normal aspect set.
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0", "lit": "true"}]
 
 
 async def test_set_signal_reports_error_honestly(monkeypatch):
@@ -1225,6 +1227,186 @@ async def test_set_signal_reports_error_honestly(monkeypatch):
     mcp = make_server()
     out = await call(mcp, "set_signal", name="Entry Signal A", aspect="Hp0")
     assert "error" in out
+
+
+async def test_set_signal_unlit_aspect_posts_lit_false_and_confirms(mock_power):
+    import respx
+    from httpx import Response
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "set_signal_lit" not in tool_names
+
+    post_bodies = []
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "signalMast",
+                        "data": {
+                            "name": "ZF$dsm:DB-HV-1969:block(31)",
+                            "userName": "Entry Signal A",
+                            "aspect": "Hp0",
+                            "lit": False,
+                            "held": False,
+                        },
+                    },
+                ],
+            )
+        )
+
+        def post_signal(request):
+            post_bodies.append(json.loads(request.content))
+            return Response(200, json={})
+
+        router.post(f"{MOCK_JMRI_URL}/json/signalMast/ZF$dsm:DB-HV-1969:block(31)").mock(
+            side_effect=post_signal
+        )
+        out = await call(mcp, "set_signal", name="Entry Signal A", aspect="unlit")
+    assert out == {
+        "name": "Entry Signal A",
+        "aspect": "Hp0",
+        "lit": False,
+        "held": False,
+        "dcc_system_name": "DCC++ Zou",
+        "dcc_address": 31,
+        "comment": None,
+        "confirmed": True,
+    }
+    # Regression guard: "unlit"/"off" must POST "lit" as a JSON STRING
+    # ("false"), not a JSON boolean - JMRI's doPost() only acts on "lit" if
+    # data.path(LIT).isTextual(), so a real boolean is silently ignored
+    # (verified live against a DCC Signal Mast Decoder mast).
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "lit": "false"}]
+
+
+async def test_set_signal_off_aspect_is_case_insensitive_alias_for_unlit(mock_power):
+    import respx
+    from httpx import Response
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    post_bodies = []
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "signalMast",
+                        "data": {
+                            "name": "ZF$dsm:DB-HV-1969:block(31)",
+                            "userName": "Entry Signal A",
+                            "aspect": "Hp0",
+                            "lit": False,
+                            "held": False,
+                        },
+                    },
+                ],
+            )
+        )
+
+        def post_signal(request):
+            post_bodies.append(json.loads(request.content))
+            return Response(200, json={})
+
+        router.post(f"{MOCK_JMRI_URL}/json/signalMast/ZF$dsm:DB-HV-1969:block(31)").mock(
+            side_effect=post_signal
+        )
+        out = await call(mcp, "set_signal", name="Entry Signal A", aspect="OFF")
+    assert out["confirmed"] is True
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "lit": "false"}]
+
+
+async def test_signal_off_is_shortcut_for_set_signal_off(mock_power):
+    import respx
+    from httpx import Response
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "signal_off" in tool_names
+
+    post_bodies = []
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "type": "signalMast",
+                        "data": {
+                            "name": "ZF$dsm:DB-HV-1969:block(31)",
+                            "userName": "Entry Signal A",
+                            "aspect": "Hp0",
+                            "lit": False,
+                            "held": False,
+                        },
+                    },
+                ],
+            )
+        )
+
+        def post_signal(request):
+            post_bodies.append(json.loads(request.content))
+            return Response(200, json={})
+
+        router.post(f"{MOCK_JMRI_URL}/json/signalMast/ZF$dsm:DB-HV-1969:block(31)").mock(
+            side_effect=post_signal
+        )
+        out = await call(mcp, "signal_off", name="Entry Signal A")
+
+    assert out["confirmed"] is True
+    assert out["lit"] is False
+    # Regression guard: signal_off must go through the exact same "lit"
+    # (string) special-case as set_signal(name, "off"), not a real aspect POST.
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "lit": "false"}]
+
+
+async def test_signal_off_reports_error_honestly(monkeypatch):
+    monkeypatch.setenv("JMRI_URL", "http://127.0.0.1:1")
+    mcp = make_server()
+    out = await call(mcp, "signal_off", name="Entry Signal A")
+    assert "error" in out
+
+
+async def test_list_signal_aspects_returns_xml_derived_list(mock_signals, mock_power):
+    import respx
+    from httpx import Response
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    mcp = make_server()
+    tool_names = {t.name for t in await mcp.list_tools()}
+    assert "list_signal_aspects" in tool_names
+
+    appearance_xml = """<?xml version="1.0"?>
+<appearancetable>
+  <aspecttable>
+    <aspect><aspectname>Hp0</aspectname></aspect>
+    <aspect><aspectname>Hp1</aspectname></aspect>
+  </aspecttable>
+</appearancetable>
+"""
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/xml/signals/DB-HV-1969/appearance-block.xml").mock(
+            return_value=Response(200, text=appearance_xml)
+        )
+        out = await call(mcp, "list_signal_aspects", name="Entry Signal A")
+
+    assert out == {"aspects": ["Hp0", "Hp1"]}
+    # Regression guard for the session-71 design correction: unlit/off must
+    # never leak back into this tool's output.
+    assert "unlit" not in out["aspects"]
+    assert "off" not in out["aspects"]
+
+
+async def test_list_signal_aspects_unknown_name_returns_error_not_exception(mock_signals):
+    mcp = make_server()
+    out = await call(mcp, "list_signal_aspects", name="tgv")
+    assert "error" in out and "tgv" in out["error"]
 
 
 async def test_list_sensors_registered_and_compact(mock_sensors):

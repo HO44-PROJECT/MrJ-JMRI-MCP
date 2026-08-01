@@ -30,7 +30,9 @@
         "exhibition_address_not_allowed": "Exhibition mode: address {address} is not in the allowed list ({allowed})",
         "exhibition_power_restricted": "Exhibition mode: power cannot be turned on while active — exit exhibition mode first",
         "exhibition_reverse_restricted": "Exhibition mode: reverse direction is disabled — forward only while active",
-        "exhibition_wrong_password": "Wrong password — exhibition mode is still active"
+        "exhibition_wrong_password": "Wrong password — exhibition mode is still active",
+        "aspects_not_derivable": "Can't determine valid aspects for {name!r}: system name doesn't match JMRI's usual \"$dsm:<system>:<type>(<address>)\" pattern",
+        "set_signal_rejected_hint": "{message} — call list_signal_aspects to see the valid aspects for this mast"
     },
     "kinds": {
         "signal mast": {
@@ -224,7 +226,10 @@
             "findr": "List every signal mast whose name matches a regex",
             "findg": "List every signal mast whose name matches a shell glob",
             "set": "Set a signal mast's aspect (writes to JMRI)",
-            "set_aspect": "Aspect name, e.g. Hp0/Hp1/Hp2 (not validated locally)"
+            "set_aspect": "Aspect name, e.g. Hp0/Hp1/Hp2 (not validated locally), or unlit/off to make the mast dark",
+            "off": "Darken a signal mast (shortcut for 'signal set <name> off')",
+            "aspects": "List one signal mast's valid aspect names (also feeds Tab-completion)",
+            "with_aspects": "Add a column with each mast's valid aspect names (one extra live request per mast, slower)"
         },
         "block": {
             "list": "Show every block's occupancy state",
@@ -244,6 +249,7 @@
         "block": "Block",
         "signal": "Signal",
         "aspect": "Aspect",
+        "valid_aspects": "Valid aspects",
         "address": "Address",
         "speed": "Speed",
         "direction": "Direction",

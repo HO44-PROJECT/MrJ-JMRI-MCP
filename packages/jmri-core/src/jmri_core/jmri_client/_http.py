@@ -13,7 +13,7 @@ from jmri_core.constants.client_tuning import HTTP_TIMEOUT_SECONDS
 from jmri_core.constants.protocol import FIELD_DATA, FIELD_TYPE
 from jmri_core.jmri_errors import JmriError
 
-__all__ = ["JmriError", "_get_json", "_post_json", "_unwrap"]
+__all__ = ["JmriError", "_get_json", "_get_text", "_post_json", "_unwrap"]
 
 
 def _unwrap(obj: Any) -> Any:
@@ -30,6 +30,18 @@ async def _get_json(path: str) -> Any:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.json()
+    except httpx.HTTPError as exc:
+        raise JmriError("http_get_failed", url=url, exc=exc) from exc
+
+
+async def _get_text(path: str) -> str:
+    """GET a non-JSON path (e.g. JMRI's static /xml/... file server) and return the raw body."""
+    url = f"{get_jmri_url()}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.text
     except httpx.HTTPError as exc:
         raise JmriError("http_get_failed", url=url, exc=exc) from exc
 

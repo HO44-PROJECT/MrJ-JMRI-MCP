@@ -993,13 +993,19 @@ def build_parser() -> argparse.ArgumentParser:
     signal_cmd, signal_sub = _group(subparsers, "signal", default_func=signal.signal_list)
     signal_cmd.epilog = "example:\n  jmri-cli signal"
     signal_cmd.formatter_class = argparse.RawDescriptionHelpFormatter
+    signal_cmd.add_argument(
+        "--with-aspects", action="store_true", help=i18n.t("help.signal.with_aspects")
+    )
 
-    _leaf(
+    signal_list_cmd = _leaf(
         signal_sub,
         "list",
         help=i18n.t("help.signal.list"),
         example="jmri-cli signal list",
         func=signal.signal_list,
+    )
+    signal_list_cmd.add_argument(
+        "--with-aspects", action="store_true", help=i18n.t("help.signal.with_aspects")
     )
     _sort_siblings(
         signal_sub,
@@ -1058,6 +1064,30 @@ def build_parser() -> argparse.ArgumentParser:
     signal_set_cmd.add_argument(
         "name", help=i18n.t("help.arg.signal_ref")
     ).completion_kind = "signal"
-    signal_set_cmd.add_argument("aspect", help=i18n.t("help.signal.set_aspect"))
+    signal_set_cmd.add_argument(
+        "aspect", help=i18n.t("help.signal.set_aspect")
+    ).completion_kind = "signal_aspect"
+
+    signal_off_cmd = _leaf(
+        signal_sub,
+        "off",
+        help=i18n.t("help.signal.off"),
+        example='jmri-cli signal off "Entry Signal A"',
+        func=signal.signal_off,
+    )
+    signal_off_cmd.add_argument(
+        "name", help=i18n.t("help.arg.signal_ref")
+    ).completion_kind = "signal"
+
+    signal_aspects_cmd = _leaf(
+        signal_sub,
+        "aspects",
+        help=i18n.t("help.signal.aspects"),
+        example='jmri-cli signal aspects "Entry Signal A"',
+        func=signal.signal_aspects,
+    )
+    signal_aspects_cmd.add_argument(
+        "name", help=i18n.t("help.arg.signal_ref")
+    ).completion_kind = "signal"
 
     return parser

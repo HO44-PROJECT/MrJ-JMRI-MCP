@@ -1,18 +1,14 @@
-"""Signal mast MCP tools: list_signals, get_signal, set_signal.
+"""Signal mast MCP tools: list_signals, get_signal, set_signal, signal_off, list_signal_aspects.
 
-Talks to jmri_client.py (one-shot HTTP), same as power.py/turnout.py. This
-covers JMRI's signalMast objects only, not signalHead — see
-jmri_core.jmri_client.signal's module docstring for why: signalHead is
-internal plumbing (individual lamps) that most JMRI users, including this
-project's maintainer, never interact with directly once a mast is
-configured. A signalMast's "aspect" (e.g. "Hp0", "Hp1", "Hp2" for a German
-DB-HV-1969 mast) is the vocabulary PanelPro users actually see and use.
+Talks to jmri_client.py (one-shot HTTP), same as power.py/turnout.py. Covers
+JMRI's signalMast only, not signalHead (internal plumbing, unused by this
+project's users) — see jmri_core.jmri_client.signal's module docstring.
 """
 
 import logging
 
 from jmri_core import i18n
-from jmri_core.jmri_client import JmriError, get_signals, resolve_signal
+from jmri_core.jmri_client import JmriError, get_signal_aspects, get_signals, resolve_signal
 from jmri_core.jmri_client import set_signal as _set_signal
 from jmri_mcp.tools._common import compact_signal
 
@@ -30,20 +26,11 @@ def register(mcp) -> None:
     async def list_signals() -> dict:
         """List every signal mast known to JMRI, with its current aspect.
 
-        Use to discover what signal masts exist before calling
-        get_signal/set_signal, or to answer "what signals are there?"/
-        "what aspect is signal X showing?". No side effects.
-
-        A signal mast is a trackside signal (e.g. German Hauptsignal),
-        distinct from a turnout (switch/points) or a layout light
-        (scenery) — don't confuse with set_turnout/set_light. Only
-        covers signalMast objects, not JMRI's lower-level signalHead
-        objects (rarely used directly once a mast is configured).
-
-        "aspect" is a name like "Hp0"/"Hp1"/"Hp2" (German Hauptsignal) or
-        a different vocabulary depending on the mast's configured signal
-        system — aspect names are never hardcoded/translated, just
-        passed through from JMRI.
+        Use to discover what signal masts exist, or answer "what signals
+        are there?"/"what aspect is signal X showing?". No side effects.
+        Also reports "lit" — use signal_off(name) to darken a mast. Call
+        list_signal_aspects(name) for a mast's valid aspects before
+        set_signal with one you're unsure of.
         """
         try:
             signals = await get_signals()
@@ -57,12 +44,11 @@ def register(mcp) -> None:
         """Get the current aspect of one signal mast.
 
         Args:
-            name: Signal mast name (JMRI system name, or its user-friendly
-                label if one is set) or an unambiguous fragment of the
-                label. Case-insensitive.
+            name: Mast name (system name or userName) or unambiguous
+                fragment. Case-insensitive.
 
-        No side effects — this only reads state, it never changes the
-        signal.
+        Also reports "lit" (bool, illuminated or dark — independent of
+        aspect). No side effects.
         """
         try:
             signals = await get_signals()
@@ -77,25 +63,17 @@ def register(mcp) -> None:
         """Set a signal mast's aspect, and report the aspect actually observed.
 
         Args:
-            name: Signal mast name (JMRI system name or user-friendly
-                label) or an unambiguous fragment. Case-insensitive.
-            aspect: The aspect to request, e.g. "Hp0" (stop), "Hp1"
-                (proceed), "Hp2" (proceed reduced speed) for a German
-                DB-HV-1969 mast — valid names depend on this mast's
-                configured signal system and are NOT validated locally
-                (JMRI doesn't expose a valid-aspect list); JMRI validates
-                server-side and this tool reports rejection as an error.
-                If unsure, call get_signal/list_signals first to see the
-                current aspect as a naming-style example, or ask the user
-                rather than guessing.
+            name: Mast name (system name or userName) or unambiguous
+                fragment. Case-insensitive.
+            aspect: e.g. "Hp0"/"Hp1"/"Hp2" — signal-system-dependent, IS
+                case-sensitive, NOT validated locally (rejection: "error").
+                Call list_signal_aspects(name) FIRST if unsure of
+                spelling/case, e.g. when named by effect ("turn it red") —
+                don't guess. "unlit"/"off" darkens the mast — prefer
+                signal_off(name).
 
-        Writes to JMRI, and on masts driven by external hardware (DCC
-        accessory decoder, microcontroller) changes the real physical
-        signal. An unknown aspect is reported as an "error". A valid
-        aspect is re-read after the command; if the observed aspect still
-        doesn't match, "confirmed" is false — report that honestly, not as
-        success, since unresponsive hardware can cause this even when
-        JMRI itself accepted the change.
+        Writes to JMRI. "confirmed" false means re-read still doesn't
+        match — report honestly.
         """
         try:
             signals = await get_signals()
@@ -103,5 +81,43 @@ def register(mcp) -> None:
             result = await _set_signal(match["name"], aspect)
         except JmriError as exc:
             logger.warning("set_signal(%r, %r) failed: %s", name, aspect, exc)
-            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+            message = i18n.t(f"errors.{exc.code}", **exc.kwargs)
+            if "unknown state" in message.casefold():
+                message = i18n.t("errors.set_signal_rejected_hint", message=message)
+            return {"error": message}
         return {**await compact_signal(result), "confirmed": result["confirmed"]}
+
+    @mcp.tool()
+    async def signal_off(name: str) -> dict:
+        """Darken a signal mast: shortcut for set_signal(name, "off").
+
+        Args:
+            name: Mast name (system name or userName) or unambiguous
+                fragment. Case-insensitive.
+
+        Depends on this mast's "can be unlit" setting in PanelPro — JMRI
+        accepts "lit" regardless, so "confirmed": true doesn't guarantee
+        unlit-capability.
+        """
+        return await set_signal(name, "off")
+
+    @mcp.tool()
+    async def list_signal_aspects(name: str) -> dict:
+        """List valid aspect names for one mast, to pick an exact spelling before set_signal.
+
+        Args:
+            name: Mast name (system name or userName) or unambiguous
+                fragment. Case-insensitive.
+
+        Aspects ARE case-sensitive ("Hp0", not "hp0"). Returns
+        {"aspects": [...]}, this mast's real subset. Excludes "unlit"/"off"
+        (use signal_off). No side effects; "error" for non-standard names.
+        """
+        try:
+            signals = await get_signals()
+            match = resolve_signal(name, signals)
+            aspects = await get_signal_aspects(match["name"])
+        except JmriError as exc:
+            logger.warning("list_signal_aspects(%r) failed: %s", name, exc)
+            return {"error": i18n.t(f"errors.{exc.code}", **exc.kwargs)}
+        return {"aspects": aspects}

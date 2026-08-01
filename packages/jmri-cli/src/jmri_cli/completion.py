@@ -22,9 +22,19 @@ cache, not a source of truth" pattern — a stale suggestion is a minor
 inconvenience (you'd just get a "no such locomotive" from the real
 command), unlike a stale throttle-state read, which is never trusted as an
 actual JMRI state.
+
+`signal_set`'s aspect positional is a special case: unlike every other
+completed kind (a flat, context-free list), valid aspects depend on WHICH
+mast was already typed as the previous positional - JMRI's aspect
+vocabulary is per-mast-type, not global (see jmri_core.jmri_client.signal's
+get_signal_aspects). `_names_for_signal_aspect(mast_name)` is a second,
+parallel entry point for this one case, cached per mast name under
+`<cache-dir>/signal_aspect/<mast_name>.json` rather than the single
+`<kind>.json` file the flat kinds use.
 """
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import Callable
@@ -115,4 +125,61 @@ def _names_for(kind: str) -> list[str]:
         return _read_cache(kind) or []
 
     _write_cache(kind, names)
+    return names
+
+
+async def _fetch_signal_aspects(mast_name: str) -> list[str]:
+    """Resolve `mast_name` (system name, userName, or an unambiguous
+    fragment - same tolerant matching as `signal set` itself) to a real
+    mast, then its live valid-aspect vocabulary."""
+    signals = await jmri_client.get_signals()
+    match = jmri_client.resolve_signal(mast_name, signals)
+    return await jmri_client.get_signal_aspects(match["name"])
+
+
+def _signal_aspect_cache_path(mast_name: str) -> Path:
+    # mast_name (a userName fragment or JMRI system name typed by the user)
+    # may contain characters unsafe as a filename ("/", quotes, ...) -
+    # hashed instead of used verbatim, unlike the flat kinds' plain
+    # "<kind>.json" (kind is always one of _FETCHERS's own fixed keys).
+    digest = hashlib.sha256(mast_name.casefold().encode()).hexdigest()[:16]
+    return CACHE_DIR / "signal_aspect" / f"{digest}.json"
+
+
+def _names_for_signal_aspect(mast_name: str) -> list[str]:
+    """Like `_names_for`, but for `signal set`'s aspect positional, whose
+    candidates depend on which mast was already typed (see module
+    docstring). Cached per mast name rather than one shared file."""
+    if not mast_name:
+        return []
+    cache_path = _signal_aspect_cache_path(mast_name)
+
+    def read_cache() -> list[str] | None:
+        try:
+            payload = json.loads(cache_path.read_text())
+            return list(payload["names"])
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+            return None
+
+    try:
+        age = time.time() - cache_path.stat().st_mtime
+    except FileNotFoundError:
+        age = None
+    if age is not None and age < COMPLETION_CACHE_TTL_SECONDS:
+        cached = read_cache()
+        if cached is not None:
+            return cached
+
+    async def _with_timeout():
+        return await asyncio.wait_for(
+            _fetch_signal_aspects(mast_name), timeout=COMPLETION_TIMEOUT_SECONDS
+        )
+
+    try:
+        names = asyncio.run(_with_timeout())
+    except Exception:
+        return read_cache() or []
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps({"names": names}))
     return names

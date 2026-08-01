@@ -30,7 +30,9 @@
         "exhibition_address_not_allowed": "Mode exposition : l'adresse {address} n'est pas dans la liste autorisée ({allowed})",
         "exhibition_power_restricted": "Mode exposition : impossible d'allumer le courant tant qu'il est actif — sortez d'abord du mode exposition",
         "exhibition_reverse_restricted": "Mode exposition : la marche arrière est désactivée — avant uniquement tant qu'il est actif",
-        "exhibition_wrong_password": "Mot de passe incorrect — le mode exposition reste actif"
+        "exhibition_wrong_password": "Mot de passe incorrect — le mode exposition reste actif",
+        "aspects_not_derivable": "Impossible de déterminer les aspects valides pour {name!r} : le nom système ne correspond pas au motif habituel de JMRI « $dsm:<système>:<type>(<adresse>) »",
+        "set_signal_rejected_hint": "{message} — appelez list_signal_aspects pour voir les aspects valides de ce mât"
     },
     "kinds": {
         "signal mast": {
@@ -224,7 +226,10 @@
             "findr": "Lister tous les mâts de signalisation dont le nom correspond à une expression régulière",
             "findg": "Lister tous les mâts de signalisation dont le nom correspond à un glob shell",
             "set": "Régler l'aspect d'un mât de signalisation (écrit dans JMRI)",
-            "set_aspect": "Nom de l'aspect, ex. Hp0/Hp1/Hp2 (non validé localement)"
+            "set_aspect": "Nom de l'aspect, ex. Hp0/Hp1/Hp2 (non validé localement), ou unlit/off pour éteindre le mât",
+            "off": "Éteindre un mât de signalisation (raccourci pour 'signal set <name> off')",
+            "aspects": "Lister les aspects valides d'un mât de signalisation (alimente aussi la complétion Tab)",
+            "with_aspects": "Ajouter une colonne avec les aspects valides de chaque mât (une requête live de plus par mât, plus lent)"
         },
         "block": {
             "list": "Afficher l'état d'occupation de chaque bloc",
@@ -244,6 +249,7 @@
         "block": "Bloc",
         "signal": "Signal",
         "aspect": "Aspect",
+        "valid_aspects": "Aspects valides",
         "address": "Adresse",
         "speed": "Vitesse",
         "direction": "Direction",

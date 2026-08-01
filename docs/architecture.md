@@ -805,6 +805,76 @@ exact bug can't reappear silently. Re-verified live against the real
 "bloc31" mast (the maintainer's own `userName`, set after this bug was
 first reported) — requesting `Hp0` now confirms correctly.
 
+### `get_signal_aspects` (#71): the valid-aspect vocabulary, and why unlit/off aren't in it
+
+JMRI's JSON API has no field anywhere for a mast's list of *valid* aspects
+(the `signalMast-server.json` schema is closed over exactly
+`name/userName/comment/properties/aspect/lit/held/state`, confirmed by
+reading `JsonSignalMastHttpService`'s `doGet()`/`doPost()` source), and a
+rejected `set_signal` POST's error message only ever echoes back what was
+sent, never what would have been accepted. `get_signal_aspects()`
+(`jmri_client/signal.py`) works around this by exploiting a separate fact:
+JMRI's web server statically serves its own install's `xml/` directory at
+the same host:port as the JSON API (`FilePaths.properties`' default `/xml =
+program:xml` mapping, no extra JMRI config needed — confirmed live: `GET
+.../xml/signals/DB-HV-1969/appearance-block.xml` → 200). A mast's JMRI
+system name reliably encodes both the signal system and mast type needed to
+build that URL (`TF$dsm:DB-HV-1969:block(103)` → system `DB-HV-1969`, type
+`block` — verified against the maintainer's full roster of masts), so the
+whole lookup is zero-hardcoded: parse the name JMRI already gave us, fetch
+the matching `appearance-<type>.xml`, parse out `<aspectname>` elements.
+`appearance-<mastType>.xml` gives the real, *narrower* per-type subset, not
+every aspect the signal system defines in general (verified live:
+`appearance-block.xml` lists only `Hp0`/`Hp1`, matching a real "block"-type
+mast's actual behavior).
+
+**`"unlit"`/`"off"` are deliberately NOT included in `get_signal_aspects()`'s
+returned list**, despite `set_signal()` accepting them (see below) — this
+was tried and reverted mid-session after the maintainer caught it live: a
+mast (`bloc31`) that cannot actually be unlit still had `"unlit"`/`"off"`
+appear in its aspect list, which is a false promise. The maintainer's own
+PanelPro "Add/Edit Signal Mast" screenshot showed why: **whether a mast can
+be unlit is a per-mast checkbox** ("This Mast can be unlit") set in
+PanelPro — a real, per-mast JMRI configuration fact, not hardware/firmware
+as first assumed, and not something either the JSON API or the
+`xml/signals/` system definitions expose anywhere. JMRI's `"lit"` field
+itself has no such guard server-side (confirmed live: POSTing `"lit":
+"false"` to `bloc31`, whose checkbox is unset, is still accepted and
+confirms) — so behavior can't be used to infer the checkbox state either;
+there is currently no live-derivable source of truth for it at all. Rather
+than guess or silently over-claim, `get_signal_aspects()` stays scoped to
+what JMRI's signal system XML actually defines, and darkening a mast is a
+separate, explicit action instead: `signal_off` (MCP tool) / `jmri-cli
+signal off <name>`, both thin wrappers over `set_signal(name, "off")`
+(added instead of only documenting the aspects-list limitation, so there's
+still a one-step way to darken a mast without typing the "off"/"unlit"
+magic string into `signal set`). Their docstrings say explicitly that a
+confirmed result doesn't by itself guarantee the mast was configured
+unlit-capable.
+
+`jmri-cli signal list --with-aspects` (`jmri_cli/signal.py`) surfaces
+`get_signal_aspects()` as an optional extra table column rather than always
+computing it — listing every mast already costs one `/json/signalMasts`
+call, and adding a per-mast aspect lookup on top would mean N further live
+HTTP requests just to render the default table. The flag fetches all of
+them concurrently via `asyncio.gather` (fast in practice — a dozen masts on
+the maintainer's layout added no perceptible delay) and shows `"?"` for any
+single mast whose aspects can't be derived (`aspects_not_derivable`, e.g. a
+manually renamed mast not matching JMRI's usual name pattern) rather than
+failing the whole table over one mast.
+
+`jmri-cli signal set`'s aspect positional is tagged with a new,
+context-dependent Tab-completion kind, `"signal_aspect"` — every other
+completable positional in `jmri_cli/completion.py` is a flat, context-free
+list (systems, roster, lights, ...), but valid aspects depend on which mast
+was already typed as `signal set`'s own first positional. `shell.py`'s
+completer reads the already-typed mast name off the current line and passes
+it to `completion._names_for_signal_aspect(mast_name)`, which resolves it
+the same tolerant way `signal set` itself does, then caches results per
+mast (hashed into the cache filename, since a userName fragment can contain
+characters unsafe as a bare filename) rather than sharing one cache file
+like every other completion kind.
+
 ## CLI UX: banner, per-leaf examples, and the bare-group/verb-elevation pattern
 
 `jmri-cli`'s command surface went through two redesigns driven directly by

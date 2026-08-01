@@ -947,8 +947,139 @@ async def test_signal_set_aspect_and_confirms(monkeypatch, power_fixture, capsys
         "aspect=Hp0 comment=- dcc_system=DCC++ Zou address=31"
     )
     # Regression guard: see matching comment in tests/test_tools.py - JMRI's
-    # POST handler reads "state", not "aspect".
-    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0"}]
+    # POST handler reads "state", not "aspect", and a real aspect always
+    # re-asserts lit:"true" alongside it.
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "state": "Hp0", "lit": "true"}]
+
+
+async def test_signal_set_unlit_posts_lit_false_and_shows_off_aspect(monkeypatch, power_fixture, capsys):
+    import json
+
+    import respx
+    from httpx import Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    post_bodies = []
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(200, json=[
+                {"type": "signalMast", "data": {
+                    "name": "ZF$dsm:DB-HV-1969:block(31)", "userName": "Entry Signal A",
+                    "aspect": "Hp0", "lit": False, "held": False,
+                }},
+            ])
+        )
+
+        def post_signal(request):
+            post_bodies.append(json.loads(request.content))
+            return Response(200, json={})
+
+        router.post(f"{MOCK_JMRI_URL}/json/signalMast/ZF$dsm:DB-HV-1969:block(31)").mock(
+            side_effect=post_signal
+        )
+        code, out, _ = await run(capsys, "signal", "set", "Entry Signal A", "unlit")
+    assert code == 0
+    assert out.strip() == (
+        "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
+        "aspect=OFF comment=- dcc_system=DCC++ Zou address=31"
+    )
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "lit": "false"}]
+
+
+async def test_signal_off_posts_lit_false_and_shows_off_aspect(monkeypatch, power_fixture, capsys):
+    import json
+
+    import respx
+    from httpx import Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    post_bodies = []
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(200, json=[
+                {"type": "signalMast", "data": {
+                    "name": "ZF$dsm:DB-HV-1969:block(31)", "userName": "Entry Signal A",
+                    "aspect": "Hp0", "lit": False, "held": False,
+                }},
+            ])
+        )
+
+        def post_signal(request):
+            post_bodies.append(json.loads(request.content))
+            return Response(200, json={})
+
+        router.post(f"{MOCK_JMRI_URL}/json/signalMast/ZF$dsm:DB-HV-1969:block(31)").mock(
+            side_effect=post_signal
+        )
+        code, out, _ = await run(capsys, "signal", "off", "Entry Signal A")
+    assert code == 0
+    assert out.strip() == (
+        "name=Entry Signal A system_id=ZF$dsm:DB-HV-1969:block(31) "
+        "aspect=OFF comment=- dcc_system=DCC++ Zou address=31"
+    )
+    # signal off must be a pure shortcut for signal set <name> off - same POST body.
+    assert post_bodies == [{"name": "ZF$dsm:DB-HV-1969:block(31)", "lit": "false"}]
+
+
+async def test_signal_off_unknown_name_returns_error(mock_signals, capsys):
+    code, _, err = await run(capsys, "signal", "off", "tgv")
+    assert code == 1
+    assert "tgv" in err
+
+
+async def test_signal_list_with_aspects_adds_column(mock_signals, mock_power, capsys):
+    import respx
+    from httpx import Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    appearance_xml = """<?xml version="1.0"?>
+<appearancetable>
+  <aspecttable>
+    <aspect><aspectname>Hp0</aspectname></aspect>
+    <aspect><aspectname>Hp1</aspectname></aspect>
+  </aspecttable>
+</appearancetable>
+"""
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/xml/signals/DB-HV-1969/appearance-block.xml").mock(
+            return_value=Response(200, text=appearance_xml)
+        )
+        code, out, _ = await run(capsys, "signal", "list", "--with-aspects")
+
+    assert code == 0
+    assert "Hp0, Hp1" in out
+    # Regression guard for the session-71 design correction: the extra
+    # column must never show unlit/off as if they were real aspects.
+    assert "unlit" not in out.casefold()
+
+
+async def test_signal_list_with_aspects_shows_placeholder_for_non_derivable_mast(
+    monkeypatch, power_fixture, capsys
+):
+    import respx
+    from httpx import Response
+
+    from jmri_core.testing.plugin import MOCK_JMRI_URL
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{MOCK_JMRI_URL}/json/power").mock(return_value=Response(200, json=power_fixture))
+        router.get(f"{MOCK_JMRI_URL}/json/signalMasts").mock(
+            return_value=Response(200, json=[
+                {"type": "signalMast", "data": {
+                    "name": "a manually renamed mast", "userName": "Weird Mast",
+                    "aspect": "Hp0", "lit": True, "held": False,
+                }},
+            ])
+        )
+        code, out, _ = await run(capsys, "signal", "list", "--with-aspects")
+
+    assert code == 0
+    assert "?" in out
 
 
 async def test_sensor_list_all(mock_sensors, capsys):
